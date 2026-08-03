@@ -15,8 +15,11 @@
 
 /* Derived from the real layout, so a struct change makes old files
    unreadable on purpose instead of silently misaligned. */
-#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module)))
-#define RZ_MOD_VER  ((uint32_t)(RZ_MOD_FRAGS + 7u * (uint32_t)sizeof(rz_module)))
+#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module) + 1u))
+/* Bumped by hand when the MEANING of a stored number changes, not only its
+   size. Weight 1 used to mean "cold"; it now means "never walked". */
+#define RZ_SEMANTICS 1u
+#define RZ_MOD_VER  ((uint32_t)(RZ_MOD_FRAGS + 7u * (uint32_t)sizeof(rz_module) + RZ_SEMANTICS))
 
 /* ===================== the atomic base ==================================== */
 
@@ -229,15 +232,18 @@ static uint8_t shape_of_local(const rz_mind *m, const rz_module *M, int32_t l)
     (void)m;
     if (l < 0 || l >= M->nfrags) return 0;
 
+    /* Only what it walked. A fragment is described by what it did, not by what
+       it was handed at birth. */
     uint64_t total = 0, top = 0;
     double h = 0.0;
     for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
+        if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;
         total += M->pool[e].weight;
         if (M->pool[e].weight > top) top = M->pool[e].weight;
     }
     if (total) {
         for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
-            if (!M->pool[e].weight) continue;
+            if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;
             double p = (double)M->pool[e].weight / (double)total;
             h -= p * log(p);
         }
@@ -440,6 +446,29 @@ int32_t rz_frag_degree(rz_mind *m, int32_t from)
     return d;
 }
 
+int32_t rz_frag_degree_walked(rz_mind *m, int32_t from)
+{
+    if (from < 0 || from >= RZ_FRAGS) return 0;
+    int32_t k = id_mod(from), l = id_slot(from);
+    rz_module *M = mod_ensure(m, k);
+    if (!M || l >= M->nfrags) return 0;
+    int32_t d = 0;
+    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next)
+        if (M->pool[e].weight >= RZ_EDGE_FLOOR) d++;
+    return d;
+}
+
+int32_t rz_frag_first_guess(rz_mind *m, int32_t from)
+{
+    if (from < 0 || from >= RZ_FRAGS) return -1;
+    int32_t k = id_mod(from), l = id_slot(from);
+    rz_module *M = mod_ensure(m, k);
+    if (!M || l >= M->nfrags) return -1;
+    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next)
+        if (M->pool[e].weight == RZ_EDGE_INHERITED) return M->pool[e].to;
+    return -1;
+}
+
 double rz_frag_branching(rz_mind *m, int32_t from)
 {
     if (from < 0 || from >= RZ_FRAGS) return 0.0;
@@ -447,13 +476,20 @@ double rz_frag_branching(rz_mind *m, int32_t from)
     rz_module *M = mod_ensure(m, k);
     if (!M || l >= M->nfrags) return 0.0;
 
+    /* Effort is what it costs to choose among the paths it has TAKEN. Counting
+       the ones it was handed at birth made every fragment look equally uncertain
+       — 73 ways out inside a word, 92 at the end of one — and buried the very
+       difference this measure exists to expose. */
     uint64_t total = 0;
-    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) total += M->pool[e].weight;
+    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
+        if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;
+        total += M->pool[e].weight;
+    }
     if (total == 0) return 0.0;
 
     double h = 0.0;
     for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
-        if (M->pool[e].weight == 0) continue;
+        if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;
         double p = (double)M->pool[e].weight / (double)total;
         h -= p * log(p);
     }
@@ -609,7 +645,7 @@ static int32_t frag_birth(rz_mind *m, int32_t a, int32_t b)
         for (int32_t i = 0; i < ntos; i++) {
             if (tos[i] == born) continue;
             uint32_t *w = edge_slot(m, born, tos[i]);
-            if (w && *w == 0) *w = 1;
+            if (w && *w == 0) *w = RZ_EDGE_INHERITED;
         }
     }
 
@@ -640,7 +676,7 @@ static double step_strain(rz_mind *m, int32_t from, int32_t actual)
     uint64_t total = 0, w = 0;
     uint32_t degree = 0;
     for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
-        if (M->pool[e].weight == 0) continue;
+        if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;   /* experience only */
         total += M->pool[e].weight;
         degree++;
         if (M->pool[e].to == actual) w = M->pool[e].weight;
@@ -706,9 +742,13 @@ static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
 
             uint32_t *w = edge_slot(m, prev, f);
             if (w) {
-                if (*w < RZ_CEILING) (*w)++;   /* no path grows forever */
+                if (*w < RZ_EDGE_FLOOR) *w = RZ_EDGE_FLOOR;  /* a guess just became a memory */
+                else if (*w < RZ_CEILING) (*w)++;   /* no path grows forever */
                 m->frag_steps++;
-                if (*w == RZ_FRAG_BIRTH) frag_birth(m, prev, f);
+                /* Counted in TRAVERSALS, not in stored weight: the first
+                   step lands on RZ_EDGE_FLOOR, so N traversals read as
+                   N + RZ_EDGE_FLOOR - 1. */
+                if (*w == RZ_FRAG_BIRTH + RZ_EDGE_FLOOR - 1) frag_birth(m, prev, f);
             }
         }
         prev = f;
@@ -930,13 +970,18 @@ static int step_appraise(rz_mind *m, int32_t from, int32_t actual,
     rz_module *M = mod_ensure(m, k);
     if (!M || l >= M->nfrags) { *surprise = 1.0; return RZ_STEP_OPAQUE; }
 
+    /* Measured against EXPERIENCE, not against possibility. A path it was handed
+       at birth says "this could happen"; it never said "this happens". Counting
+       those ~90 gifts alongside real traffic diluted every probability and left
+       no fragment able to report that it was genuinely blind. */
     uint64_t total = 0, w = 0;
     for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
+        if (M->pool[e].weight < RZ_EDGE_FLOOR) continue;
         total += M->pool[e].weight;
         if (M->pool[e].to == actual) w = M->pool[e].weight;
     }
 
-    if (total == 0) {                    /* no expectation at all: nothing to hook onto */
+    if (total == 0) {                    /* no experience at all: nothing to hook onto */
         *surprise = 1.0;
         return RZ_STEP_OPAQUE;
     }

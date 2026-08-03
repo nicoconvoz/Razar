@@ -333,6 +333,10 @@ int32_t rz_trigger(rz_mind *m, const unsigned char *buf, size_t n);
 uint32_t rz_frag_edge(rz_mind *m, int32_t from, int32_t to);
 double   rz_frag_branching(rz_mind *m, int32_t from);
 int32_t  rz_frag_degree(rz_mind *m, int32_t from);
+/* Only the paths it actually took. This is what shape and branching read. */
+int32_t  rz_frag_degree_walked(rz_mind *m, int32_t from);
+/* The target of one path it was handed and never took, or -1. */
+int32_t  rz_frag_first_guess(rz_mind *m, int32_t from);
 
 /* Recall addressed by fragments rather than atoms. Same effort accounting.
    Non-const only because reading may wake a sleeping module; no intensity,
@@ -416,7 +420,19 @@ int32_t rz_predict_shape(const rz_mind *m, uint8_t from);
  */
 #define RZ_DECAY        0.98    /* what an unused path keeps per pass */
 #define RZ_DECAY_EVERY  20000   /* steps of experience between passes */
-#define RZ_EDGE_FLOOR   1       /* a path never vanishes — it goes cold */
+/* A path it was GIVEN and a path it TOOK must not look the same.
+ *
+ * A newborn inherits its right parent's exits so it is never a dead end, and
+ * those arrive meaning "this is possible" — a guess, not experience. Until they
+ * were told apart, a guess and a fully-decayed memory both read as weight 1, and
+ * with mean out-degree at 93 the guesses drowned the experience: branching
+ * saturated, concentration flattened, and the shape alphabet collapsed to four
+ * classes that differed only in span.
+ *
+ * So the floor of experience sits ABOVE the weight of a guess. Nothing is spent
+ * to store it: the distinction is the number itself. */
+#define RZ_EDGE_INHERITED 1     /* possible. Never walked. Has nothing to forget */
+#define RZ_EDGE_FLOOR   2       /* a path never vanishes — it goes cold */
 #define RZ_CEILING      60000   /* no path grows without limit */
 
 /* One pass of forgetting. Resident modules feel it now; the sleeping ones feel

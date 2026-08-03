@@ -1205,7 +1205,7 @@ TEST(the_frontier_is_a_place_you_pass_through)
     rz_mind *tasted = fresh();
     rz_mind *chewed = fresh();
     feed(tasted, lived);
-    for (int i = 0; i < 30; i++) feed(chewed, lived);
+    for (int i = 0; i < 100; i++) feed(chewed, lived);
 
     rz_measure_result a, b;
     measure_str(tasted, lived, &a);
@@ -1214,6 +1214,37 @@ TEST(the_frontier_is_a_place_you_pass_through)
     CHECK(rz_frontier_share(&a) > 0.0);
     CHECK(rz_mastered_share(&b) > rz_mastered_share(&a));
     CHECK(rz_mean_surprise(&b) < rz_mean_surprise(&a));
+}
+
+TEST(a_newborn_unit_has_not_been_anywhere_yet)
+{
+    /* Chewing does not master in a straight line, and the dip is not a defect.
+       A fragment is born out of traffic between two others, and it starts with
+       no experience of its own — only the exits it inherited, which are guesses
+       and not memories. So while new units are being born the frontier WIDENS,
+       and it closes again once they have earned their own paths.
+
+       Measured on this material: mastered 0.9903 at 5 passes, 0.7488 at 30
+       while units are being born, 1.0000 at 100. Surprise keeps falling after
+       that — 0.0357, 0.0123, 0.0045 at 100, 300 and 800. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *early = fresh();
+    rz_mind *middle = fresh();
+    rz_mind *settled = fresh();
+    for (int i = 0; i < 5;   i++) feed(early, lived);
+    for (int i = 0; i < 30;  i++) feed(middle, lived);
+    for (int i = 0; i < 100; i++) feed(settled, lived);
+
+    rz_measure_result e, m2, s2;
+    measure_str(early, lived, &e);
+    measure_str(middle, lived, &m2);
+    measure_str(settled, lived, &s2);
+
+    CHECK(rz_mastered_share(&m2) < rz_mastered_share(&e));      /* the dip */
+    CHECK(rz_mastered_share(&s2) > rz_mastered_share(&m2));     /* and it closes */
+    CHECK(rz_hit_rate(&m2) >= rz_hit_rate(&e));                 /* while prediction never worsens */
 }
 
 TEST(novel_steps_are_a_part_of_the_frontier_not_of_the_opaque)
@@ -1361,7 +1392,22 @@ TEST(interest_is_a_derivative_and_the_ledger_is_what_makes_it_one)
     rz_ledger_record(&L, "lived", rz_fingerprint((const unsigned char *)lived, strlen(lived)),
                      rz_mean_surprise(&first), rz_frontier_share(&first));
 
-    for (int i = 0; i < 30; i++) feed(m, lived);
+    /* Read across the whole composition, not inside it.
+
+       Measured on this material: surprise 0.0654 / 0.0183 / 0.1029 / 0.0357 /
+       0.0123 / 0.0045 at 1 / 5 / 30 / 100 / 300 / 800 passes. It is NOT
+       monotone, and the reason matters: the early minimum at 5 passes is
+       SIMPLICITY, not mastery — with few fragments the organism walks almost
+       atom by atom, and the next byte of repetitive material is easy. Composing
+       wider units costs that ease back, because each newborn starts with no
+       experience of its own. Only past the composition does the curve fall
+       below where it started.
+
+       So interest-as-a-derivative is honest across a long exposure and
+       misleading inside a short one: sampled at 30 passes it reports "this got
+       harder" exactly when the organism got richer. Pinned by
+       a_newborn_unit_has_not_been_anywhere_yet. */
+    for (int i = 0; i < 400; i++) feed(m, lived);
     rz_measure_result second;
     measure_str(m, lived, &second);
 
@@ -1504,7 +1550,19 @@ TEST(the_floor_is_where_knowledge_is_actually_lost)
     rz_measure_result after;
     measure_str(m, lived, &after);
 
-    CHECK(rz_hit_rate(&after) < rz_hit_rate(&before));
+    /* What forgetting takes is CONFIDENCE, not the knowledge of where it has
+       been. Everything walked ends up at the floor, so the organism can no
+       longer say how often — surprise rises. But the floor of experience sits
+       above the weight of a path it was merely handed, so it can still say
+       WHICH paths it walked, and the prediction survives.
+
+       This is the whole point of telling a guess from a memory. Before they
+       were told apart, a fully-decayed memory became indistinguishable from one
+       of the ~90 exits handed over at birth, and the answer collapsed into a
+       tie-break among gifts. That collapse read as "forgetting destroys
+       knowing" when it was really "forgetting destroys the distinction". */
+    CHECK(rz_mean_surprise(&after) > rz_mean_surprise(&before));
+    CHECK(rz_hit_rate(&after) >= rz_hit_rate(&before) - 1e-9);
     CHECK(rz_cold_edges(m) > 0u);
 }
 
@@ -1810,6 +1868,81 @@ static void set_night(rz_mind *m, uint64_t steps, uint64_t births, double strain
     m->awake_strain = strain * (double)steps;   /* strain PER STEP, as lived */
 }
 
+/* --- what it was given versus what it took ------------------------------- */
+
+TEST(a_path_it_was_given_is_not_a_path_it_took)
+{
+    /* A newborn inherits its parent's exits so it is not a dead end. Those
+       exits are guesses: "this is possible". Until now they arrived at the same
+       weight traffic decays to, so the two were indistinguishable -- and with
+       mean out-degree at 93 the guesses drowned the experience. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++)
+        feed(m, "the quick brown fox jumps over the lazy dog. ");
+
+    uint64_t given = 0, taken = 0;
+    for (int32_t k = 0; k < RZ_MODULES; k++) {
+        for (int32_t l = 0; l < m->mod_nfrags[k]; l++) {
+            int32_t id = k * RZ_MOD_FRAGS + l;
+            int32_t all = rz_frag_degree(m, id);
+            int32_t walked = rz_frag_degree_walked(m, id);
+            CHECK(walked <= all);
+            given += (uint64_t)(all - walked);
+            taken += (uint64_t)walked;
+        }
+    }
+    CHECK(given > 0);
+    CHECK(taken > 0);
+}
+
+TEST(forgetting_leaves_a_guess_alone)
+{
+    /* A guess has no experience to lose. Decaying it would be forgetting
+       something that never happened -- and worse, the floor would round it back
+       up into the range where experience lives. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, "abcabcabcabc ");
+
+    int32_t victim = -1, to = -1;
+    for (int32_t k = 0; k < RZ_MODULES && victim < 0; k++)
+        for (int32_t l = 0; l < m->mod_nfrags[k] && victim < 0; l++) {
+            int32_t id = k * RZ_MOD_FRAGS + l;
+            if (rz_frag_degree(m, id) > rz_frag_degree_walked(m, id)) {
+                victim = id;
+                to = rz_frag_first_guess(m, id);
+            }
+        }
+    CHECK(victim >= 0);
+    CHECK(to >= 0);
+    CHECK_EQ_U(rz_frag_edge(m, victim, to), RZ_EDGE_INHERITED);
+
+    for (int i = 0; i < 50; i++) rz_decay(m);
+    CHECK_EQ_U(rz_frag_edge(m, victim, to), RZ_EDGE_INHERITED);
+}
+
+TEST(a_shape_is_read_from_what_it_walked)
+{
+    /* The decisive one. Branch and concentration collapsed because every
+       fragment carried ~93 exits it had never taken: branching always looked
+       huge and concentration always looked flat. Reading the shape from traffic
+       alone is what gives those two axes their range back. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 60; i++) feed(m, "aaaaaaaaaaaa ");
+
+    int32_t f = -1;
+    for (int32_t k = 0; k < RZ_MODULES && f < 0; k++)
+        for (int32_t l = 0; l < m->mod_nfrags[k] && f < 0; l++) {
+            int32_t id = k * RZ_MOD_FRAGS + l;
+            if (rz_frag_degree(m, id) > rz_frag_degree_walked(m, id)
+                && rz_frag_degree_walked(m, id) >= 1)
+                f = id;
+        }
+    CHECK(f >= 0);
+    /* branching must describe the paths it actually took, not the ones it was
+       handed -- so it cannot exceed the number of walked exits */
+    CHECK(rz_frag_branching(m, f) <= (double)rz_frag_degree_walked(m, f) + 1e-9);
+}
+
 TEST(what_it_cannot_place_is_what_wears_it_down)
 {
     /* Overstimulation is NOT "the world was unpredictable". Random bytes are
@@ -2071,6 +2204,9 @@ int main(void)
     RUN(fragment_recall_leaves_the_mind_alone);
     RUN(fragments_recall_what_atoms_could_not);
     RUN(composition_can_swallow_a_branch_whole);
+    RUN(a_path_it_was_given_is_not_a_path_it_took);
+    RUN(forgetting_leaves_a_guess_alone);
+    RUN(a_shape_is_read_from_what_it_walked);
     RUN(what_it_cannot_place_is_what_wears_it_down);
     RUN(learning_is_strain_but_it_is_not_stress);
     RUN(there_is_nothing_to_sleep_on_yet);
@@ -2112,6 +2248,7 @@ int main(void)
     RUN(a_mind_that_knows_nothing_finds_everything_opaque);
     RUN(material_it_has_chewed_stops_being_opaque);
     RUN(the_frontier_is_a_place_you_pass_through);
+    RUN(a_newborn_unit_has_not_been_anywhere_yet);
     RUN(novel_steps_are_a_part_of_the_frontier_not_of_the_opaque);
     RUN(appraising_teaches_nothing_either);
     RUN(a_fingerprint_follows_the_content_not_the_name);
