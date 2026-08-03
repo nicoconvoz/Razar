@@ -17,3 +17,8 @@ test_*.tmp/
 
 # built binaries anywhere in the tree
 *.exe
+
+# throwaway probes and build logs — the measurements live in docs/ and MEMORY.md,
+# never in a stray file at the root
+*.log
+tiny_probe.*
