@@ -66,6 +66,10 @@ typedef struct {
     int32_t  left, right;               /* -1, -1 when this is a bare atom */
     uint16_t span;                      /* how many atoms it decomposes into */
     uint32_t seen;                      /* times this fragment was walked */
+    /* What a dream is allowed to leave behind. Not a record of anything that
+       happened — a mark saying "come back here". It protects from fading and
+       pulls the organism's reading toward itself, and it fades on its own. */
+    uint16_t attention;
     unsigned char atoms[RZ_FRAG_SPAN];  /* its decomposition, flattened */
 } rz_frag;
 
@@ -121,6 +125,14 @@ typedef struct {
        progress: successful transfer. */
     uint32_t shape_tried[RZ_SHAPES];
     uint32_t shape_won[RZ_SHAPES];
+
+    /* How it has been since it last slept — the only thing the triage needs */
+    uint64_t awake_steps;
+    uint64_t awake_births;
+    double   awake_strain;       /* how far off it was, summed over the night */
+    uint64_t awake_anticipated;  /* steps its own ideas called correctly */
+    uint64_t sleeps_had;
+    uint64_t dreams[4];          /* how many of each kind it has had */
 
     char nest[512];                 /* where sleeping modules live */
 } rz_mind;
@@ -571,6 +583,52 @@ void rz_recall_lateral(rz_mind *m,
                        size_t want_atoms, uint64_t effort_budget,
                        double temperature, uint64_t seed,
                        rz_recall *out);
+
+/* --- dreaming (P14) -------------------------------------------------------
+ *
+ * Dreaming is not one job. It is a job the organism CHOOSES according to how it
+ * currently is, which is why none of the three has to be thrown away:
+ *
+ *   stuck            -> LOOSEN   deform what it knows too well, so it stops
+ *                                circling. Costs fidelity, buys reach.
+ *   something new    -> SETTLE   exercise what just formed, so it becomes
+ *                                solid instead of evaporating.
+ *   overwhelmed      -> CALM     go back over what it could not digest, so it
+ *                                stops being a wall.
+ *
+ * All three states are already measured. Since the last sleep the organism
+ * knows how much it walked, how much new structure it built, how often it was
+ * completely blind, and how often its own ideas called the shot. That is enough
+ * to triage.
+ *
+ * And whichever dream it has, it may write ONE thing: attention. The episode is
+ * false and is discarded — a dream never touches an intensity, never records a
+ * traversal, never creates a fragment. What survives waking is only a set of
+ * marks saying where to look again.
+ */
+typedef enum {
+    RZ_DREAM_NONE,     /* nothing has happened worth sleeping on */
+    RZ_DREAM_LOOSEN,   /* it is circling: shake it out of the rut */
+    RZ_DREAM_SETTLE,   /* it built something new: make it solid */
+    RZ_DREAM_CALM      /* it was overwhelmed: go back over the wall */
+} rz_dream_kind;
+
+#define RZ_DREAM_MIN_STEPS  2000   /* below this there is nothing to sleep on */
+#define RZ_OVERWHELMED      0.55   /* share of blind steps that counts as too much */
+#define RZ_FERTILE         0.004   /* births per step that counts as a lot of new structure */
+#define RZ_ATTENTION_MAX   1000
+#define RZ_ATTENTION_KEEP  0.90    /* attention fades too, per decay pass */
+
+/* What this organism needs to dream about right now, and why. */
+rz_dream_kind rz_dream_needed(const rz_mind *m);
+const char   *rz_dream_reason(rz_dream_kind k);
+
+/* Sleep once: pick the dream the state calls for, walk it, and leave nothing
+   behind but attention. Returns which dream was had. */
+rz_dream_kind rz_sleep(rz_mind *m, uint64_t seed);
+
+uint16_t rz_attention_of(rz_mind *m, int32_t frag);
+uint64_t rz_attention_total(rz_mind *m);
 
 /* --- the pen (P17) --------------------------------------------------------
  *

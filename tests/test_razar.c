@@ -1801,9 +1801,213 @@ TEST(forgetting_spares_what_transfers)
     CHECK(rz_mean_surprise(&with) <= rz_mean_surprise(&without));
 }
 
+/* --- dreaming (P14) ------------------------------------------------------- */
+
+static void set_night(rz_mind *m, uint64_t steps, uint64_t births, double strain)
+{
+    m->awake_steps = steps;
+    m->awake_births = births;
+    m->awake_strain = strain * (double)steps;   /* strain PER STEP, as lived */
+}
+
+TEST(what_it_cannot_place_is_what_wears_it_down)
+{
+    /* Overstimulation is NOT "the world was unpredictable". Random bytes are
+       perfectly predictable in the abstract: every piece looks like every other
+       piece, so the shape layer calls them right nine times out of ten. That
+       reading would have told us noise is restful, which is backwards.
+
+       Being overwhelmed is meeting material you cannot hook onto — arriving at
+       a place you have no expectation from at all. That is measured down at the
+       fragment layer, before the step is recorded. */
+    static const char text[] = "the quick brown fox jumps over the lazy dog. ";
+    rz_mind *m = fresh();
+    for (int i = 0; i < 60; i++)
+        rz_ingest(m, (const unsigned char *)text, sizeof text - 1);
+
+    m->awake_steps = 0; m->awake_strain = 0.0;
+    for (int i = 0; i < 20; i++)
+        rz_ingest(m, (const unsigned char *)text, sizeof text - 1);
+    double familiar = m->awake_strain / (double)m->awake_steps;
+
+    unsigned char alien[4096];
+    uint64_t s = 12345;
+    for (size_t i = 0; i < sizeof alien; i++) {
+        s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+        alien[i] = (unsigned char)(s >> 33);
+    }
+    m->awake_steps = 0; m->awake_strain = 0.0;
+    rz_ingest(m, alien, sizeof alien);
+    double strange = m->awake_strain / (double)m->awake_steps;
+
+    /* An absolute gap, not a ratio. Raw surprise saturates near 1.0 everywhere
+       — from any fragment there are hundreds of continuations, so even the right
+       one carries little probability. Strain has to be read against chance from
+       that same place, or it says "everything is overwhelming" and decides
+       nothing. */
+    CHECK(familiar < 0.10);
+    CHECK(strange   > 0.40);
+}
+
+TEST(learning_is_strain_but_it_is_not_stress)
+{
+    /* The bar sits where the material actually separates. Measured over C
+       source, Spanish prose, and a compiled binary, strain per step lands
+       between 0.29 and 0.45 — meeting new structure is supposed to cost. Only
+       material with no structure to meet (0.65 and up) asks to be calmed. Put
+       the bar below 0.45 and it would call ordinary learning an emergency. */
+    static const char text[] =
+        "the quick brown fox jumps over the lazy dog. pack my box with five "
+        "dozen liquor jugs. how vexingly quick daft zebras jump! ";
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++)
+        rz_ingest(m, (const unsigned char *)text, sizeof text - 1);
+    CHECK(rz_dream_needed(m) != RZ_DREAM_CALM);
+
+    unsigned char alien[8192];
+    uint64_t s = 999;
+    for (size_t i = 0; i < sizeof alien; i++) {
+        s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+        alien[i] = (unsigned char)(s >> 33);
+    }
+    m->awake_steps = 0; m->awake_strain = 0.0; m->awake_births = 0;
+    rz_ingest(m, alien, sizeof alien);
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_CALM);
+}
+
+TEST(there_is_nothing_to_sleep_on_yet)
+{
+    rz_mind *m = fresh();
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_NONE);
+    feed(m, "a little");
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_NONE);
+}
+
+TEST(drowning_comes_before_everything_else)
+{
+    /* You cannot consolidate or explore while most of what you meet is a wall. */
+    rz_mind *m = fresh();
+    set_night(m, 10000, 500, 0.70);       /* fertile AND overwhelmed */
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_CALM);
+}
+
+TEST(a_fertile_night_asks_to_be_settled)
+{
+    rz_mind *m = fresh();
+    set_night(m, 10000, 500, 0.05);
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_SETTLE);
+}
+
+TEST(nothing_new_and_nothing_hurting_means_it_is_circling)
+{
+    rz_mind *m = fresh();
+    set_night(m, 10000, 2, 0.05);
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_LOOSEN);
+}
+
+TEST(every_dream_can_say_why_it_was_had)
+{
+    CHECK(rz_dream_reason(RZ_DREAM_NONE)[0]   != 0);
+    CHECK(rz_dream_reason(RZ_DREAM_CALM)[0]   != 0);
+    CHECK(rz_dream_reason(RZ_DREAM_SETTLE)[0] != 0);
+    CHECK(rz_dream_reason(RZ_DREAM_LOOSEN)[0] != 0);
+}
+
+TEST(a_dream_writes_nothing_but_attention)
+{
+    /* The rule the whole design rests on: the episode is false and is thrown
+       away. Not one intensity, not one traversal, not one fragment. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *m = fresh();
+    for (int i = 0; i < 20; i++) feed(m, lived);
+
+    uint64_t trav = m->traversals, steps = m->frag_steps, births = m->births;
+    uint64_t eaten = m->atoms_ingested, shsteps = m->shape_steps;
+    int32_t  nf = rz_frag_count(m);
+    uint32_t ab = rz_intensity(m, 'a', 'b');
+    double   support = rz_effective_support(m);
+    uint64_t before_attention = rz_attention_total(m);
+
+    set_night(m, 10000, 2, 0.05);          /* it is circling */
+    rz_dream_kind had = rz_sleep(m, 99);
+
+    CHECK_EQ_U(had, RZ_DREAM_LOOSEN);
+    CHECK_EQ_U(m->traversals, trav);
+    CHECK_EQ_U(m->frag_steps, steps);
+    CHECK_EQ_U(m->births, births);
+    CHECK_EQ_U(m->atoms_ingested, eaten);
+    CHECK_EQ_U(m->shape_steps, shsteps);
+    CHECK_EQ_U(rz_frag_count(m), (unsigned long long)nf);
+    CHECK_EQ_U(rz_intensity(m, 'a', 'b'), ab);
+    CHECK_NEAR(rz_effective_support(m), support, 1e-12);
+
+    /* and the one thing it IS allowed to leave */
+    CHECK(rz_attention_total(m) > before_attention);
+}
+
+TEST(sleeping_clears_the_night)
+{
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *m = fresh();
+    for (int i = 0; i < 20; i++) feed(m, lived);
+    set_night(m, 10000, 500, 0.05);
+
+    CHECK_EQ_U(rz_sleep(m, 5), RZ_DREAM_SETTLE);
+    CHECK_EQ_U(m->awake_steps, 0u);
+    CHECK_EQ_U(m->awake_births, 0u);
+    CHECK_EQ_U(m->sleeps_had, 1u);
+    CHECK_EQ_U(m->dreams[RZ_DREAM_SETTLE], 1u);
+    CHECK_EQ_U(rz_dream_needed(m), RZ_DREAM_NONE);   /* nothing left to sleep on */
+}
+
+TEST(attention_fades_or_everything_ends_up_marked)
+{
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *m = fresh();
+    for (int i = 0; i < 20; i++) feed(m, lived);
+    set_night(m, 10000, 2, 0.05);
+    rz_sleep(m, 3);
+
+    uint64_t marked = rz_attention_total(m);
+    CHECK(marked > 0u);
+
+    for (int i = 0; i < 200; i++) rz_decay(m);
+    CHECK(rz_attention_total(m) < marked);
+}
+
+TEST(a_marked_fragment_is_spared_by_forgetting)
+{
+    /* What the dream chose to look at again survives longer. Nobody decreed it:
+       the organism marked it while it slept. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *dreamt = fresh();
+    rz_mind *dreamless = fresh();
+    for (int i = 0; i < 20; i++) { feed(dreamt, lived); feed(dreamless, lived); }
+
+    set_night(dreamt, 10000, 2, 100);
+    rz_sleep(dreamt, 7);
+    CHECK(rz_attention_total(dreamt) > 0u);
+    CHECK_EQ_U(rz_attention_total(dreamless), 0u);
+
+    for (int i = 0; i < 40; i++) { rz_decay(dreamt); rz_decay(dreamless); }
+
+    rz_measure_result with, without;
+    measure_str(dreamt, lived, &with);
+    measure_str(dreamless, lived, &without);
+    CHECK(rz_mean_surprise(&with) <= rz_mean_surprise(&without));
+}
+
 int main(void)
 {
-    printf("razar spike 12\n");
+    printf("razar spike 13\n");
     RUN(fresh_mind_is_empty);
     RUN(atomic_base_does_not_grow_with_experience);
     RUN(one_pair_is_one_traversal);
@@ -1867,6 +2071,17 @@ int main(void)
     RUN(fragment_recall_leaves_the_mind_alone);
     RUN(fragments_recall_what_atoms_could_not);
     RUN(composition_can_swallow_a_branch_whole);
+    RUN(what_it_cannot_place_is_what_wears_it_down);
+    RUN(learning_is_strain_but_it_is_not_stress);
+    RUN(there_is_nothing_to_sleep_on_yet);
+    RUN(drowning_comes_before_everything_else);
+    RUN(a_fertile_night_asks_to_be_settled);
+    RUN(nothing_new_and_nothing_hurting_means_it_is_circling);
+    RUN(every_dream_can_say_why_it_was_had);
+    RUN(a_dream_writes_nothing_but_attention);
+    RUN(sleeping_clears_the_night);
+    RUN(attention_fades_or_everything_ends_up_marked);
+    RUN(a_marked_fragment_is_spared_by_forgetting);
     RUN(a_new_mind_has_no_ideas_worth_having_yet);
     RUN(it_scores_its_own_ideas_while_it_eats);
     RUN(a_shape_that_keeps_being_right_is_what_matters);

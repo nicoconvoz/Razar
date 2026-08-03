@@ -800,6 +800,68 @@ directly onto machinery the author already built in `organismo.c`:
 
 Nothing new is needed for the tiering. It needs porting, not inventing.
 
+#### 8.7.6 — Which dream, decided by the state it woke up in (author, 2026-08-03)
+
+The three jobs a dream does are not alternatives to choose between once. They
+are answers to three different conditions, and the organism knows which one it
+is in. In the author's words: *if it has got stuck, option 1; if something
+important arrived that should be affirmed, put more force on option 2; if it has
+been overstimulated or is stressed by what it received, option 3 — that way none
+of them is discarded.*
+
+So the night is triaged. Three counters are kept while awake, over the same
+traffic that ingestion already produces — nothing is measured on purpose:
+
+| Reading | What it is | Dream |
+| --- | --- | --- |
+| strain per step > `RZ_OVERWHELMED` | too much of what it met was a wall | **CALM** |
+| births per step > `RZ_FERTILE` | it built a lot it has not exercised yet | **SETTLE** |
+| neither | nothing new, nothing hurting: it is circling | **LOOSEN** |
+
+Order matters, and it is not arbitrary: **drowning outranks everything.** You
+cannot consolidate or explore while most of what arrives cannot be placed. The
+same principle already appeared in the autopsy — support falling on its own is
+the alarm and must outrank gentler readings (§8b.1).
+
+Each kind seeds the walk from a different fragment and walks it at a different
+temperature. Nothing else about the mechanism changes:
+
+| Dream | Seeded from | Temperature | Because |
+| --- | --- | --- | --- |
+| LOOSEN | the most travelled fragment | 1.6 | the deepest rut is where a rut is escaped from |
+| SETTLE | the newest fragment | 0.2 | the new is what has not been exercised |
+| CALM | where merit is lowest against how often it was met | 0.8 | go back over the wall it kept hitting |
+
+**Measuring strain against chance, not in absolute.** The first attempt read
+stress as "how often the abstract layer had no prediction", and it was backwards:
+random bytes are *easy* to call in the abstract, because every piece looks like
+every other piece. It reported noise as restful. The second attempt used raw
+surprise (`1 - p`) and saturated — from any fragment there are hundreds of
+continuations, so even the right one carries little probability and everything
+scored 0.97.
+
+What works is surprise read **against a blind guess from that same place**:
+`1 - p·degree`, floored at zero. Measured over real material the readings
+separate cleanly and the bar can be placed on evidence rather than taste:
+
+| Material | Strain per step |
+| --- | --- |
+| C source, first meal | 0.4151 |
+| the same source, second meal | 0.2918 |
+| the same source, third meal | 0.1989 |
+| Spanish prose | 0.4443 |
+| a compiled binary | 0.4475 |
+| random bytes | 0.65 – 0.72 |
+
+`RZ_OVERWHELMED = 0.55` sits above every real reading and below every
+structureless one. **Meeting new structure is supposed to cost.** A bar under
+0.45 would call ordinary learning an emergency, which is the failure mode this
+whole section exists to avoid. Pinned by `learning_is_strain_but_it_is_not_stress`.
+
+Fed real material over successive nights the organism settles while it is still
+building, then — once the same material stops yielding anything new — starts
+circling and asks to be loosened, without being told to.
+
 ---
 
 ### 8.6 — Where understanding would first become visible

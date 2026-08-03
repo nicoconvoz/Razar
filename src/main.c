@@ -635,6 +635,72 @@ static int cmd_write(int argc, char **argv)
     return 0;
 }
 
+static const char *dream_name(rz_dream_kind k)
+{
+    switch (k) {
+    case RZ_DREAM_CALM:   return "CALM   — go back over the wall";
+    case RZ_DREAM_SETTLE: return "SETTLE — make the new solid";
+    case RZ_DREAM_LOOSEN: return "LOOSEN — shake it out of the rut";
+    default:              return "none";
+    }
+}
+
+static int cmd_sleep(int argc, char **argv)
+{
+    uint64_t seed = (argc > 0) ? strtoull(argv[0], NULL, 10) : 1;
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m) { fprintf(stderr, "out of memory\n"); return 1; }
+    rz_init(m);
+    MKDIR(NEST);
+    rz_set_nest(m, MODULES);
+
+    if (rz_load(m, MIND_PATH) != RZ_OK) {
+        fprintf(stderr, "no usable mind at %s — feed it first.\n", MIND_PATH);
+        free(m);
+        return 1;
+    }
+
+    printf("\n=== RAZAR SLEEPS ===\n\n");
+    printf("  since it last slept\n");
+    printf("    %-24s %12llu\n", "steps walked", (unsigned long long)m->awake_steps);
+    printf("    %-24s %12llu\n", "new structure built", (unsigned long long)m->awake_births);
+    printf("    %-24s %12.4f\n", "strain per step",
+           m->awake_steps ? m->awake_strain / (double)m->awake_steps : 0.0);
+    printf("    %-24s %12llu\n", "its ideas called it", (unsigned long long)m->awake_anticipated);
+
+    rz_dream_kind want = rz_dream_needed(m);
+    printf("\n  it needs: %s\n", dream_name(want));
+    printf("  because %s\n", rz_dream_reason(want));
+
+    uint64_t before = rz_attention_total(m);
+    rz_dream_kind had = rz_sleep(m, seed);
+
+    if (had == RZ_DREAM_NONE) {
+        printf("\n  it stayed awake.\n\n");
+        rz_free(m); free(m);
+        return 0;
+    }
+
+    uint64_t after = rz_attention_total(m);
+    printf("\n  It dreamt. The episode is gone — a dream records nothing that\n");
+    printf("  happened. What it left behind is where to look again.\n\n");
+    printf("  %-26s %12llu\n", "attention laid down", (unsigned long long)(after - before));
+    printf("  %-26s %12llu\n", "nights slept in all", (unsigned long long)m->sleeps_had);
+    printf("  %-26s %5llu loosen  %5llu settle  %5llu calm\n", "of which",
+           (unsigned long long)m->dreams[RZ_DREAM_LOOSEN],
+           (unsigned long long)m->dreams[RZ_DREAM_SETTLE],
+           (unsigned long long)m->dreams[RZ_DREAM_CALM]);
+
+    if (rz_save(m, MIND_PATH) != RZ_OK)
+        fprintf(stderr, "could not write %s — the night is lost.\n", MIND_PATH);
+    printf("\n");
+
+    rz_free(m);
+    free(m);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -652,6 +718,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "predict"))      return cmd_predict(argc - 2, argv + 2);
     if (!strcmp(argv[1], "interest"))     return cmd_interest(argc - 2, argv + 2);
     if (!strcmp(argv[1], "write"))        return cmd_write(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "sleep"))        return cmd_sleep(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

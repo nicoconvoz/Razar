@@ -141,6 +141,21 @@ Built 2026-08-03, from the author's observation that *a mind does not only look 
 - **descent and laterality attack the same symptom from opposite sides** — laterality avoids the cycle when there *are* options; descent finds options when there are *none*. Complementary, not alternatives.
 - **still missing**: backward (needs a reverse edge index) and up (needs a container pointer per fragment). Both cost storage, unlike down.
 
+## Spike 13 — the night is triaged
+
+Built 2026-08-03, from the author's rule: *stuck → option 1; something important
+to affirm → option 2; overstimulated or stressed → option 3, so none is
+discarded.* `make test` → 461 checks. CLI: `./razar sleep [seed]`.
+
+- ⭐ **the organism picks its own dream from the state it woke up in** — three counters kept over the traffic ingestion already produces: strain per step, births per step, steps. Strain over `RZ_OVERWHELMED` → **CALM**; else fertile over `RZ_FERTILE` → **SETTLE**; else **LOOSEN**. Each seeds from a different fragment (deepest rut / newest / lowest merit) and walks at a different temperature (1.6 / 0.2 / 0.8).
+- ⭐ **drowning outranks everything** — you cannot consolidate or explore while most of what arrives cannot be placed. Same shape as the autopsy rule that support falling on its own is the alarm.
+- ⚠️ **the first stress signal was backwards** — "how often the abstract layer had no prediction" made **random bytes look restful** (90.6% called correctly vs 54% on familiar code), because noise is trivial to call in the abstract: every piece looks like every other piece. A signal that ranks noise as easier than structure is not a stress signal.
+- ⚠️ **raw surprise saturates and decides nothing** — `1 - p` sat at 0.96–0.99 for everything. From any fragment there are hundreds of continuations, so even the *right* one carries little probability. It ordered the material correctly but with no usable gap.
+- ⭐ **surprise has to be read against chance from that same place** — `1 - p·degree` floored at zero: "how much worse than a blind guess was it here". Now C source reads 0.42 → 0.29 → 0.20 across three meals, Spanish prose 0.44, a compiled binary 0.45, random bytes 0.65–0.72. **The bar is placed on that evidence: `RZ_OVERWHELMED = 0.55`,** above every real reading, below every structureless one. Under 0.45 it would call ordinary learning an emergency.
+- ⭐ **a dream still writes nothing but attention** — the episode is discarded; only `attention` is marked, which spares from decay and itself fades (`RZ_ATTENTION_KEEP`). Pinned by `a_dream_writes_nothing_but_attention`.
+- **it behaves like something alive without being told to** — fed the same material night after night it keeps asking to SETTLE while it is still building, and on the sixth night, with nothing new left to build, starts asking to LOOSEN.
+- ✅ **no false zeros this time** — every new field (`awake_strain`, `awake_steps`, `awake_births`, `awake_anticipated`, `sleeps_had`, `dreams[]`) was added to `rz_save`/`rz_load` in the same movement. The rule from the three previous persistence bugs held.
+
 ## Next — P15, skills the organism finds for itself
 
 Stated 2026-08-03, explicitly as the next step and explicitly **not to be built yet**. Design in [docs/design/skills.md](docs/design/skills.md).

@@ -107,6 +107,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Clean | `make clean` |
 | Feed the organism | `./razar feed [path...]` (default: `feed/`) |
 | Examine it | `./razar autopsy` |
+| Let it dream | `./razar sleep [seed]` |
 
 Warnings are errors: `-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror`.
 

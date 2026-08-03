@@ -273,9 +273,20 @@ static void mod_catch_up(rz_mind *m, rz_module *M)
         uint8_t sh = shape_of_local(m, M, l);
         double merit = (m->shape_tried[sh] >= RZ_SHAPE_TESTED)
                      ? (double)m->shape_won[sh] / (double)m->shape_tried[sh] : 0.0;
-        /* full merit halves the loss; no merit pays it all */
-        frag_keep[l] = keep + (1.0 - keep) * 0.5 * merit;
+
+        /* Two things earn protection: an idea that transfers, and a mark a
+           dream left behind. Full merit halves the loss; so does full
+           attention. Neither is decreed — one was measured, the other was
+           chosen by the organism while it slept. */
+        double att = (double)M->frag[l].attention / (double)RZ_ATTENTION_MAX;
+        double spare = 0.5 * merit + 0.5 * att;
+        if (spare > 1.0) spare = 1.0;
+        frag_keep[l] = keep + (1.0 - keep) * spare;
         if (frag_keep[l] > 1.0) frag_keep[l] = 1.0;
+
+        /* attention fades too, or everything ends up marked */
+        double a = (double)M->frag[l].attention * pow(RZ_ATTENTION_KEEP, (double)missed);
+        M->frag[l].attention = (uint16_t)a;
     }
 
     for (int32_t l = 0; l < M->nfrags; l++)
@@ -572,6 +583,7 @@ static int32_t frag_birth(rz_mind *m, int32_t a, int32_t b)
 
     if (M->nfrags > m->mod_nfrags[k]) m->mod_nfrags[k] = M->nfrags;
     m->births++;
+    m->awake_births++;
 
     int32_t born = k * RZ_MOD_FRAGS + l;
 
@@ -602,6 +614,43 @@ static int32_t frag_birth(rz_mind *m, int32_t a, int32_t b)
     }
 
     return born;
+}
+
+/* How far off was it? Not raw surprise — from any fragment there are hundreds
+   of continuations, so even the right one carries little probability and raw
+   surprise sits near 1.0 for everything, familiar or not. It has to be read
+   against CHANCE from that same place: how did the probability it had already
+   put on this step compare to knowing nothing at all there?
+
+       p >= 1/degree   it did at least as well as a blind guess   → no strain
+       p == 0          it had ruled this out, and it happened     → full strain
+
+   A place it has no expectation from at all scores 1.0: it could not hook the
+   step onto anything.
+
+   Asked BEFORE the step is recorded, so the answer cannot be manufactured by
+   the step itself. Summed over a meal this is strain — the honest signature of
+   material arriving faster than it can be placed. */
+static double step_strain(rz_mind *m, int32_t from, int32_t actual)
+{
+    int32_t k = id_mod(from), l = id_slot(from);
+    rz_module *M = mod_ensure(m, k);
+    if (!M || l >= M->nfrags) return 1.0;
+
+    uint64_t total = 0, w = 0;
+    uint32_t degree = 0;
+    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
+        if (M->pool[e].weight == 0) continue;
+        total += M->pool[e].weight;
+        degree++;
+        if (M->pool[e].to == actual) w = M->pool[e].weight;
+    }
+    if (total == 0 || degree == 0) return 1.0;
+
+    double p      = (double)w / (double)total;
+    double chance = 1.0 / (double)degree;
+    double strain = 1.0 - p / chance;
+    return strain < 0.0 ? 0.0 : strain;
 }
 
 /* Segment the material into the widest conjunctions already known, then let the
@@ -639,8 +688,18 @@ static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
             int32_t expected = rz_predict_shape(m, sp);
             if (expected >= 0) {
                 m->shape_tried[sp]++;
-                if ((uint8_t)expected == sf) m->shape_won[sp]++;
+                if ((uint8_t)expected == sf) {
+                    m->shape_won[sp]++;
+                    m->awake_anticipated++;
+                }
             }
+
+            /* Not "was the abstract layer right" — noise is easy to call in
+               the abstract, where every piece looks like every other piece, and
+               reading it that way reports noise as restful. What wears it down
+               is how badly the specific step went against what it expected. */
+            m->awake_strain += step_strain(m, prev, f);
+            m->awake_steps++;
 
             m->shape_path[(size_t)sp * RZ_SHAPES + sf]++;
             m->shape_steps++;
@@ -1260,6 +1319,134 @@ void rz_recall_lateral(rz_mind *m,
     recall_frag_ex(m, cue, cue_len, want_atoms, effort_budget, temperature, seed, out);
 }
 
+/* --- dreaming (P14) ------------------------------------------------------- */
+
+rz_dream_kind rz_dream_needed(const rz_mind *m)
+{
+    if (m->awake_steps < RZ_DREAM_MIN_STEPS) return RZ_DREAM_NONE;
+
+    double strain  = m->awake_strain / (double)m->awake_steps;
+    double fertile = (double)m->awake_births / (double)m->awake_steps;
+
+    /* Order matters. You cannot consolidate or explore while drowning, and
+       there is no point loosening something that has not settled yet. */
+    if (strain  > RZ_OVERWHELMED) return RZ_DREAM_CALM;
+    if (fertile > RZ_FERTILE)     return RZ_DREAM_SETTLE;
+    return RZ_DREAM_LOOSEN;
+}
+
+const char *rz_dream_reason(rz_dream_kind k)
+{
+    switch (k) {
+    case RZ_DREAM_NONE:   return "nothing has happened worth sleeping on.";
+    case RZ_DREAM_CALM:   return "it was overwhelmed — too much of what it met was a wall.";
+    case RZ_DREAM_SETTLE: return "it built a lot that has not been exercised yet.";
+    case RZ_DREAM_LOOSEN: return "nothing new and nothing hurting: it is circling.";
+    }
+    return "";
+}
+
+uint16_t rz_attention_of(rz_mind *m, int32_t frag)
+{
+    const rz_frag *f = rz_frag_get(m, frag);
+    return f ? f->attention : 0;
+}
+
+uint64_t rz_attention_total(rz_mind *m)
+{
+    uint64_t total = 0;
+    for (int32_t k = 0; k < RZ_MODULES; k++) {
+        if (m->mod_nfrags[k] <= 1) continue;
+        rz_module *M = mod_ensure(m, k);
+        if (!M) continue;
+        for (int32_t l = 0; l < M->nfrags; l++) total += M->frag[l].attention;
+    }
+    return total;
+}
+
+/* The one thing a dream may write. Not a record of anything that happened. */
+static void mark(rz_mind *m, int32_t frag, uint16_t amount)
+{
+    if (frag < 0 || frag >= RZ_FRAGS) return;
+    int32_t k = id_mod(frag), l = id_slot(frag);
+    rz_module *M = mod_ensure(m, k);
+    if (!M || l >= M->nfrags) return;
+
+    uint32_t a = (uint32_t)M->frag[l].attention + amount;
+    M->frag[l].attention = (uint16_t)(a > RZ_ATTENTION_MAX ? RZ_ATTENTION_MAX : a);
+    M->dirty = 1;
+}
+
+/* Where each dream starts. The state decides the kind; the kind decides where
+   to stand. */
+static int32_t dream_seed_frag(rz_mind *m, rz_dream_kind k)
+{
+    int32_t best = -1;
+    double  score = -1.0;
+
+    for (int32_t mod = 0; mod < RZ_MODULES; mod++) {
+        if (m->mod_nfrags[mod] <= 1) continue;
+        rz_module *M = mod_ensure(m, mod);
+        if (!M) continue;
+
+        for (int32_t l = 1; l < M->nfrags; l++) {
+            int32_t id = mod * RZ_MOD_FRAGS + l;
+            double s;
+            switch (k) {
+            case RZ_DREAM_LOOSEN:
+                s = (double)M->frag[l].seen;                 /* deepest rut */
+                break;
+            case RZ_DREAM_SETTLE:
+                s = (double)l;                               /* newest structure */
+                break;
+            case RZ_DREAM_CALM: {
+                uint8_t sh = shape_of_local(m, M, l);        /* where it is most lost */
+                double merit = m->shape_tried[sh] >= RZ_SHAPE_TESTED
+                             ? (double)m->shape_won[sh] / (double)m->shape_tried[sh] : 0.0;
+                s = (1.0 - merit) * (double)M->frag[l].seen;
+                break;
+            }
+            default:
+                return -1;
+            }
+            if (s > score) { score = s; best = id; }
+        }
+    }
+    return best;
+}
+
+rz_dream_kind rz_sleep(rz_mind *m, uint64_t seed)
+{
+    rz_dream_kind kind = rz_dream_needed(m);
+    if (kind == RZ_DREAM_NONE) return kind;
+
+    int32_t start = dream_seed_frag(m, kind);
+    if (start < 0) { m->awake_steps = 0; return RZ_DREAM_NONE; }
+
+    /* How wildly it wanders is the difference between the three dreams. To
+       loosen, it must deform; to settle, it must stay close; to calm, it must
+       go back over the same ground without being dragged by it. */
+    double temperature = (kind == RZ_DREAM_LOOSEN) ? 1.6
+                       : (kind == RZ_DREAM_SETTLE) ? 0.2 : 0.8;
+
+    unsigned char cue[RZ_FRAG_SPAN];
+    size_t cue_len = rz_expand(m, start, cue, sizeof cue);
+    if (cue_len == 0) { m->awake_steps = 0; return RZ_DREAM_NONE; }
+
+    rz_recall dream;
+    rz_write(m, cue, cue_len, 600, 40000, temperature, seed ? seed : 1, &dream);
+
+    /* The episode never happened and is thrown away. Only the marks survive. */
+    for (uint32_t i = 0; i < dream.trace_len; i++) mark(m, dream.trace[i], 4);
+    mark(m, start, 8);
+
+    m->sleeps_had++;
+    m->dreams[kind]++;
+    m->awake_steps = m->awake_births = m->awake_anticipated = 0;
+    m->awake_strain = 0.0;
+    return kind;
+}
+
 /* --- the pen (P17) -------------------------------------------------------- */
 
 static void trace_push(rz_recall *out, int32_t id)
@@ -1431,7 +1618,15 @@ int rz_save(const rz_mind *m, const char *path)
           && (fwrite(m->shape_path, sizeof m->shape_path, 1, f) == 1)
           && (fwrite(&m->shape_steps, sizeof m->shape_steps, 1, f) == 1)
           && (fwrite(m->shape_tried, sizeof m->shape_tried, 1, f) == 1)
-          && (fwrite(m->shape_won, sizeof m->shape_won, 1, f) == 1);
+          && (fwrite(m->shape_won, sizeof m->shape_won, 1, f) == 1)
+          /* the night, and the sleeping — a field added to the mind is a field
+             added here, in the same movement. Three times it was not. */
+          && (fwrite(&m->awake_steps, sizeof m->awake_steps, 1, f) == 1)
+          && (fwrite(&m->awake_births, sizeof m->awake_births, 1, f) == 1)
+          && (fwrite(&m->awake_strain, sizeof m->awake_strain, 1, f) == 1)
+          && (fwrite(&m->awake_anticipated, sizeof m->awake_anticipated, 1, f) == 1)
+          && (fwrite(&m->sleeps_had, sizeof m->sleeps_had, 1, f) == 1)
+          && (fwrite(m->dreams, sizeof m->dreams, 1, f) == 1);
     if (fclose(f) != 0) ok = 0;
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -1454,6 +1649,8 @@ int rz_load(rz_mind *m, const char *path)
     uint64_t ttrav, tingest, tsteps, tbirths, tfull, tdecay, tshsteps;
     static uint32_t tshape[RZ_SHAPES * RZ_SHAPES];
     static uint32_t ttried[RZ_SHAPES], twon[RZ_SHAPES];
+    uint64_t taw[4], tslept, tdreams[4];
+    double   tstrain;
     int32_t  tnfrags[RZ_MODULES];
 
     int ok = (fread(tpath, sizeof tpath, 1, f) == 1)
@@ -1468,7 +1665,13 @@ int rz_load(rz_mind *m, const char *path)
           && (fread(tshape, sizeof tshape, 1, f) == 1)
           && (fread(&tshsteps, sizeof tshsteps, 1, f) == 1)
           && (fread(ttried, sizeof ttried, 1, f) == 1)
-          && (fread(twon, sizeof twon, 1, f) == 1);
+          && (fread(twon, sizeof twon, 1, f) == 1)
+          && (fread(&taw[0], sizeof taw[0], 1, f) == 1)
+          && (fread(&taw[1], sizeof taw[1], 1, f) == 1)
+          && (fread(&tstrain, sizeof tstrain, 1, f) == 1)
+          && (fread(&taw[3], sizeof taw[3], 1, f) == 1)
+          && (fread(&tslept, sizeof tslept, 1, f) == 1)
+          && (fread(tdreams, sizeof tdreams, 1, f) == 1);
     fclose(f);
     if (!ok) return RZ_ERR_IO;
 
@@ -1491,6 +1694,12 @@ int rz_load(rz_mind *m, const char *path)
     m->shape_steps = tshsteps;
     memcpy(m->shape_tried, ttried, sizeof ttried);
     memcpy(m->shape_won, twon, sizeof twon);
+    m->awake_steps = taw[0];
+    m->awake_births = taw[1];
+    m->awake_strain = tstrain;
+    m->awake_anticipated = taw[3];
+    m->sleeps_had = tslept;
+    memcpy(m->dreams, tdreams, sizeof tdreams);
     return RZ_OK;
 }
 
