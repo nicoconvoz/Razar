@@ -1052,6 +1052,66 @@ void rz_measure(rz_mind *m, const unsigned char *buf, size_t n,
     }
 }
 
+void rz_measure_harmony(rz_mind *m, const unsigned char *buf, size_t n,
+                        rz_harmony *out)
+{
+    out->cost = 0.0;
+    out->unaccounted = 0.0;
+    out->steps = 0;
+
+    if (!buf || n == 0) return;
+
+    uint64_t lost = 0;
+    double cost = 0.0;
+    int32_t prev = -1;
+    size_t i = 0;
+
+    while (i < n) {
+        int32_t f = rz_longest_match(m, buf + i, n - i);
+        if (f < 0) break;
+
+        uint16_t span;
+        {
+            const rz_frag *fg = rz_frag_get(m, f);
+            if (!fg) break;
+            span = fg->span;
+        }
+
+        if (prev >= 0) {
+            /* What the step cost: the effective branching it had to choose
+               among. Logged, so a walk is the sum of its choices rather than
+               the product.
+
+               A step it has NO experience for is not free. Reading it as free
+               made ignorance look cheap and handed the collapse the very
+               shortcut this measure exists to close: a mind that never met the
+               material would win by describing nothing. Unknown material costs
+               what it costs to spell out — the whole alphabet. */
+            double b = rz_frag_branching(m, prev);
+            if (b < 1.0) { lost++; b = (double)RZ_ATOMS; }
+            cost += log(b);
+            out->steps++;
+        }
+
+        prev = f;
+        i += span;
+    }
+
+    /* The TOTAL, not a mean. D39 says describe the same material with LESS,
+       and less is an amount. A mean per step would reward chopping the walk
+       into many cheap steps, which is a different organisation of the same
+       material — exactly the thing being compared. */
+    out->cost = cost;
+    if (out->steps) out->unaccounted = (double)lost / (double)out->steps;
+}
+
+int rz_more_harmonious(const rz_harmony *a, const rz_harmony *b)
+{
+    /* Cheaper is only better if nothing more was dropped to buy it. */
+    if (a->unaccounted > b->unaccounted) return 0;
+    return a->cost < b->cost;
+}
+
 double rz_shape_rescue(const rz_measure_result *r)
 {
     return r->shape_tried ? (double)r->shape_hits / (double)r->shape_tried : 0.0;

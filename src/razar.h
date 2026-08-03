@@ -558,6 +558,38 @@ double rz_hit_rate(const rz_measure_result *r);
 /* Mean surprise per prediction, 0..1. */
 double rz_mean_surprise(const rz_measure_result *r);
 
+/* --- harmony (P25) --------------------------------------------------------
+ *
+ * The referee. Not "is this harmonious" — always "did this become MORE
+ * harmonious", because harmony is a direction and the process never finishes.
+ *
+ * D39: describing the SAME material with LESS, while still accounting for ALL
+ * of it. Two numbers, and the second is what makes the first safe.
+ *
+ *   effort       the cost of walking the material — the order it has found
+ *   unaccounted  the share of steps it could not hook onto anything
+ *
+ * Effort alone would crown a collapse: one path, no branching, no doubt, and no
+ * contact with the material either. That shortcut is what left D24 open since
+ * P15 was designed. It closes here, because a mind that never met the material
+ * cannot account for it, and the second number refuses it.
+ *
+ * Like the external bar, this LEARNS NOTHING. A referee that trains what it
+ * judges is not a referee.
+ */
+typedef struct {
+    double   cost;         /* TOTAL nats to describe the material, not a mean */
+    double   unaccounted;  /* 0..1 — steps with no experience to hook onto */
+    uint64_t steps;
+} rz_harmony;
+
+void rz_measure_harmony(rz_mind *m, const unsigned char *buf, size_t n,
+                        rz_harmony *out);
+
+/* Better means cheaper WITHOUT having dropped more of the material. Both, or it
+   is not an order found. */
+int rz_more_harmonious(const rz_harmony *a, const rz_harmony *b);
+
 /* --- other directions -----------------------------------------------------
  *
  * A mind does not only look backwards and forwards. The memory holds more than

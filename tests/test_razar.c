@@ -1870,6 +1870,88 @@ static void set_night(rz_mind *m, uint64_t steps, uint64_t births, double strain
 
 /* --- what it was given versus what it took ------------------------------- */
 
+/* --- harmony (P25): the referee -------------------------------------------
+ *
+ * D39: harmony is describing the SAME material with LESS, while still
+ * accounting for ALL of it. Two numbers, and the second one is what makes the
+ * first one safe.
+ */
+
+TEST(harmony_is_measured_and_never_taught)
+{
+    /* Same discipline as the external bar. A referee that trains what it judges
+       is not a referee. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 20; i++) feed(m, "the cat sat on the mat. ");
+
+    uint32_t frags_before = rz_frag_count(m);
+    uint64_t steps_before = m->frag_steps;
+
+    rz_harmony h;
+    rz_measure_harmony(m, (const unsigned char *)"the dog ran fast. ", 18, &h);
+
+    CHECK_EQ_U(rz_frag_count(m), frags_before);
+    CHECK_EQ_U(m->frag_steps, steps_before);
+}
+
+TEST(finding_the_order_in_something_lowers_its_cost)
+{
+    /* The first half of D39. The same material, walked at less effort, is the
+       operational meaning of "it found a better order for this". */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *raw = fresh();
+    rz_mind *versed = fresh();
+    feed(raw, "unrelated filler material. ");
+    for (int i = 0; i < 200; i++) feed(versed, lived);
+
+    rz_harmony a, b;
+    rz_measure_harmony(raw, (const unsigned char *)lived, strlen(lived), &a);
+    rz_measure_harmony(versed, (const unsigned char *)lived, strlen(lived), &b);
+
+    CHECK(b.cost < a.cost);
+}
+
+TEST(discarding_the_material_is_not_harmony)
+{
+    /* THE guard, and the reason D24 sat open since P15 was designed.
+
+       An obsessed mind is cheap to walk: one path, no branching, no doubt. On
+       effort alone it wins everything, which is why "minimise effort" selects
+       for collapse. It is not describing its material with less — it never met
+       that material at all, and cannot account for it.
+
+       So the referee must refuse it, and refuse it on the second number. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+
+    rz_mind *obsessed = fresh();
+    for (int i = 0; i < 300; i++) feed(obsessed, "rararararararararara");
+
+    rz_mind *versed = fresh();
+    for (int i = 0; i < 200; i++) feed(versed, lived);
+
+    rz_harmony o, v;
+    rz_measure_harmony(obsessed, (const unsigned char *)lived, strlen(lived), &o);
+    rz_measure_harmony(versed,   (const unsigned char *)lived, strlen(lived), &v);
+
+    CHECK(o.unaccounted > v.unaccounted);
+
+    /* And this is the closure of D24, asserted directly so it cannot pass for
+       the wrong reason: the collapse is not merely refused, it is EXPENSIVE.
+       Measured on this material — obsessed 18963.09 against versed 13.41, more
+       than a thousandfold. Not knowing costs the whole alphabet, so a mind that
+       bought cheapness by never meeting the material cannot come out ahead.
+
+       Two earlier readings of this same measure were wrong and both handed the
+       shortcut back: a mean per step rewards chopping the walk into many cheap
+       steps, and charging nothing for an unaccounted step makes ignorance free. */
+    CHECK(o.cost > v.cost);
+    CHECK(!rz_more_harmonious(&o, &v));
+    CHECK(rz_more_harmonious(&v, &o));
+}
+
 TEST(a_path_it_was_given_is_not_a_path_it_took)
 {
     /* A newborn inherits its parent's exits so it is not a dead end. Those
@@ -2204,6 +2286,9 @@ int main(void)
     RUN(fragment_recall_leaves_the_mind_alone);
     RUN(fragments_recall_what_atoms_could_not);
     RUN(composition_can_swallow_a_branch_whole);
+    RUN(harmony_is_measured_and_never_taught);
+    RUN(finding_the_order_in_something_lowers_its_cost);
+    RUN(discarding_the_material_is_not_harmony);
     RUN(a_path_it_was_given_is_not_a_path_it_took);
     RUN(forgetting_leaves_a_guess_alone);
     RUN(a_shape_is_read_from_what_it_walked);
