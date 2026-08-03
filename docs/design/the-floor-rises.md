@@ -70,11 +70,30 @@ right principle and not a convenience.
 
 ## 5. Open
 
-- **D47** — when does a level become solid enough to be treated as the floor?
-  Words are not a level until the organism has actually found them; declaring the
-  level in advance is the thing this project refuses to do. So the floor must
-  rise **by evidence** — presumably when the units at that level stop paying for
-  further decomposition under harmony (D39).
+### D47 — answered (author, 2026-08-03)
+
+> *"Cuando en ese nivel hay muchos núcleos estables de palabras, o de unidades
+> más grandes en caso de ser un fragmento mayor."*
+
+The implementable core is **stable**, not **many**. A count would be a declared
+number, and declaring numbers is the one thing this project does not get to do.
+What can be read without declaring anything is whether the level has **stopped
+moving**: new material arrives and the units at that level are no longer re-cut,
+no longer abandoned, no longer replaced.
+
+So the floor rises on a derivative — the same shape as everything that worked
+today. The heartbeat is a rise rather than a level. Harmony is a direction
+rather than a state. And a level becomes the floor when its churn falls to
+nothing, not when its population reaches a number.
+
+A unit is a stable nucleus when it keeps paying for itself as unfamiliar
+material arrives. Churn is units being adopted and then abandoned. When churn
+stops across a stretch of new material, that level has settled and may be stood
+on.
+
+**The floor is never declared solid. It is observed to have stopped moving.**
+
+### Still open
 - **D48** — a raised floor is a claim that can be wrong. If the unit layer turns
   out to be badly cut, everything above it inherits the error and the descent is
   the only way back. What tells the organism to lower the floor again?
