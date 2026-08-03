@@ -1087,29 +1087,46 @@ static const uint8_t SENSE_RANGE[RZ_WHAT_COUNT] = {
     1,           /* MARKED  — a yes/no question */
 };
 
-rz_sense rz_sense_draw(uint64_t seed)
+/* Which shapes anybody actually carries. Drawing a sense that asks about a
+   class nobody occupies is drawing a sense born dead, and with 64 classes and
+   ~28 occupied that was half the draws. The vocabulary of a sense has to be the
+   vocabulary of the organism. */
+static uint8_t sense_pick_shape(rz_mind *m, uint64_t *r)
+{
+    uint8_t live[RZ_SHAPES];
+    uint8_t n = 0;
+    for (uint8_t sh = 0; sh < RZ_SHAPES && n < RZ_SHAPES; sh++)
+        if (rz_shape_members(m, sh) > 0) live[n++] = sh;
+    if (n == 0) return (uint8_t)(xorshift(r) % RZ_SHAPES);
+    return live[xorshift(r) % n];
+}
+
+rz_sense rz_sense_draw(rz_mind *m, uint64_t seed)
 {
     uint64_t r = seed ? seed : 1;
     rz_sense s;
     s.what   = (uint8_t)(xorshift(&r) % RZ_WHAT_COUNT);
-    s.value  = (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
+    s.value  = (s.what == RZ_WHAT_SHAPE) ? sense_pick_shape(m, &r)
+                                         : (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
     s.dir    = (uint8_t)(xorshift(&r) % RZ_DIR_COUNT);
     s.radius = (uint8_t)(1 + xorshift(&r) % RZ_SENSE_RADIUS);
+    s.src    = 0;
     return s;
 }
 
-rz_sense rz_sense_mutate(const rz_sense *parent, uint64_t seed)
+rz_sense rz_sense_mutate(rz_mind *m, const rz_sense *parent, uint64_t seed)
 {
     uint64_t r = seed ? seed : 1;
     rz_sense s = *parent;
-    /* one slot, so a lineage drifts rather than restarting */
-    switch (xorshift(&r) % 4) {
+    switch (xorshift(&r) % 5) {
     case 0:
         s.what = (uint8_t)((parent->what + 1 + xorshift(&r) % (RZ_WHAT_COUNT - 1))
                            % RZ_WHAT_COUNT);
-        s.value = (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
+        s.value = (s.what == RZ_WHAT_SHAPE) ? sense_pick_shape(m, &r)
+                                            : (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
         break;
     case 1: {
+        if (s.what == RZ_WHAT_SHAPE) { s.value = sense_pick_shape(m, &r); break; }
         uint8_t n = SENSE_RANGE[s.what];
         s.value = (uint8_t)(n > 1 ? (parent->value + 1 + xorshift(&r) % (n - 1)) % n
                                   : parent->value);
@@ -1119,8 +1136,16 @@ rz_sense rz_sense_mutate(const rz_sense *parent, uint64_t seed)
     case 2:
         s.dir = (uint8_t)((parent->dir + 1) % RZ_DIR_COUNT);
         break;
-    default:
+    case 3:
         s.radius = (uint8_t)(1 + (parent->radius % RZ_SENSE_RADIUS));
+        break;
+    default:
+        /* build on another sense, if there is one to build on. This is the
+           mutation that makes the stack possible at all. */
+        if (m->nsenses > 0)
+            s.src = (uint8_t)(1 + xorshift(&r) % (uint64_t)m->nsenses);
+        else
+            s.radius = (uint8_t)(1 + (parent->radius % RZ_SENSE_RADIUS));
         break;
     }
     return s;
@@ -1139,6 +1164,7 @@ uint32_t rz_sense_distance(const rz_sense *a, const rz_sense *b)
     else if (a->value != b->value) d++;   /* value belongs to what: one change */
     if (a->dir != b->dir) d++;
     if (a->radius != b->radius) d++;
+    if (a->src != b->src) d++;
     return d;
 }
 
@@ -1163,7 +1189,12 @@ uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here)
 {
     if (here < 0 || here >= RZ_FRAGS) return 0;
 
-    int32_t front[64], next[64];
+    /* A sense looks at a BOUNDED neighbourhood. The reference gene counts
+       pieces on a board of 64 squares; here the fan-out is the whole graph, so
+       with radius 3 and 32 ways out of each place a single reading was touching
+       tens of thousands of nodes. A sense that costs more than the organism is
+       not a sense. */
+    int32_t front[24], next[24];
     int32_t nf = 0;
     front[nf++] = here;
     uint32_t count = 0;
@@ -1181,14 +1212,14 @@ uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here)
                 for (int k = 0; k < 2; k++) {
                     if (kids[k] < 0) continue;
                     if (sense_holds(m, s, kids[k])) count++;
-                    if (nn < 64) next[nn++] = kids[k];
+                    if (nn < 24) next[nn++] = kids[k];
                 }
             } else {
                 int32_t tos[32];
-                int32_t nt = rz_frag_edges(m, cur, tos, 32);
+                int32_t nt = rz_frag_edges(m, cur, tos, 12);
                 for (int32_t k = 0; k < nt; k++) {
                     if (sense_holds(m, s, tos[k])) count++;
-                    if (nn < 64) next[nn++] = tos[k];
+                    if (nn < 24) next[nn++] = tos[k];
                 }
             }
         }
@@ -1196,6 +1227,205 @@ uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here)
         nf = nn;
     }
     return count;
+}
+
+/* --- what a sense is worth, and the life of a population ------------------ */
+
+#define SENSE_BUCKETS 6
+
+static uint32_t sense_bucket(uint32_t v)
+{
+    /* the reading, coarsened. A sense is worth something for the DISTINCTIONS it
+       draws, not for the exact number it happens to land on. */
+    if (v == 0) return 0;
+    if (v == 1) return 1;
+    if (v <= 3) return 2;
+    if (v <= 7) return 3;
+    if (v <= 20) return 4;
+    return 5;
+}
+
+/* Reading a sense that stands on another sense. Composition is this one branch:
+   what it counts is places where the sense below it reads above a bar. The
+   output of one becomes the material of the next, which is the only reason a
+   population of senses is more than a list of detectors. */
+static uint32_t sense_read_at(rz_mind *m, const rz_sense *s, int32_t here, int depth)
+{
+    if (s->src == 0 || depth > 2) return rz_sense_read(m, s, here);
+    int32_t i = (int32_t)s->src - 1;
+    if (i < 0 || i >= m->nsenses) return rz_sense_read(m, s, here);
+
+    int32_t tos[12];
+    int32_t nt = rz_frag_edges(m, here, tos, 12);
+    uint32_t count = 0;
+    for (int32_t k = 0; k < nt; k++)
+        if (sense_read_at(m, &m->senses[i], tos[k], depth + 1) > s->value) count++;
+    return count;
+}
+
+double rz_sense_worth(rz_mind *m, const rz_sense *s,
+                      const unsigned char *buf, size_t n)
+{
+    /* How much does knowing this sense's reading tell the organism about what is
+       coming next? Information, in nats, measured over material. It learns
+       nothing while being asked -- the same discipline as the external bar. */
+    static uint32_t joint[SENSE_BUCKETS][RZ_SHAPES];
+    static uint32_t rowc[SENSE_BUCKETS], colc[RZ_SHAPES];
+    memset(joint, 0, sizeof joint);
+    memset(rowc, 0, sizeof rowc);
+    memset(colc, 0, sizeof colc);
+
+    uint64_t total = 0;
+    int32_t prev = -1;
+    size_t i = 0;
+    while (i < n) {
+        int32_t f = rz_longest_match(m, buf + i, n - i);
+        if (f < 0) break;
+        const rz_frag *fg = rz_frag_get(m, f);
+        if (!fg) break;
+        uint16_t span = fg->span;
+        if (prev >= 0) {
+            uint32_t b = sense_bucket(sense_read_at(m, s, prev, 0));
+            uint8_t sh = rz_shape_of(m, f);
+            if (b < SENSE_BUCKETS && sh < RZ_SHAPES) {
+                joint[b][sh]++;
+                rowc[b]++;
+                colc[sh]++;
+                total++;
+            }
+        }
+        prev = f;
+        i += span;
+    }
+    if (total < 32) return 0.0;
+
+    double info = 0.0;
+    for (uint32_t b = 0; b < SENSE_BUCKETS; b++) {
+        if (!rowc[b]) continue;
+        for (uint32_t sh = 0; sh < RZ_SHAPES; sh++) {
+            if (!joint[b][sh]) continue;
+            double pxy = (double)joint[b][sh] / (double)total;
+            double px = (double)rowc[b] / (double)total;
+            double py = (double)colc[sh] / (double)total;
+            info += pxy * log(pxy / (px * py));
+        }
+    }
+    return info < 0.0 ? 0.0 : info;
+}
+
+int32_t rz_senses_count(const rz_mind *m) { return m->nsenses; }
+
+const rz_sense *rz_sense_at(const rz_mind *m, int32_t i)
+{
+    return (i >= 0 && i < m->nsenses) ? &m->senses[i] : NULL;
+}
+
+double rz_sense_score(const rz_mind *m, int32_t i)
+{
+    return (i >= 0 && i < m->nsenses) ? m->sense_worth[i] : 0.0;
+}
+
+void rz_sense_describe(const rz_mind *m, int32_t i, char *out, size_t cap)
+{
+    static const char *WHAT[] = { "shape", "wider than", "busier than",
+                                  "forked more than", "given not taken", "marked" };
+    if (i < 0 || i >= m->nsenses || cap == 0) { if (cap) out[0] = 0; return; }
+    const rz_sense *s = &m->senses[i];
+    if (s->src)
+        snprintf(out, cap, "where #%u reads over %u, %s within %u",
+                 (unsigned)s->src - 1u, (unsigned)s->value,
+                 s->dir == RZ_DIR_DOWN ? "downward" : "ahead", (unsigned)s->radius);
+    else
+        snprintf(out, cap, "%s %u, %s within %u",
+                 WHAT[s->what % RZ_WHAT_COUNT], (unsigned)s->value,
+                 s->dir == RZ_DIR_DOWN ? "downward" : "ahead", (unsigned)s->radius);
+}
+
+/* What this sense adds BEYOND the ones already held. A sense that repeats what a
+   near neighbour already says is occupying a slot for nothing -- and that, not
+   uselessness, is the only thing worth pruning for. */
+#define SENSE_BIRTH_GATE   0.0000   /* born unless it says literally nothing */
+#define SENSE_PRUNE_GATE   0.0005   /* dropped only if a neighbour already says it */
+#define SENSE_SWAP_GATE    1.5      /* replaced only if clearly better */
+
+static int sense_is_redundant(rz_mind *m, int32_t idx)
+{
+    /* Redundant means ANOTHER sense already says what this one says. Weak does
+       NOT mean redundant, and the difference is the whole design: an earlier
+       version returned the sense own worth when it had no neighbour, so a quiet
+       sense with nothing like it was dropped for being quiet -- pruning for
+       usefulness, the exact thing this gate exists to prevent. With no near
+       neighbour there is nothing to be redundant WITH, so it stays. */
+    double mine = m->sense_worth[idx];
+    for (int32_t j = 0; j < m->nsenses; j++) {
+        if (j == idx) continue;
+        /* Only an EXACT twin counts. Distance 1 is how a newborn always
+           relates to its parent, so treating that as sameness made every birth
+           redundant by construction -- and the pool could never fill. The
+           reference organism keeps a deliberately enormous cold pool; the
+           hot/cold split is what makes holding them affordable, not pruning. */
+        if (rz_sense_same(&m->senses[idx], &m->senses[j])
+            && m->sense_worth[j] >= mine - SENSE_PRUNE_GATE)
+            return 1;
+    }
+    return 0;
+}
+
+/* The gates, asymmetric on purpose, taken from the reference organism: born
+   easily, pruned only when it actively costs something, replaced only by a
+   clearly better challenger -- and a merely NEUTRAL sense is kept.
+   Keeping the neutral ones is the whole point. A sense that says little today is
+   what another sense is built from tomorrow, and an organism that prunes for
+   usefulness starves its own composition. */
+
+void rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t seed)
+{
+    uint64_t r = seed ? seed : 1;
+
+    for (int32_t i = 0; i < m->nsenses; i++)
+        m->sense_worth[i] = rz_sense_worth(m, &m->senses[i], buf, n);
+
+    /* --- a newborn, as a divergent copy of one it already holds --- */
+    if (m->nsenses < RZ_SENSES) {
+        rz_sense baby;
+        if (m->nsenses == 0) {
+            baby = rz_sense_draw(m, xorshift(&r));
+        } else {
+            int32_t parent = (int32_t)(xorshift(&r) % (uint64_t)m->nsenses);
+            baby = rz_sense_mutate(m, &m->senses[parent], xorshift(&r));
+        }
+        double w = rz_sense_worth(m, &baby, buf, n);
+        if (w > SENSE_BIRTH_GATE) {
+            m->senses[m->nsenses] = baby;
+            m->sense_worth[m->nsenses] = w;
+            m->nsenses++;
+            m->senses_born++;
+        }
+    }
+
+    if (m->nsenses < 3) return;
+
+    /* --- and an audit of one old one, chosen at random --- */
+    int32_t victim = (int32_t)(xorshift(&r) % (uint64_t)m->nsenses);
+    if (xorshift(&r) % 100 < 55) {
+        if (sense_is_redundant(m, victim)) {
+            for (int32_t j = victim; j + 1 < m->nsenses; j++) {
+                m->senses[j] = m->senses[j + 1];
+                m->sense_worth[j] = m->sense_worth[j + 1];
+            }
+            m->nsenses--;
+            m->senses_pruned++;
+        } else {
+            m->senses_kept_neutral++;   /* it says little, and it stays */
+        }
+    } else {
+        rz_sense chal = rz_sense_mutate(m, &m->senses[victim], xorshift(&r));
+        double w = rz_sense_worth(m, &chal, buf, n);
+        if (w > m->sense_worth[victim] * SENSE_SWAP_GATE) {
+            m->senses[victim] = chal;
+            m->sense_worth[victim] = w;
+        }
+    }
 }
 
 void rz_measure_harmony(rz_mind *m, const unsigned char *buf, size_t n,

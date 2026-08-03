@@ -1888,9 +1888,10 @@ TEST(a_sense_is_drawn_not_written)
 
        Everything found by hand today -- the beat, the roles, root+suffix -- was
        a detector an author wrote. That is the opposite of a faculty. */
-    rz_sense a = rz_sense_draw(1);
-    rz_sense b = rz_sense_draw(1);
-    rz_sense c = rz_sense_draw(99);
+    rz_mind *m0 = fresh();
+    rz_sense a = rz_sense_draw(m0, 1);
+    rz_sense b = rz_sense_draw(m0, 1);
+    rz_sense c = rz_sense_draw(m0, 99);
 
     CHECK(rz_sense_same(&a, &b));      /* same draw, same sense */
     CHECK(!rz_sense_same(&a, &c));     /* another draw, another sense */
@@ -1900,8 +1901,9 @@ TEST(a_newborn_sense_is_a_divergent_copy)
 {
     /* It is born by mutating one that already exists, in ONE place. A sense
        drawn wholly at random each time would never accumulate anything. */
-    rz_sense parent = rz_sense_draw(7);
-    rz_sense child  = rz_sense_mutate(&parent, 3);
+    rz_mind *m0 = fresh();
+    rz_sense parent = rz_sense_draw(m0, 7);
+    rz_sense child  = rz_sense_mutate(m0, &parent, 3);
 
     CHECK(!rz_sense_same(&parent, &child));
     CHECK_EQ_U(rz_sense_distance(&parent, &child), 1u);
@@ -1926,7 +1928,7 @@ TEST(the_template_is_not_degenerate)
     uint32_t seen_values[64];
     uint32_t nvalues = 0;
     for (uint64_t s = 1; s <= 64; s++) {
-        rz_sense g = rz_sense_draw(s);
+        rz_sense g = rz_sense_draw(m, s);
         uint32_t v = rz_sense_read(m, &g, here);
         uint32_t known = 0;
         for (uint32_t k = 0; k < nvalues; k++)
@@ -1953,10 +1955,74 @@ TEST(a_sense_reads_the_place_it_stands_on)
 
     int differed = 0;
     for (uint64_t s = 1; s <= 40; s++) {
-        rz_sense g = rz_sense_draw(s);
+        rz_sense g = rz_sense_draw(m, s);
         if (rz_sense_read(m, &g, a) != rz_sense_read(m, &g, z)) { differed = 1; break; }
     }
     CHECK(differed);
+}
+
+TEST(a_neutral_sense_is_kept_so_there_is_something_to_build_from)
+{
+    /* THE rule, and the one that nearly went the other way.
+
+       The referee built earlier says a piece earns its place only if it pays for
+       itself. That is right for units and lethal for senses: a neutral sense
+       would be deleted the moment it appeared, nothing would ever accumulate,
+       and there would be no material left to compose. The reference organism
+       had already solved it -- prune only what ACTIVELY costs, keep the neutral
+       ones, let them pile up. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, lived);
+
+    for (int round = 0; round < 60; round++)
+        rz_senses_live(m, (const unsigned char *)lived, strlen(lived),
+                       (uint64_t)(round * 7 + 1));
+
+    CHECK(rz_senses_count(m) > 3);
+    CHECK(m->senses_born > 0u);
+    /* senses that say little were met and left alone */
+    CHECK(m->senses_kept_neutral > 0u);
+    /* and they were not all wiped out to make room */
+    CHECK(m->senses_pruned < m->senses_born);
+}
+
+TEST(a_sense_can_be_built_on_another_sense)
+{
+    /* Without this a population of senses is a list of detectors. With it, the
+       output of one is the material of the next, and the stack can rise. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, lived);
+    for (int round = 0; round < 80; round++)
+        rz_senses_live(m, (const unsigned char *)lived, strlen(lived),
+                       (uint64_t)(round * 13 + 3));
+
+    int stacked = 0;
+    for (int32_t i = 0; i < rz_senses_count(m); i++) {
+        const rz_sense *s = rz_sense_at(m, i);
+        if (s && s->src) { stacked = 1; break; }
+    }
+    CHECK(stacked);
+}
+
+TEST(what_a_sense_is_worth_is_measured_and_never_taught)
+{
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, lived);
+
+    uint32_t frags = rz_frag_count(m);
+    uint64_t steps = m->frag_steps;
+    rz_sense g = rz_sense_draw(m, 5);
+    double w = rz_sense_worth(m, &g, (const unsigned char *)lived, strlen(lived));
+
+    CHECK(w >= 0.0);
+    CHECK_EQ_U(rz_frag_count(m), frags);
+    CHECK_EQ_U(m->frag_steps, steps);
 }
 
 TEST(harmony_is_measured_and_never_taught)
@@ -2372,6 +2438,9 @@ int main(void)
     RUN(a_newborn_sense_is_a_divergent_copy);
     RUN(the_template_is_not_degenerate);
     RUN(a_sense_reads_the_place_it_stands_on);
+    RUN(a_neutral_sense_is_kept_so_there_is_something_to_build_from);
+    RUN(a_sense_can_be_built_on_another_sense);
+    RUN(what_a_sense_is_worth_is_measured_and_never_taught);
     RUN(harmony_is_measured_and_never_taught);
     RUN(finding_the_order_in_something_lowers_its_cost);
     RUN(discarding_the_material_is_not_harmony);

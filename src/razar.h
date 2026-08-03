@@ -89,6 +89,59 @@ typedef struct {
     uint64_t decayed_at;           /* the pass this module last caught up to */
 } rz_module;
 
+/* --- senses (P30): drawn, not written -------------------------------------
+ *
+ * The reference organism never invents a sense. It fills a template from a
+ * small vocabulary and lets the draw decide:
+ *
+ *     count pieces of type T of side S within radius R of reference F, when C
+ *
+ * Out of that comes "enemies near my king", "my pawns near the enemy king",
+ * "knights in the centre" — with nobody having written any of those ideas.
+ *
+ * Everything found by hand in this project so far was a detector an author
+ * wrote, one per idea. That is not a faculty. This is the template Razar draws
+ * from instead:
+ *
+ *     count fragments WHERE <what> reachable in <direction> within <radius>
+ *
+ * `what` is asked of the fragment it lands on, and every question in the
+ * vocabulary is one the organism can already answer about itself. Nothing here
+ * knows what a word is, or a verb, or a boundary.
+ */
+typedef enum {
+    RZ_WHAT_SHAPE,      /* carries this shape class */
+    RZ_WHAT_WIDER,      /* spans more than this many atoms */
+    RZ_WHAT_BUSIER,     /* has been walked more than this often */
+    RZ_WHAT_FORKED,     /* has more walked ways out than this */
+    RZ_WHAT_GUESSED,    /* is reached by a path it was given, never took */
+    RZ_WHAT_MARKED,     /* carries attention a dream left behind */
+    RZ_WHAT_COUNT
+} rz_what;
+
+typedef enum {
+    RZ_DIR_FORWARD,     /* what follows from here */
+    RZ_DIR_DOWN,        /* what this is made of */
+    RZ_DIR_COUNT
+} rz_dir;
+
+#define RZ_SENSE_RADIUS 3       /* how far a sense may look. Small on purpose */
+
+typedef struct {
+    uint8_t  what;      /* which question, from RZ_WHAT_* */
+    uint8_t  value;     /* the answer it is looking for */
+    uint8_t  dir;       /* which way it looks */
+    uint8_t  radius;    /* 1..RZ_SENSE_RADIUS */
+    /* A sense whose input is another sense. This one slot is what turns a list
+       of detectors into a faculty: the output of one becomes the material of
+       the next, and senses can be built on senses. 0 = reads the world raw. */
+    uint8_t  src;
+} rz_sense;
+
+#define RZ_SENSES      64      /* how many it may hold at once */
+#define RZ_SENSE_HOT    8      /* how many are awake for any one reading */
+
+
 typedef struct {
     /* the atomic base — fixed, bounded, never sleeps */
     uint32_t path[RZ_PATHS];        /* traversal count per ordered atom pair */
@@ -131,6 +184,12 @@ typedef struct {
     uint64_t awake_births;
     double   awake_strain;       /* how far off it was, summed over the night */
     uint64_t awake_anticipated;  /* steps its own ideas called correctly */
+    /* the senses it has grown, and what each is worth */
+    rz_sense senses[RZ_SENSES];
+    double   sense_worth[RZ_SENSES];
+    int32_t  nsenses;
+    uint64_t senses_born, senses_pruned, senses_kept_neutral;
+
     uint64_t sleeps_had;
     uint64_t dreams[4];          /* how many of each kind it has had */
 
@@ -562,56 +621,35 @@ double rz_hit_rate(const rz_measure_result *r);
 /* Mean surprise per prediction, 0..1. */
 double rz_mean_surprise(const rz_measure_result *r);
 
-/* --- senses (P30): drawn, not written -------------------------------------
- *
- * The reference organism never invents a sense. It fills a template from a
- * small vocabulary and lets the draw decide:
- *
- *     count pieces of type T of side S within radius R of reference F, when C
- *
- * Out of that comes "enemies near my king", "my pawns near the enemy king",
- * "knights in the centre" — with nobody having written any of those ideas.
- *
- * Everything found by hand in this project so far was a detector an author
- * wrote, one per idea. That is not a faculty. This is the template Razar draws
- * from instead:
- *
- *     count fragments WHERE <what> reachable in <direction> within <radius>
- *
- * `what` is asked of the fragment it lands on, and every question in the
- * vocabulary is one the organism can already answer about itself. Nothing here
- * knows what a word is, or a verb, or a boundary.
- */
-typedef enum {
-    RZ_WHAT_SHAPE,      /* carries this shape class */
-    RZ_WHAT_WIDER,      /* spans more than this many atoms */
-    RZ_WHAT_BUSIER,     /* has been walked more than this often */
-    RZ_WHAT_FORKED,     /* has more walked ways out than this */
-    RZ_WHAT_GUESSED,    /* is reached by a path it was given, never took */
-    RZ_WHAT_MARKED,     /* carries attention a dream left behind */
-    RZ_WHAT_COUNT
-} rz_what;
 
-typedef enum {
-    RZ_DIR_FORWARD,     /* what follows from here */
-    RZ_DIR_DOWN,        /* what this is made of */
-    RZ_DIR_COUNT
-} rz_dir;
 
-#define RZ_SENSE_RADIUS 3       /* how far a sense may look. Small on purpose */
+/* What a sense is worth: how much it tells the organism about what comes next.
+   Not an opinion — the information its reading carries about the next step,
+   in nats, measured on material and never taught. */
+double rz_sense_worth(rz_mind *m, const rz_sense *s,
+                      const unsigned char *buf, size_t n);
 
-typedef struct {
-    uint8_t  what;      /* which question, from RZ_WHAT_* */
-    uint8_t  value;     /* the answer it is looking for */
-    uint8_t  dir;       /* which way it looks */
-    uint8_t  radius;    /* 1..RZ_SENSE_RADIUS */
-} rz_sense;
+/* One round of living: score what it holds, let a newborn in, and audit an old
+   one. The gates are deliberately asymmetric — a sense is born easily, kept
+   when it is merely neutral, and dropped only when it adds nothing at all that
+   another sense was not already giving.
+
+   Keeping the neutral ones is the whole point. A sense that says little today
+   is the material another sense is built from tomorrow, and an organism that
+   prunes for usefulness starves its own composition. */
+void   rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t seed);
+int32_t rz_senses_count(const rz_mind *m);
+const rz_sense *rz_sense_at(const rz_mind *m, int32_t i);
+double  rz_sense_score(const rz_mind *m, int32_t i);
+void    rz_sense_describe(const rz_mind *m, int32_t i, char *out, size_t cap);
 
 /* Drawn from a seed. The same seed is the same sense — a draw, not a roll. */
-rz_sense rz_sense_draw(uint64_t seed);
+/* Drawn to fit the organism it belongs to: a sense that asks about a shape
+   nobody carries is born dead, and half the draws were being wasted that way. */
+rz_sense rz_sense_draw(rz_mind *m, uint64_t seed);
 /* A newborn is a divergent copy: it differs in exactly one slot. Drawing wholly
    at random every time would accumulate nothing. */
-rz_sense rz_sense_mutate(const rz_sense *parent, uint64_t seed);
+rz_sense rz_sense_mutate(rz_mind *m, const rz_sense *parent, uint64_t seed);
 int      rz_sense_same(const rz_sense *a, const rz_sense *b);
 uint32_t rz_sense_distance(const rz_sense *a, const rz_sense *b);
 /* What it sees from where it stands. Learns nothing. */

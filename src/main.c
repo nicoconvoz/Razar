@@ -701,6 +701,100 @@ static int cmd_sleep(int argc, char **argv)
     return 0;
 }
 
+/* --- senses ---------------------------------------------------------------
+ *
+ * Watch it grow its own ways of looking. Nothing here names a single one of
+ * them: each is drawn from a template, born by mutating one it already holds,
+ * and kept or dropped by what it turns out to be worth.
+ */
+static int cmd_senses(int argc, char **argv)
+{
+    int rounds = (argc > 0) ? atoi(argv[0]) : 120;
+    if (rounds < 1) rounds = 1;
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m) { fprintf(stderr, "out of memory\n"); return 1; }
+    rz_init(m);
+    MKDIR(NEST);
+    rz_set_nest(m, MODULES);
+    if (rz_load(m, MIND_PATH) != RZ_OK) {
+        fprintf(stderr, "nothing remembered yet. Feed it first.\n");
+        free(m);
+        return 1;
+    }
+
+    /* a slice is enough to score a sense: it is measuring information, not
+       reading the library. Scoring every sense over every byte, every round,
+       made the faculty cost more than the organism. */
+    static unsigned char buf[6000];
+    size_t n = 0;
+    {
+        FILE *f = fopen(FEED_DIR "/organismo.c", "rb");
+        if (!f) f = fopen(FEED_DIR "/nuevo-testamento.txt", "rb");
+        if (f) { n = fread(buf, 1, sizeof buf, f); fclose(f); }
+    }
+    if (n == 0) {
+        fprintf(stderr, "no material in %s/\n", FEED_DIR);
+        free(m);
+        return 1;
+    }
+
+    printf("\n=== RAZAR GROWS ITS OWN WAYS OF LOOKING ===\n\n");
+    printf("  material %zu bytes, %d rounds\n\n", n, rounds);
+    printf("  %6s %7s %7s %8s %7s   %s\n",
+           "round", "held", "born", "pruned", "kept", "the newest way of looking");
+
+    for (int r = 0; r < rounds; r++) {
+        rz_senses_live(m, buf, n, (uint64_t)r * 2654435761u + 1u);
+        if (r % 5 == 4 || r == rounds - 1) {
+            char what[160];
+            rz_sense_describe(m, rz_senses_count(m) - 1, what, sizeof what);
+            printf("  %6d %7d %7llu %8llu %7llu   %s\n", r + 1,
+                   rz_senses_count(m),
+                   (unsigned long long)m->senses_born,
+                   (unsigned long long)m->senses_pruned,
+                   (unsigned long long)m->senses_kept_neutral, what);
+        }
+    }
+
+    printf("\n  -- what it ended up looking for, best first --\n");
+    int32_t order[RZ_SENSES];
+    int32_t ns = rz_senses_count(m);
+    for (int32_t i = 0; i < ns; i++) order[i] = i;
+    for (int32_t a = 1; a < ns; a++) {
+        int32_t v = order[a], b = a - 1;
+        while (b >= 0 && rz_sense_score(m, order[b]) < rz_sense_score(m, v)) {
+            order[b + 1] = order[b];
+            b--;
+        }
+        order[b + 1] = v;
+    }
+
+    int stacked = 0;
+    for (int32_t i = 0; i < ns; i++) {
+        const rz_sense *sn = rz_sense_at(m, i);
+        if (sn && sn->src) stacked++;
+    }
+    for (int32_t k = 0; k < ns && k < 14; k++) {
+        char what[160];
+        rz_sense_describe(m, order[k], what, sizeof what);
+        const rz_sense *sn = rz_sense_at(m, order[k]);
+        printf("     %9.6f nats  %s%s\n", rz_sense_score(m, order[k]), what,
+               (sn && sn->src) ? "   <- built on another sense" : "");
+    }
+
+    printf("\n  senses standing on other senses      %d of %d\n", stacked, ns);
+    printf("  neutral ones kept rather than pruned %llu\n",
+           (unsigned long long)m->senses_kept_neutral);
+    printf("\n  A sense that says little today is what another is built from\n");
+    printf("  tomorrow. Pruning for usefulness starves the composition.\n\n");
+
+    rz_free(m);
+    free(m);
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -719,6 +813,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "interest"))     return cmd_interest(argc - 2, argv + 2);
     if (!strcmp(argv[1], "write"))        return cmd_write(argc - 2, argv + 2);
     if (!strcmp(argv[1], "sleep"))        return cmd_sleep(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "senses"))       return cmd_senses(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
