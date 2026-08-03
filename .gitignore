@@ -1,0 +1,19 @@
+# build artifacts
+razar
+razar.exe
+run_tests
+run_tests.exe
+*.o
+
+# the living organism: large, regenerable, and belongs to a run rather than
+# to the repository. The autopsies are the record worth keeping.
+nido/
+
+# test scratch
+*.tmp
+
+# test scratch nests
+test_*.tmp/
+
+# built binaries anywhere in the tree
+*.exe
