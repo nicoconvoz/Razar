@@ -458,6 +458,18 @@ int32_t rz_frag_degree_walked(rz_mind *m, int32_t from)
     return d;
 }
 
+int32_t rz_frag_edges(rz_mind *m, int32_t from, int32_t *out, int32_t cap)
+{
+    if (from < 0 || from >= RZ_FRAGS || cap <= 0) return 0;
+    int32_t k = id_mod(from), l = id_slot(from);
+    rz_module *M = mod_ensure(m, k);
+    if (!M || l >= M->nfrags) return 0;
+    int32_t n = 0;
+    for (int32_t e = M->head[l]; e >= 0 && n < cap; e = M->pool[e].next)
+        out[n++] = M->pool[e].to;
+    return n;
+}
+
 int32_t rz_frag_first_guess(rz_mind *m, int32_t from)
 {
     if (from < 0 || from >= RZ_FRAGS) return -1;
@@ -1052,6 +1064,140 @@ void rz_measure(rz_mind *m, const unsigned char *buf, size_t n,
     }
 }
 
+/* Deterministic wandering, and deterministic drawing: the same seed replays the
+   same lateral walk, and draws the same sense. */
+static uint64_t xorshift(uint64_t *s)
+{
+    uint64_t x = *s ? *s : 0x9E3779B97F4A7C15ull;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *s = x;
+    return x;
+}
+
+/* --- senses --------------------------------------------------------------- */
+
+static const uint8_t SENSE_RANGE[RZ_WHAT_COUNT] = {
+    RZ_SHAPES,   /* SHAPE   — which of the shape classes */
+    8,           /* WIDER   — spans more than 0..7 atoms */
+    8,           /* BUSIER  — walked more than 2^0..2^7 times */
+    8,           /* FORKED  — more than 0..7 walked ways out */
+    1,           /* GUESSED — a yes/no question */
+    1,           /* MARKED  — a yes/no question */
+};
+
+rz_sense rz_sense_draw(uint64_t seed)
+{
+    uint64_t r = seed ? seed : 1;
+    rz_sense s;
+    s.what   = (uint8_t)(xorshift(&r) % RZ_WHAT_COUNT);
+    s.value  = (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
+    s.dir    = (uint8_t)(xorshift(&r) % RZ_DIR_COUNT);
+    s.radius = (uint8_t)(1 + xorshift(&r) % RZ_SENSE_RADIUS);
+    return s;
+}
+
+rz_sense rz_sense_mutate(const rz_sense *parent, uint64_t seed)
+{
+    uint64_t r = seed ? seed : 1;
+    rz_sense s = *parent;
+    /* one slot, so a lineage drifts rather than restarting */
+    switch (xorshift(&r) % 4) {
+    case 0:
+        s.what = (uint8_t)((parent->what + 1 + xorshift(&r) % (RZ_WHAT_COUNT - 1))
+                           % RZ_WHAT_COUNT);
+        s.value = (uint8_t)(xorshift(&r) % SENSE_RANGE[s.what]);
+        break;
+    case 1: {
+        uint8_t n = SENSE_RANGE[s.what];
+        s.value = (uint8_t)(n > 1 ? (parent->value + 1 + xorshift(&r) % (n - 1)) % n
+                                  : parent->value);
+        if (n <= 1) s.dir = (uint8_t)((parent->dir + 1) % RZ_DIR_COUNT);
+        break;
+    }
+    case 2:
+        s.dir = (uint8_t)((parent->dir + 1) % RZ_DIR_COUNT);
+        break;
+    default:
+        s.radius = (uint8_t)(1 + (parent->radius % RZ_SENSE_RADIUS));
+        break;
+    }
+    return s;
+}
+
+int rz_sense_same(const rz_sense *a, const rz_sense *b)
+{
+    return a->what == b->what && a->value == b->value
+        && a->dir == b->dir && a->radius == b->radius;
+}
+
+uint32_t rz_sense_distance(const rz_sense *a, const rz_sense *b)
+{
+    uint32_t d = 0;
+    if (a->what != b->what) d++;
+    else if (a->value != b->value) d++;   /* value belongs to what: one change */
+    if (a->dir != b->dir) d++;
+    if (a->radius != b->radius) d++;
+    return d;
+}
+
+/* Does this fragment answer the question the way the sense is looking for?
+   Every question here is one the organism can already ask about itself. */
+static int sense_holds(rz_mind *m, const rz_sense *s, int32_t f)
+{
+    const rz_frag *fg = rz_frag_get(m, f);
+    if (!fg) return 0;
+    switch (s->what) {
+    case RZ_WHAT_SHAPE:   return rz_shape_of(m, f) == s->value;
+    case RZ_WHAT_WIDER:   return fg->span > s->value;
+    case RZ_WHAT_BUSIER:  return fg->seen > (uint32_t)(1u << s->value);
+    case RZ_WHAT_FORKED:  return rz_frag_degree_walked(m, f) > (int32_t)s->value;
+    case RZ_WHAT_GUESSED: return rz_frag_degree(m, f) > rz_frag_degree_walked(m, f);
+    case RZ_WHAT_MARKED:  return fg->attention > 0;
+    default:              return 0;
+    }
+}
+
+uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here)
+{
+    if (here < 0 || here >= RZ_FRAGS) return 0;
+
+    int32_t front[64], next[64];
+    int32_t nf = 0;
+    front[nf++] = here;
+    uint32_t count = 0;
+
+    for (uint8_t step = 0; step < s->radius && nf > 0; step++) {
+        int32_t nn = 0;
+        for (int32_t i = 0; i < nf; i++) {
+            int32_t cur = front[i];
+            if (s->dir == RZ_DIR_DOWN) {
+                /* what it is made of. Snapshot before anything can page a
+                   module away — the discipline frag_birth already uses. */
+                const rz_frag *fg = rz_frag_get(m, cur);
+                if (!fg) continue;
+                int32_t kids[2] = { fg->left, fg->right };
+                for (int k = 0; k < 2; k++) {
+                    if (kids[k] < 0) continue;
+                    if (sense_holds(m, s, kids[k])) count++;
+                    if (nn < 64) next[nn++] = kids[k];
+                }
+            } else {
+                int32_t tos[32];
+                int32_t nt = rz_frag_edges(m, cur, tos, 32);
+                for (int32_t k = 0; k < nt; k++) {
+                    if (sense_holds(m, s, tos[k])) count++;
+                    if (nn < 64) next[nn++] = tos[k];
+                }
+            }
+        }
+        for (int32_t i = 0; i < nn; i++) front[i] = next[i];
+        nf = nn;
+    }
+    return count;
+}
+
 void rz_measure_harmony(rz_mind *m, const unsigned char *buf, size_t n,
                         rz_harmony *out)
 {
@@ -1249,16 +1395,6 @@ int32_t rz_descend(rz_mind *m, int32_t id)
     return f->right;   /* -1 for a bare atom */
 }
 
-/* Deterministic wandering: the same seed replays the same lateral walk. */
-static uint64_t xorshift(uint64_t *s)
-{
-    uint64_t x = *s ? *s : 0x9E3779B97F4A7C15ull;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *s = x;
-    return x;
-}
 
 /* A fragment used a moment ago is briefly harder to reach again — the way a
    neuron that just fired is. Not forbidden: dampened. Without this a text turns

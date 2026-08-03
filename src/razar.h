@@ -335,6 +335,10 @@ double   rz_frag_branching(rz_mind *m, int32_t from);
 int32_t  rz_frag_degree(rz_mind *m, int32_t from);
 /* Only the paths it actually took. This is what shape and branching read. */
 int32_t  rz_frag_degree_walked(rz_mind *m, int32_t from);
+/* The places this leads to, snapshotted into `out`. Returns how many were
+   written. Snapshotting matters: resolving a target can page a module away and
+   move the list being walked. */
+int32_t  rz_frag_edges(rz_mind *m, int32_t from, int32_t *out, int32_t cap);
 /* The target of one path it was handed and never took, or -1. */
 int32_t  rz_frag_first_guess(rz_mind *m, int32_t from);
 
@@ -557,6 +561,61 @@ void rz_measure(rz_mind *m, const unsigned char *buf, size_t n,
 double rz_hit_rate(const rz_measure_result *r);
 /* Mean surprise per prediction, 0..1. */
 double rz_mean_surprise(const rz_measure_result *r);
+
+/* --- senses (P30): drawn, not written -------------------------------------
+ *
+ * The reference organism never invents a sense. It fills a template from a
+ * small vocabulary and lets the draw decide:
+ *
+ *     count pieces of type T of side S within radius R of reference F, when C
+ *
+ * Out of that comes "enemies near my king", "my pawns near the enemy king",
+ * "knights in the centre" — with nobody having written any of those ideas.
+ *
+ * Everything found by hand in this project so far was a detector an author
+ * wrote, one per idea. That is not a faculty. This is the template Razar draws
+ * from instead:
+ *
+ *     count fragments WHERE <what> reachable in <direction> within <radius>
+ *
+ * `what` is asked of the fragment it lands on, and every question in the
+ * vocabulary is one the organism can already answer about itself. Nothing here
+ * knows what a word is, or a verb, or a boundary.
+ */
+typedef enum {
+    RZ_WHAT_SHAPE,      /* carries this shape class */
+    RZ_WHAT_WIDER,      /* spans more than this many atoms */
+    RZ_WHAT_BUSIER,     /* has been walked more than this often */
+    RZ_WHAT_FORKED,     /* has more walked ways out than this */
+    RZ_WHAT_GUESSED,    /* is reached by a path it was given, never took */
+    RZ_WHAT_MARKED,     /* carries attention a dream left behind */
+    RZ_WHAT_COUNT
+} rz_what;
+
+typedef enum {
+    RZ_DIR_FORWARD,     /* what follows from here */
+    RZ_DIR_DOWN,        /* what this is made of */
+    RZ_DIR_COUNT
+} rz_dir;
+
+#define RZ_SENSE_RADIUS 3       /* how far a sense may look. Small on purpose */
+
+typedef struct {
+    uint8_t  what;      /* which question, from RZ_WHAT_* */
+    uint8_t  value;     /* the answer it is looking for */
+    uint8_t  dir;       /* which way it looks */
+    uint8_t  radius;    /* 1..RZ_SENSE_RADIUS */
+} rz_sense;
+
+/* Drawn from a seed. The same seed is the same sense — a draw, not a roll. */
+rz_sense rz_sense_draw(uint64_t seed);
+/* A newborn is a divergent copy: it differs in exactly one slot. Drawing wholly
+   at random every time would accumulate nothing. */
+rz_sense rz_sense_mutate(const rz_sense *parent, uint64_t seed);
+int      rz_sense_same(const rz_sense *a, const rz_sense *b);
+uint32_t rz_sense_distance(const rz_sense *a, const rz_sense *b);
+/* What it sees from where it stands. Learns nothing. */
+uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here);
 
 /* --- harmony (P25) --------------------------------------------------------
  *

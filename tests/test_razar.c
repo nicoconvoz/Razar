@@ -1877,6 +1877,88 @@ static void set_night(rz_mind *m, uint64_t steps, uint64_t births, double strain
  * first one safe.
  */
 
+/* --- senses (P30): drawn, not written ------------------------------------- */
+
+TEST(a_sense_is_drawn_not_written)
+{
+    /* The reference organism does not invent a sense. It fills a template from a
+       small vocabulary and lets the draw decide: "count pieces of type T of side
+       S within radius R of reference F, when C holds". Out of that comes
+       "enemies near my king" with nobody having written that idea down.
+
+       Everything found by hand today -- the beat, the roles, root+suffix -- was
+       a detector an author wrote. That is the opposite of a faculty. */
+    rz_sense a = rz_sense_draw(1);
+    rz_sense b = rz_sense_draw(1);
+    rz_sense c = rz_sense_draw(99);
+
+    CHECK(rz_sense_same(&a, &b));      /* same draw, same sense */
+    CHECK(!rz_sense_same(&a, &c));     /* another draw, another sense */
+}
+
+TEST(a_newborn_sense_is_a_divergent_copy)
+{
+    /* It is born by mutating one that already exists, in ONE place. A sense
+       drawn wholly at random each time would never accumulate anything. */
+    rz_sense parent = rz_sense_draw(7);
+    rz_sense child  = rz_sense_mutate(&parent, 3);
+
+    CHECK(!rz_sense_same(&parent, &child));
+    CHECK_EQ_U(rz_sense_distance(&parent, &child), 1u);
+}
+
+TEST(the_template_is_not_degenerate)
+{
+    /* THE test. If every sense the template can produce reads the same number
+       from the same place, the vocabulary is degenerate and the whole faculty is
+       theatre -- exactly how the shape alphabet collapsed to four classes that
+       differed only in length, in silence, because nothing was watching.
+
+       So: draw many, read them all from the same fragment, and demand that they
+       genuinely disagree. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++)
+        feed(m, "the quick brown fox jumps over the lazy dog. ");
+
+    int32_t here = rz_longest_match(m, (const unsigned char *)"the ", 4);
+    CHECK(here >= 0);
+
+    uint32_t seen_values[64];
+    uint32_t nvalues = 0;
+    for (uint64_t s = 1; s <= 64; s++) {
+        rz_sense g = rz_sense_draw(s);
+        uint32_t v = rz_sense_read(m, &g, here);
+        uint32_t known = 0;
+        for (uint32_t k = 0; k < nvalues; k++)
+            if (seen_values[k] == v) { known = 1; break; }
+        if (!known && nvalues < 64) seen_values[nvalues++] = v;
+    }
+    /* not a number pulled from the air: with 64 draws, a template worth having
+       must not collapse onto one or two readings */
+    CHECK(nvalues >= 4);
+}
+
+TEST(a_sense_reads_the_place_it_stands_on)
+{
+    /* It answers about HERE. Standing somewhere else, it may answer differently
+       -- otherwise it is a constant wearing a costume. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++)
+        feed(m, "alpha beta gamma delta alpha beta epsilon zeta. ");
+
+    int32_t a = rz_longest_match(m, (const unsigned char *)"alpha", 5);
+    int32_t z = rz_longest_match(m, (const unsigned char *)"z", 1);
+    CHECK(a >= 0);
+    CHECK(z >= 0);
+
+    int differed = 0;
+    for (uint64_t s = 1; s <= 40; s++) {
+        rz_sense g = rz_sense_draw(s);
+        if (rz_sense_read(m, &g, a) != rz_sense_read(m, &g, z)) { differed = 1; break; }
+    }
+    CHECK(differed);
+}
+
 TEST(harmony_is_measured_and_never_taught)
 {
     /* Same discipline as the external bar. A referee that trains what it judges
@@ -2286,6 +2368,10 @@ int main(void)
     RUN(fragment_recall_leaves_the_mind_alone);
     RUN(fragments_recall_what_atoms_could_not);
     RUN(composition_can_swallow_a_branch_whole);
+    RUN(a_sense_is_drawn_not_written);
+    RUN(a_newborn_sense_is_a_divergent_copy);
+    RUN(the_template_is_not_degenerate);
+    RUN(a_sense_reads_the_place_it_stands_on);
     RUN(harmony_is_measured_and_never_taught);
     RUN(finding_the_order_in_something_lowers_its_cost);
     RUN(discarding_the_material_is_not_harmony);
