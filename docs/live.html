@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Razar, live</title>
+<title>Razar, en vivo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -45,7 +45,6 @@
   @media (prefers-reduced-motion: reduce) { .pulse[data-working="1"]{animation:none;opacity:.6;} }
   .sub { color:var(--muted); font-size:14px; }
 
-  /* --- controls: things that actually happen to it --- */
   .deck { display:flex; flex-wrap:wrap; gap:9px; }
   button {
     font-family:var(--sans); font-size:13.5px; font-weight:500;
@@ -73,7 +72,7 @@
        padding-bottom:7px; border-bottom:1px solid var(--hair); }
   .note { color:var(--muted); font-size:13.5px; margin:10px 0 0; max-width:64ch; }
 
-  .reads { display:grid; grid-template-columns:repeat(auto-fit,minmax(208px,1fr)); gap:1px;
+  .reads { display:grid; grid-template-columns:repeat(auto-fit,minmax(214px,1fr)); gap:1px;
            background:var(--hair); border:1px solid var(--hair); border-radius:3px; overflow:hidden; }
   .read { background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px; }
   .read .k { font-size:12.5px; color:var(--muted); }
@@ -113,7 +112,6 @@
           padding:2px 6px; border-radius:2px; background:var(--instr-dim); color:var(--instr); white-space:nowrap; }
   .scroller { overflow-x:auto; }
 
-  /* --- what it is saying while it works --- */
   .console { background:var(--sunken); border:1px solid var(--hair); border-radius:3px;
              font-family:var(--mono); font-size:12px; color:var(--muted);
              padding:12px 14px; white-space:pre-wrap; overflow-x:auto;
@@ -121,6 +119,7 @@
   .console b { color:var(--ink); font-weight:500; }
 
   footer { color:var(--muted); font-size:12.5px; border-top:1px solid var(--hair); padding-top:15px; }
+  footer code { font-family:var(--mono); }
   @media (max-width:620px) { .alpha { grid-template-columns:repeat(16,1fr); } h1 { font-size:21px; } }
 </style>
 </head>
@@ -128,50 +127,51 @@
 <div class="wrap">
 
   <header class="mast">
-    <h1><span class="pulse" id="pulse"></span>Razar, live</h1>
-    <span class="sub" id="banner">reading the organism&hellip;</span>
+    <h1><span class="pulse" id="pulse"></span>Razar, en vivo</h1>
+    <span class="sub" id="banner">leyendo el organismo&hellip;</span>
   </header>
 
   <div class="deck">
-    <button class="go" id="do-feed" type="button">Feed it the New Testament</button>
-    <button id="do-feed-c" type="button">Feed it the chess organism</button>
-    <button id="do-senses" type="button">Grow its senses</button>
-    <button id="do-sleep" type="button">Let it sleep</button>
+    <button class="go" id="do-feed" type="button">Darle de comer el Nuevo Testamento</button>
+    <button id="do-feed-c" type="button">Darle el organismo ajedrecista</button>
+    <button id="do-senses" type="button">Que se haga sentidos</button>
+    <button id="do-sleep" type="button">Mandarlo a dormir</button>
   </div>
 
   <div class="verdict" id="verdict">
-    <span class="lbl">what it needs right now</span>
+    <span class="lbl">qu&eacute; necesita ahora</span>
     <span class="said" id="needs">&mdash;</span>
     <span class="why" id="why"></span>
   </div>
 
   <section>
-    <h2>What it built out of raw bytes</h2>
+    <h2>Lo que construy&oacute; a partir de bytes crudos</h2>
     <div class="reads" id="built"></div>
-    <p class="note">Nothing here was designed. It met bytes, and the pieces that
-      kept recurring earned their place as units. Figures move as it works.</p>
+    <p class="note">Nada de esto se dise&ntilde;&oacute;. Se encontr&oacute; con bytes,
+      y las piezas que volv&iacute;an una y otra vez se ganaron su lugar como
+      unidades. Las cifras se mueven mientras trabaja.</p>
   </section>
 
   <section>
-    <h2>Its alphabet of roles &mdash; 64 classes, and how many anybody occupies</h2>
+    <h2>Su alfabeto de papeles &mdash; 64 clases, y cu&aacute;ntas ocupa alguien</h2>
     <div class="alpha" id="alpha"></div>
     <div class="legend">
-      <span><span class="swatch"></span><span id="occ">&mdash;</span> occupied</span>
-      <span><span class="swatch off"></span>empty &mdash; a role nothing plays</span>
+      <span><span class="swatch"></span><span id="occ">&mdash;</span> ocupadas</span>
+      <span><span class="swatch off"></span>vac&iacute;a &mdash; un papel que nadie juega</span>
       <span id="largest"></span>
     </div>
-    <p class="note">This collapsed once, silently, to four classes that differed
-      only in length. Nothing was watching a formula that could not be wrong, so
-      it is on the panel now.</p>
+    <p class="note">Esto colaps&oacute; una vez, en silencio, a cuatro clases que
+      solo se diferenciaban en el largo. Nada vigilaba una f&oacute;rmula que no
+      pod&iacute;a equivocarse, as&iacute; que ahora est&aacute; en el tablero.</p>
   </section>
 
   <section>
-    <h2>Ways of looking it grew for itself</h2>
+    <h2>Maneras de mirar que se hizo solo</h2>
     <div class="scroller">
       <table>
         <thead><tr>
-          <th>what it looks for</th><th class="num">worth</th><th></th>
-          <th class="num">steps watched</th><th></th>
+          <th>qu&eacute; busca</th><th class="num">cu&aacute;nto vale</th><th></th>
+          <th class="num">pasos mirados</th><th></th>
         </tr></thead>
         <tbody id="senses"></tbody>
       </table>
@@ -180,27 +180,64 @@
   </section>
 
   <section>
-    <h2>Memory, forgetting, and what carries</h2>
+    <h2>Memoria, olvido, y lo que transfiere</h2>
     <div class="reads" id="rest"></div>
   </section>
 
   <section>
-    <h2>What it is saying</h2>
-    <div class="console" id="console">Idle. Press something above and watch it work.</div>
+    <h2>Lo que va diciendo</h2>
+    <div class="console" id="console">En reposo. Toc&aacute; algo de arriba y mir&aacute;lo trabajar.</div>
   </section>
 
   <footer>
-    Every figure sits beside what it is measured against, because a number
-    without its baseline is not a reading. Served by <code>tools/live.py</code>,
-    which drives the real binary &mdash; nothing here is a mock.
+    Cada cifra est&aacute; al lado de contra qu&eacute; se mide, porque un
+    n&uacute;mero sin su l&iacute;nea de base no es una lectura. Lo sirve
+    <code>tools/live.py</code>, que maneja el binario de verdad &mdash; ac&aacute;
+    no hay nada simulado.
   </footer>
 </div>
 
 <script>
-const num = (n, d) => Number(n).toLocaleString("en-US",
+const num = (n, d) => Number(n).toLocaleString("es-AR",
   { minimumFractionDigits: d ?? 0, maximumFractionDigits: d ?? 0 });
 const $ = id => document.getElementById(id);
-let last = null;          /* the previous reading, so change is visible */
+let last = null;          /* la lectura anterior, para que el cambio se vea */
+
+/* El C habla ingles por convencion del proyecto. La traduccion vive aca, en la
+   capa que se lee, y no en el organismo. */
+const REASONS = {
+  "nothing has happened worth sleeping on.":
+    "no pasó nada sobre lo que valga la pena dormir.",
+  "it was overwhelmed — too much of what it met was a wall.":
+    "se sintió abrumado: demasiado de lo que encontró era pared.",
+  "it built a lot that has not been exercised yet.":
+    "construyó mucho que todavía no ejercitó.",
+  "nothing new and nothing hurting: it is circling.":
+    "nada nuevo y nada que duela: está girando en el lugar."
+};
+
+function sayWhat(s) {
+  let m = s.match(/^where #(\d+) reads over (\d+), (\w+) within (\d+)$/);
+  if (m) {
+    return "donde #" + m[1] + " lee más de " + m[2] + ", "
+      + (m[3] === "downward" ? "hacia abajo" : "adelante") + " a " + m[4];
+  }
+  m = s.match(/^(.+?) (\d+), (\w+) within (\d+)$/);
+  if (!m) return s;
+  const WHAT = {
+    "shape": "forma",
+    "wider than": "más ancho que",
+    "busier than": "más transitado que",
+    "forked more than": "más bifurcado que",
+    "given not taken": "heredado, nunca caminado",
+    "marked": "marcado por un sueño"
+  };
+  const head = WHAT[m[1]] || m[1];
+  const tail = (m[3] === "downward" ? "hacia abajo" : "adelante") + " a " + m[4];
+  /* these two are yes/no questions: the number is noise, so it is dropped */
+  if (m[1] === "marked" || m[1] === "given not taken") return head + ", " + tail;
+  return head + " " + m[2] + ", " + tail;
+}
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -235,26 +272,26 @@ function moved(now, before) {
 
 function render(s) {
   const p = last;
-  $("banner").textContent = num(s.memory.atomsEaten) + " bytes eaten · "
-    + num(s.memory.fragments) + " units held";
+  $("banner").textContent = num(s.memory.atomsEaten) + " bytes comidos · "
+    + num(s.memory.fragments) + " unidades que sostiene";
 
-  $("needs").textContent = s.night.needs;
+  $("needs").textContent = REASONS[s.night.needs] || s.night.needs;
   $("why").textContent = s.night.slept > 0
-    ? num(s.night.slept) + (s.night.slept === 1 ? " night slept" : " nights slept")
-    : "it has not slept yet";
+    ? num(s.night.slept) + (s.night.slept === 1 ? " noche dormida" : " noches dormidas")
+    : "todavía no durmió";
   $("verdict").style.borderLeftColor = s.night.strain > 0.55 ? "var(--warn)" : "var(--instr)";
 
   const built = $("built"); built.textContent = "";
-  reading(built, "units that earned their place", num(s.memory.births),
-    `out of <em>${num(s.memory.fragments)}</em> it holds`,
+  reading(built, "unidades que se ganaron su lugar", num(s.memory.births),
+    `de <em>${num(s.memory.fragments)}</em> que sostiene`,
     moved(s.memory.births, p && p.memory.births));
-  reading(built, "strain per step", s.night.strain.toFixed(4),
-    `overwhelmed above <em>0.55</em> &middot; noise reads 0.65&ndash;0.72`, null);
-  reading(built, "steps between units", num(s.memory.fragSteps),
-    `over <em>${num(s.memory.atomsEaten)}</em> bytes met`,
+  reading(built, "esfuerzo por paso", s.night.strain.toFixed(4),
+    `abrumado por encima de <em>0,55</em> &middot; el ruido da 0,65&ndash;0,72`, null);
+  reading(built, "pasos entre unidades", num(s.memory.fragSteps),
+    `sobre <em>${num(s.memory.atomsEaten)}</em> bytes encontrados`,
     moved(s.memory.fragSteps, p && p.memory.fragSteps));
-  reading(built, "memory per byte eaten", s.memory.costRatio.toFixed(2) + " B",
-    `<em>${num(s.memory.plasticBytes / 1048576, 1)}&nbsp;MB</em> held in all`, null);
+  reading(built, "memoria por byte comido", s.memory.costRatio.toFixed(2) + " B",
+    `<em>${num(s.memory.plasticBytes / 1048576, 1)}&nbsp;MB</em> en total`, null);
 
   const alpha = $("alpha"); alpha.textContent = "";
   const occ = s.shapes.occupancy, top = Math.max(1, ...occ);
@@ -262,19 +299,19 @@ function render(s) {
     const c = el("div", "cell");
     c.dataset.on = n > 0 ? "1" : "0";
     if (n > 0) c.style.opacity = (0.34 + 0.66 * Math.sqrt(n / top)).toFixed(2);
-    c.title = `role ${i}: ${num(n)} fragment${n === 1 ? "" : "s"}`;
+    c.title = `papel ${i}: ${num(n)} fragmento${n === 1 ? "" : "s"}`;
     alpha.append(c);
   });
-  $("occ").textContent = `${s.shapes.occupied} of ${s.shapes.of}`;
+  $("occ").textContent = `${s.shapes.occupied} de ${s.shapes.of}`;
   $("largest").textContent =
-    `busiest role holds ${(s.shapes.largestShare * 100).toFixed(1)}% of everything`;
+    `el papel más cargado se lleva el ${(s.shapes.largestShare * 100).toFixed(1)}% de todo`;
 
   const tb = $("senses"); tb.textContent = "";
   const ordered = s.senses.slice().sort((a, b) => b.worth - a.worth);
   const best = Math.max(0.0001, ...ordered.map(x => x.worth));
   ordered.slice(0, 12).forEach(x => {
     const tr = document.createElement("tr");
-    tr.append(el("td", "what", x.what));
+    tr.append(el("td", "what", sayWhat(x.what)));
     tr.append(el("td", "num", x.worth.toFixed(4)));
     const bc = el("td", "barcell");
     const bar = el("span", "bar");
@@ -283,31 +320,31 @@ function render(s) {
     bc.append(bar); tr.append(bc);
     tr.append(el("td", "num", num(x.watched)));
     const lastCell = el("td");
-    if (x.stacked) lastCell.append(el("span", "chip", "stands on another"));
+    if (x.stacked) lastCell.append(el("span", "chip", "apoyado en otro"));
     tr.append(lastCell);
     tb.append(tr);
   });
   const stacked = s.senses.filter(x => x.stacked).length;
   const quiet = s.senses.filter(x => x.worth === 0).length;
   $("sensenote").textContent = s.senses.length
-    ? `${s.senses.length} held, ${stacked} of them built on other senses. `
-      + `${quiet} say nothing yet and are kept anyway: a sense that says little `
-      + `today is what another is built from tomorrow, and pruning for usefulness `
-      + `starves the composition.`
-    : "None yet. Press “Grow its senses” and watch them appear.";
+    ? `Sostiene ${s.senses.length}, y ${stacked} de ellos están construidos `
+      + `sobre otros sentidos. ${quiet} todavía no dicen nada y se quedan igual: `
+      + `un sentido que hoy dice poco es de lo que se construye otro mañana, y `
+      + `podar por utilidad mata la recombinación.`
+    : "Ninguno todavía. Tocá «Que se haga sentidos» y mirá cómo aparecen.";
 
   const rest = $("rest"); rest.textContent = "";
-  reading(rest, "paths gone cold", num(s.forgetting.coldPaths),
-    `after <em>${s.forgetting.passes}</em> passes of forgetting`,
+  reading(rest, "caminos que se enfriaron", num(s.forgetting.coldPaths),
+    `tras <em>${s.forgetting.passes}</em> pasadas de olvido`,
     moved(s.forgetting.coldPaths, p && p.forgetting.coldPaths));
-  reading(rest, "roles that carry into new ground", num(s.transfer.shapesThatCarry),
-    `best one right <em>${(s.transfer.bestShape * 100).toFixed(1)}%</em> of the time`, null);
-  reading(rest, "lineages awake", num(s.modules.used),
-    `<em>${num(s.modules.wakes)}</em> woken, <em>${num(s.modules.sleeps)}</em> put to sleep`,
+  reading(rest, "papeles que transfieren a terreno nuevo", num(s.transfer.shapesThatCarry),
+    `el mejor acierta el <em>${(s.transfer.bestShape * 100).toFixed(1)}%</em> de las veces`, null);
+  reading(rest, "linajes despiertos", num(s.modules.used),
+    `<em>${num(s.modules.wakes)}</em> despertados, <em>${num(s.modules.sleeps)}</em> dormidos`,
     moved(s.modules.used, p && p.modules.used));
-  reading(rest, "rules it can act on", num(s.rules.held),
-    s.rules.held ? `consulted <em>${num(s.rules.used)}</em> times`
-                 : "none learned yet",
+  reading(rest, "reglas que puede aplicar", num(s.rules.held),
+    s.rules.held ? `consultadas <em>${num(s.rules.used)}</em> veces`
+                 : "todavía no aprendió ninguna",
     moved(s.rules.held, p && p.rules.held));
 
   last = s;
@@ -320,9 +357,9 @@ function setBusy(what, secs, log) {
   const c = $("console");
   if (what) {
     c.innerHTML = "<b>" + what + "</b> — " + secs.toFixed(0) + "s"
-      + (log && log.length ? "\n\n" + log.join("\n") : "\n\nworking…");
+      + (log && log.length ? "\n\n" + log.join("\n") : "\n\ntrabajando…");
   } else if (log && log.length) {
-    c.innerHTML = "<b>done</b>\n\n" + log.join("\n");
+    c.innerHTML = "<b>listo</b>\n\n" + log.join("\n");
   }
 }
 
@@ -335,14 +372,15 @@ async function poll() {
     setBusy(d.busy, d.for, d.log);
     if (d.state && !d.state.error) render(d.state);
     else if (d.state && d.state.error) {
-      $("console").innerHTML = "<b>it could not report</b>\n\n" + d.state.error
-        + "\n\nFeed it first, then this panel will have something to show.";
+      $("console").innerHTML = "<b>no pudo reportarse</b>\n\n" + d.state.error
+        + "\n\nDale de comer primero y este tablero va a tener algo que mostrar.";
     }
   } catch (e) {
     failures++;
     if (failures > 2) {
       $("pulse").dataset.working = "0";
-      $("banner").textContent = "the server is not answering — is tools/live.py running?";
+      $("banner").textContent =
+        "el servidor no contesta — ¿está corriendo tools/live.py?";
     }
   }
 }
@@ -350,13 +388,13 @@ async function poll() {
 BUTTONS.forEach(b => {
   $("do-" + b).addEventListener("click", async () => {
     BUTTONS.forEach(x => { $("do-" + x).disabled = true; });
-    $("console").innerHTML = "<b>starting…</b>";
+    $("console").innerHTML = "<b>arrancando…</b>";
     try {
       const r = await fetch("/do/" + b, { method: "GET", cache: "no-store" });
       const d = await r.json();
-      if (d.error) $("console").innerHTML = "<b>refused</b>\n\n" + d.error;
+      if (d.error) $("console").innerHTML = "<b>lo rechazó</b>\n\n" + d.error;
     } catch (e) {
-      $("console").innerHTML = "<b>could not reach the server</b>\n\n" + e.message;
+      $("console").innerHTML = "<b>no se pudo llegar al servidor</b>\n\n" + e.message;
     }
     poll();
   });

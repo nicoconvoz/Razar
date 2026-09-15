@@ -41,15 +41,20 @@ def state():
     try:
         return json.loads(p.stdout)
     except json.JSONDecodeError as e:
-        return {"error": "the dump was not readable: %s" % e}
+        return {"error": "el volcado no se pudo leer: %s" % e}
 
 
 ACTIONS = {
     # name        argv                                          what it means
-    "feed":    (["feed", "feed/nuevo-testamento.txt"],  "eating the New Testament"),
-    "feed-c":  (["feed", "feed/organismo.c"],           "eating the chess organism"),
-    "senses":  (["senses", "25", "feed/nuevo-testamento.txt"], "growing ways of looking"),
-    "sleep":   (["sleep", "7"],                         "sleeping on what it lived"),
+    # the panel is read in Spanish, so what it says while working is too
+    "feed":    (["feed", "feed/nuevo-testamento.txt"],
+                "comiendo el Nuevo Testamento"),
+    "feed-c":  (["feed", "feed/organismo.c"],
+                "comiendo el organismo ajedrecista"),
+    "senses":  (["senses", "25", "feed/nuevo-testamento.txt"],
+                "haciendose maneras de mirar"),
+    "sleep":   (["sleep", "7"],
+                "durmiendo sobre lo que vivio"),
 }
 
 
@@ -62,7 +67,7 @@ def do(name):
         out = (p.stdout or "") + (p.stderr or "")
         BUSY["log"] = [ln for ln in out.splitlines() if ln.strip()][-14:]
     except subprocess.TimeoutExpired:
-        BUSY["log"] = ["it is taking longer than fifteen minutes -- stopped waiting"]
+        BUSY["log"] = ["tarda mas de quince minutos: dejo de esperar"]
     finally:
         BUSY["what"] = None
 
@@ -115,10 +120,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/do/"):
             name = path[4:]
             if name not in ACTIONS:
-                self.send_json({"error": "no such action: %s" % name}, 400)
+                self.send_json({"error": "no existe esa accion: %s" % name}, 400)
                 return
             if not LOCK.acquire(blocking=False):
-                self.send_json({"error": "it is already busy: %s" % BUSY["what"]}, 409)
+                self.send_json({"error": "ya esta ocupado: %s" % BUSY["what"]}, 409)
                 return
 
             def work():
@@ -136,14 +141,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     if not os.path.exists(BINARY):
-        print("no binary at %s -- build it first with make" % BINARY)
+        print("no hay binario en %s: compilalo primero con make" % BINARY)
         return 1
     if not os.path.exists(PANEL):
-        print("no panel at %s" % PANEL)
+        print("no hay tablero en %s" % PANEL)
         return 1
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print("Razar is listening on http://localhost:%d" % PORT)
-    print("Ctrl-C to stop.")
+    print("Razar escucha en http://localhost:%d" % PORT)
+    print("Ctrl-C para frenarlo.")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
