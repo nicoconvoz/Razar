@@ -726,11 +726,14 @@ static int cmd_senses(int argc, char **argv)
     /* a slice is enough to score a sense: it is measuring information, not
        reading the library. Scoring every sense over every byte, every round,
        made the faculty cost more than the organism. */
+    /* Say which material, or it silently measures whatever happens to be
+       first in the folder -- and then the panel is about something other than
+       what the reader thinks. */
+    const char *path = (argc > 1) ? argv[1] : FEED_DIR "/organismo.c";
     static unsigned char buf[6000];
     size_t n = 0;
     {
-        FILE *f = fopen(FEED_DIR "/organismo.c", "rb");
-        if (!f) f = fopen(FEED_DIR "/nuevo-testamento.txt", "rb");
+        FILE *f = fopen(path, "rb");
         if (f) { n = fread(buf, 1, sizeof buf, f); fclose(f); }
     }
     if (n == 0) {
@@ -810,7 +813,7 @@ int main(int argc, char **argv)
         printf("  razar interest <path>                 what is opaque, frontier, mastered\n");
         printf("  razar write <cue> [n] [effort] [temp] [seed]   give it the pen\n");
         printf("  razar sleep [seed]                    let it dream on what it lived\n");
-        printf("  razar senses [rounds]                 watch it grow its own ways of looking\n");
+        printf("  razar senses [rounds] [path]          watch it grow its own ways of looking\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
