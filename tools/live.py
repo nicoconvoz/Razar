@@ -1,0 +1,155 @@
+"""A small window onto the living organism.
+
+Serves the panel and drives the real binary behind it, so what the page shows is
+the organism as it stands rather than a snapshot of when someone remembered to
+export one. Standard library only -- the project takes no dependencies, and its
+tooling has no business taking them either.
+
+    python tools/live.py          then open http://localhost:7331
+"""
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BINARY = os.path.join(ROOT, "razar.exe" if os.name == "nt" else "razar")
+PANEL = os.path.join(ROOT, "docs", "live.html")
+PORT = 7331
+
+# One action at a time. The organism has one memory and two runs writing to it
+# would corrupt the nest, so the lock is correctness rather than politeness.
+LOCK = threading.Lock()
+BUSY = {"what": None, "since": 0.0, "log": []}
+
+
+def run(args, timeout=900):
+    return subprocess.run([BINARY] + args, cwd=ROOT, capture_output=True,
+                          text=True, timeout=timeout, encoding="utf-8",
+                          errors="replace")
+
+
+def state():
+    """What it is, right now. Reads a saved mind and changes nothing."""
+    p = run(["dash"], timeout=120)
+    if p.returncode != 0 or not p.stdout.strip().startswith("{"):
+        return {"error": (p.stderr or p.stdout or "no output").strip()[:400]}
+    try:
+        return json.loads(p.stdout)
+    except json.JSONDecodeError as e:
+        return {"error": "the dump was not readable: %s" % e}
+
+
+ACTIONS = {
+    # name        argv                                          what it means
+    "feed":    (["feed", "feed/nuevo-testamento.txt"],  "eating the New Testament"),
+    "feed-c":  (["feed", "feed/organismo.c"],           "eating the chess organism"),
+    "senses":  (["senses", "25", "feed/nuevo-testamento.txt"], "growing ways of looking"),
+    "sleep":   (["sleep", "7"],                         "sleeping on what it lived"),
+}
+
+
+def do(name):
+    argv, meaning = ACTIONS[name]
+    BUSY["what"] = meaning
+    BUSY["since"] = time.time()
+    try:
+        p = run(argv)
+        out = (p.stdout or "") + (p.stderr or "")
+        BUSY["log"] = [ln for ln in out.splitlines() if ln.strip()][-14:]
+    except subprocess.TimeoutExpired:
+        BUSY["log"] = ["it is taking longer than fifteen minutes -- stopped waiting"]
+    finally:
+        BUSY["what"] = None
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass                      # the page is the log; the console stays quiet
+
+    def send_json(self, obj, code=200):
+        body = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+
+        if path in ("/", "/index.html"):
+            try:
+                with open(PANEL, "rb") as f:
+                    body = f.read()
+            except OSError:
+                self.send_error(404, "docs/live.html is missing")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if path == "/state":
+            busy = BUSY["what"]
+            payload = {
+                "busy": busy,
+                "for": round(time.time() - BUSY["since"], 1) if busy else 0,
+                "log": BUSY["log"],
+            }
+            # while it is working the nest is mid-write, so the panel keeps the
+            # last good reading rather than showing a torn one
+            if not busy:
+                payload["state"] = state()
+            self.send_json(payload)
+            return
+
+        if path.startswith("/do/"):
+            name = path[4:]
+            if name not in ACTIONS:
+                self.send_json({"error": "no such action: %s" % name}, 400)
+                return
+            if not LOCK.acquire(blocking=False):
+                self.send_json({"error": "it is already busy: %s" % BUSY["what"]}, 409)
+                return
+
+            def work():
+                try:
+                    do(name)
+                finally:
+                    LOCK.release()
+
+            threading.Thread(target=work, daemon=True).start()
+            self.send_json({"started": ACTIONS[name][1]})
+            return
+
+        self.send_error(404)
+
+
+def main():
+    if not os.path.exists(BINARY):
+        print("no binary at %s -- build it first with make" % BINARY)
+        return 1
+    if not os.path.exists(PANEL):
+        print("no panel at %s" % PANEL)
+        return 1
+    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    print("Razar is listening on http://localhost:%d" % PORT)
+    print("Ctrl-C to stop.")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Razar, live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:#F1F2EE; --surface:#FFFFFF; --sunken:#E7E9E3;
+    --ink:#191E24; --muted:#697382; --hair:#D5D8D1;
+    --instr:#2E7D6B; --instr-dim:#B9D3CC; --warn:#B0543B; --live:#C08A2E;
+    --shadow:0 1px 2px rgba(25,30,36,.06), 0 6px 18px rgba(25,30,36,.05);
+    --serif:"Bitter",Georgia,serif;
+    --sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#12161C; --surface:#191E26; --sunken:#0D1116;
+      --ink:#E4E8EC; --muted:#8A95A3; --hair:#2A313A;
+      --instr:#55B39C; --instr-dim:#20443C; --warn:#D97B5C; --live:#D8AA55;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#12161C; --surface:#191E26; --sunken:#0D1116;
+    --ink:#E4E8EC; --muted:#8A95A3; --hair:#2A313A;
+    --instr:#55B39C; --instr-dim:#20443C; --warn:#D97B5C; --live:#D8AA55;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+  * { box-sizing:border-box; }
+  body { background:var(--ground); color:var(--ink); font-family:var(--sans);
+         line-height:1.5; margin:0; padding:0 20px; padding-block:26px 56px; }
+  .wrap { max-width:1060px; margin:0 auto; display:flex; flex-direction:column; gap:26px; }
+
+  .mast { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 16px; }
+  h1 { font-family:var(--serif); font-weight:600; font-size:25px; margin:0; letter-spacing:-.01em; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%;
+           background:var(--instr); margin-right:7px; vertical-align:1px; }
+  .pulse[data-working="1"] { background:var(--live); animation:beat 1s ease-in-out infinite; }
+  @keyframes beat { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.35;transform:scale(.72);} }
+  @media (prefers-reduced-motion: reduce) { .pulse[data-working="1"]{animation:none;opacity:.6;} }
+  .sub { color:var(--muted); font-size:14px; }
+
+  /* --- controls: things that actually happen to it --- */
+  .deck { display:flex; flex-wrap:wrap; gap:9px; }
+  button {
+    font-family:var(--sans); font-size:13.5px; font-weight:500;
+    background:var(--surface); color:var(--ink);
+    border:1px solid var(--hair); border-radius:3px;
+    padding:9px 15px; cursor:pointer; box-shadow:var(--shadow);
+  }
+  button:hover:not(:disabled) { border-color:var(--instr); color:var(--instr); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.go { background:var(--instr); color:#fff; border-color:var(--instr); }
+  button.go:hover:not(:disabled) { filter:brightness(1.08); color:#fff; }
+  :focus-visible { outline:2px solid var(--instr); outline-offset:2px; }
+
+  .verdict { background:var(--surface); border:1px solid var(--hair);
+             border-left:4px solid var(--instr); border-radius:3px;
+             padding:15px 19px; box-shadow:var(--shadow);
+             display:flex; flex-wrap:wrap; gap:5px 20px; align-items:baseline; }
+  .verdict .lbl { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em;
+                  text-transform:uppercase; color:var(--muted); flex-basis:100%; }
+  .verdict .said { font-family:var(--serif); font-size:18px; }
+  .verdict .why { color:var(--muted); font-size:14px; }
+
+  h2 { font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.16em;
+       text-transform:uppercase; color:var(--muted); margin:0 0 12px;
+       padding-bottom:7px; border-bottom:1px solid var(--hair); }
+  .note { color:var(--muted); font-size:13.5px; margin:10px 0 0; max-width:64ch; }
+
+  .reads { display:grid; grid-template-columns:repeat(auto-fit,minmax(208px,1fr)); gap:1px;
+           background:var(--hair); border:1px solid var(--hair); border-radius:3px; overflow:hidden; }
+  .read { background:var(--surface); padding:13px 15px; display:flex; flex-direction:column; gap:3px; }
+  .read .k { font-size:12.5px; color:var(--muted); }
+  .read .v { font-family:var(--mono); font-size:20px; font-weight:500;
+             font-variant-numeric:tabular-nums; letter-spacing:-.015em;
+             display:flex; align-items:baseline; gap:8px; }
+  .delta { font-family:var(--mono); font-size:11.5px; font-weight:500; color:var(--instr); }
+  .delta[data-dir="down"] { color:var(--warn); }
+  .read .against { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .read .against em { font-style:normal; color:var(--instr); }
+  .flash { animation:flash .9s ease-out; }
+  @keyframes flash { from { background:var(--instr-dim); } to { background:var(--surface); } }
+  @media (prefers-reduced-motion: reduce) { .flash { animation:none; } }
+
+  .alpha { display:grid; grid-template-columns:repeat(32,1fr); gap:2px; }
+  .cell { aspect-ratio:1; border-radius:1px; background:var(--sunken); transition:background .4s, opacity .4s; }
+  .cell[data-on="1"] { background:var(--instr); }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:11px;
+            font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+  .swatch { display:inline-block; width:9px; height:9px; border-radius:1px;
+            background:var(--instr); margin-right:5px; vertical-align:-1px; }
+  .swatch.off { background:var(--sunken); border:1px solid var(--hair); }
+
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  thead th { font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+             text-transform:uppercase; color:var(--muted); font-weight:500;
+             text-align:left; padding:0 10px 8px 0; border-bottom:1px solid var(--hair); }
+  thead th.num { text-align:right; }
+  tbody td { padding:8px 10px 8px 0; border-bottom:1px solid var(--hair); vertical-align:middle; }
+  tbody tr:last-child td { border-bottom:none; }
+  td.what { font-family:var(--mono); font-size:12.5px; }
+  td.num { font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .bar { display:block; height:4px; border-radius:2px; background:var(--instr);
+         min-width:2px; transition:width .5s ease; }
+  .barcell { width:130px; background:var(--sunken); border-radius:2px; }
+  .chip { font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+          padding:2px 6px; border-radius:2px; background:var(--instr-dim); color:var(--instr); white-space:nowrap; }
+  .scroller { overflow-x:auto; }
+
+  /* --- what it is saying while it works --- */
+  .console { background:var(--sunken); border:1px solid var(--hair); border-radius:3px;
+             font-family:var(--mono); font-size:12px; color:var(--muted);
+             padding:12px 14px; white-space:pre-wrap; overflow-x:auto;
+             min-height:64px; max-height:230px; overflow-y:auto; }
+  .console b { color:var(--ink); font-weight:500; }
+
+  footer { color:var(--muted); font-size:12.5px; border-top:1px solid var(--hair); padding-top:15px; }
+  @media (max-width:620px) { .alpha { grid-template-columns:repeat(16,1fr); } h1 { font-size:21px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <h1><span class="pulse" id="pulse"></span>Razar, live</h1>
+    <span class="sub" id="banner">reading the organism&hellip;</span>
+  </header>
+
+  <div class="deck">
+    <button class="go" id="do-feed" type="button">Feed it the New Testament</button>
+    <button id="do-feed-c" type="button">Feed it the chess organism</button>
+    <button id="do-senses" type="button">Grow its senses</button>
+    <button id="do-sleep" type="button">Let it sleep</button>
+  </div>
+
+  <div class="verdict" id="verdict">
+    <span class="lbl">what it needs right now</span>
+    <span class="said" id="needs">&mdash;</span>
+    <span class="why" id="why"></span>
+  </div>
+
+  <section>
+    <h2>What it built out of raw bytes</h2>
+    <div class="reads" id="built"></div>
+    <p class="note">Nothing here was designed. It met bytes, and the pieces that
+      kept recurring earned their place as units. Figures move as it works.</p>
+  </section>
+
+  <section>
+    <h2>Its alphabet of roles &mdash; 64 classes, and how many anybody occupies</h2>
+    <div class="alpha" id="alpha"></div>
+    <div class="legend">
+      <span><span class="swatch"></span><span id="occ">&mdash;</span> occupied</span>
+      <span><span class="swatch off"></span>empty &mdash; a role nothing plays</span>
+      <span id="largest"></span>
+    </div>
+    <p class="note">This collapsed once, silently, to four classes that differed
+      only in length. Nothing was watching a formula that could not be wrong, so
+      it is on the panel now.</p>
+  </section>
+
+  <section>
+    <h2>Ways of looking it grew for itself</h2>
+    <div class="scroller">
+      <table>
+        <thead><tr>
+          <th>what it looks for</th><th class="num">worth</th><th></th>
+          <th class="num">steps watched</th><th></th>
+        </tr></thead>
+        <tbody id="senses"></tbody>
+      </table>
+    </div>
+    <p class="note" id="sensenote"></p>
+  </section>
+
+  <section>
+    <h2>Memory, forgetting, and what carries</h2>
+    <div class="reads" id="rest"></div>
+  </section>
+
+  <section>
+    <h2>What it is saying</h2>
+    <div class="console" id="console">Idle. Press something above and watch it work.</div>
+  </section>
+
+  <footer>
+    Every figure sits beside what it is measured against, because a number
+    without its baseline is not a reading. Served by <code>tools/live.py</code>,
+    which drives the real binary &mdash; nothing here is a mock.
+  </footer>
+</div>
+
+<script>
+const num = (n, d) => Number(n).toLocaleString("en-US",
+  { minimumFractionDigits: d ?? 0, maximumFractionDigits: d ?? 0 });
+const $ = id => document.getElementById(id);
+let last = null;          /* the previous reading, so change is visible */
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function reading(host, key, value, against, delta) {
+  const box = el("div", "read");
+  box.append(el("span", "k", key));
+  const v = el("span", "v");
+  v.append(document.createTextNode(value));
+  if (delta) {
+    const d = el("span", "delta", delta.text);
+    d.dataset.dir = delta.dir;
+    v.append(d);
+  }
+  box.append(v);
+  const a = el("span", "against");
+  a.innerHTML = against;
+  box.append(a);
+  if (delta) box.classList.add("flash");
+  host.append(box);
+}
+
+function moved(now, before) {
+  if (before === undefined || before === null || now === before) return null;
+  const d = now - before;
+  return { text: (d > 0 ? "+" : "") + num(d), dir: d < 0 ? "down" : "up" };
+}
+
+function render(s) {
+  const p = last;
+  $("banner").textContent = num(s.memory.atomsEaten) + " bytes eaten · "
+    + num(s.memory.fragments) + " units held";
+
+  $("needs").textContent = s.night.needs;
+  $("why").textContent = s.night.slept > 0
+    ? num(s.night.slept) + (s.night.slept === 1 ? " night slept" : " nights slept")
+    : "it has not slept yet";
+  $("verdict").style.borderLeftColor = s.night.strain > 0.55 ? "var(--warn)" : "var(--instr)";
+
+  const built = $("built"); built.textContent = "";
+  reading(built, "units that earned their place", num(s.memory.births),
+    `out of <em>${num(s.memory.fragments)}</em> it holds`,
+    moved(s.memory.births, p && p.memory.births));
+  reading(built, "strain per step", s.night.strain.toFixed(4),
+    `overwhelmed above <em>0.55</em> &middot; noise reads 0.65&ndash;0.72`, null);
+  reading(built, "steps between units", num(s.memory.fragSteps),
+    `over <em>${num(s.memory.atomsEaten)}</em> bytes met`,
+    moved(s.memory.fragSteps, p && p.memory.fragSteps));
+  reading(built, "memory per byte eaten", s.memory.costRatio.toFixed(2) + " B",
+    `<em>${num(s.memory.plasticBytes / 1048576, 1)}&nbsp;MB</em> held in all`, null);
+
+  const alpha = $("alpha"); alpha.textContent = "";
+  const occ = s.shapes.occupancy, top = Math.max(1, ...occ);
+  occ.forEach((n, i) => {
+    const c = el("div", "cell");
+    c.dataset.on = n > 0 ? "1" : "0";
+    if (n > 0) c.style.opacity = (0.34 + 0.66 * Math.sqrt(n / top)).toFixed(2);
+    c.title = `role ${i}: ${num(n)} fragment${n === 1 ? "" : "s"}`;
+    alpha.append(c);
+  });
+  $("occ").textContent = `${s.shapes.occupied} of ${s.shapes.of}`;
+  $("largest").textContent =
+    `busiest role holds ${(s.shapes.largestShare * 100).toFixed(1)}% of everything`;
+
+  const tb = $("senses"); tb.textContent = "";
+  const ordered = s.senses.slice().sort((a, b) => b.worth - a.worth);
+  const best = Math.max(0.0001, ...ordered.map(x => x.worth));
+  ordered.slice(0, 12).forEach(x => {
+    const tr = document.createElement("tr");
+    tr.append(el("td", "what", x.what));
+    tr.append(el("td", "num", x.worth.toFixed(4)));
+    const bc = el("td", "barcell");
+    const bar = el("span", "bar");
+    bar.style.width = Math.max(2, (x.worth / best) * 100) + "%";
+    if (x.worth === 0) bar.style.background = "var(--hair)";
+    bc.append(bar); tr.append(bc);
+    tr.append(el("td", "num", num(x.watched)));
+    const lastCell = el("td");
+    if (x.stacked) lastCell.append(el("span", "chip", "stands on another"));
+    tr.append(lastCell);
+    tb.append(tr);
+  });
+  const stacked = s.senses.filter(x => x.stacked).length;
+  const quiet = s.senses.filter(x => x.worth === 0).length;
+  $("sensenote").textContent = s.senses.length
+    ? `${s.senses.length} held, ${stacked} of them built on other senses. `
+      + `${quiet} say nothing yet and are kept anyway: a sense that says little `
+      + `today is what another is built from tomorrow, and pruning for usefulness `
+      + `starves the composition.`
+    : "None yet. Press “Grow its senses” and watch them appear.";
+
+  const rest = $("rest"); rest.textContent = "";
+  reading(rest, "paths gone cold", num(s.forgetting.coldPaths),
+    `after <em>${s.forgetting.passes}</em> passes of forgetting`,
+    moved(s.forgetting.coldPaths, p && p.forgetting.coldPaths));
+  reading(rest, "roles that carry into new ground", num(s.transfer.shapesThatCarry),
+    `best one right <em>${(s.transfer.bestShape * 100).toFixed(1)}%</em> of the time`, null);
+  reading(rest, "lineages awake", num(s.modules.used),
+    `<em>${num(s.modules.wakes)}</em> woken, <em>${num(s.modules.sleeps)}</em> put to sleep`,
+    moved(s.modules.used, p && p.modules.used));
+  reading(rest, "rules it can act on", num(s.rules.held),
+    s.rules.held ? `consulted <em>${num(s.rules.used)}</em> times`
+                 : "none learned yet",
+    moved(s.rules.held, p && p.rules.held));
+
+  last = s;
+}
+
+const BUTTONS = ["feed", "feed-c", "senses", "sleep"];
+function setBusy(what, secs, log) {
+  $("pulse").dataset.working = what ? "1" : "0";
+  BUTTONS.forEach(b => { $("do-" + b).disabled = !!what; });
+  const c = $("console");
+  if (what) {
+    c.innerHTML = "<b>" + what + "</b> — " + secs.toFixed(0) + "s"
+      + (log && log.length ? "\n\n" + log.join("\n") : "\n\nworking…");
+  } else if (log && log.length) {
+    c.innerHTML = "<b>done</b>\n\n" + log.join("\n");
+  }
+}
+
+let failures = 0;
+async function poll() {
+  try {
+    const r = await fetch("/state", { cache: "no-store" });
+    const d = await r.json();
+    failures = 0;
+    setBusy(d.busy, d.for, d.log);
+    if (d.state && !d.state.error) render(d.state);
+    else if (d.state && d.state.error) {
+      $("console").innerHTML = "<b>it could not report</b>\n\n" + d.state.error
+        + "\n\nFeed it first, then this panel will have something to show.";
+    }
+  } catch (e) {
+    failures++;
+    if (failures > 2) {
+      $("pulse").dataset.working = "0";
+      $("banner").textContent = "the server is not answering — is tools/live.py running?";
+    }
+  }
+}
+
+BUTTONS.forEach(b => {
+  $("do-" + b).addEventListener("click", async () => {
+    BUTTONS.forEach(x => { $("do-" + x).disabled = true; });
+    $("console").innerHTML = "<b>starting…</b>";
+    try {
+      const r = await fetch("/do/" + b, { method: "GET", cache: "no-store" });
+      const d = await r.json();
+      if (d.error) $("console").innerHTML = "<b>refused</b>\n\n" + d.error;
+    } catch (e) {
+      $("console").innerHTML = "<b>could not reach the server</b>\n\n" + e.message;
+    }
+    poll();
+  });
+});
+
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

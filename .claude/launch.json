@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "razar-live",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/live.py"],
+      "port": 7331
+    }
+  ]
+}

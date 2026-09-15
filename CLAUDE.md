@@ -110,7 +110,8 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Let it dream | `./razar sleep [seed]` |
 | Grow its senses | `./razar senses [rounds] [path]` |
 | Dump its whole state | `./razar dash` |
-| See it | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
+| See it working | `python tools/live.py` then http://localhost:7331 |
+| See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 
 Warnings are errors: `-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror`.
 
@@ -128,7 +129,8 @@ gcc directly from Git Bash works fine; only `make` collides.
 "C:/msys64/usr/bin/bash.exe" -lc 'export PATH=/ucrt64/bin:/usr/bin:$PATH && make -C /e/proyectos/Razar test'
 ```
 
-The built `razar.exe` runs from any shell — but **PowerShell needs `.azar`**,
+The built `razar.exe` runs from any shell — but **PowerShell needs `.
+azar`**,
 because it does not run commands from the current directory without it. In bash
 `./razar` works as usual.
 
