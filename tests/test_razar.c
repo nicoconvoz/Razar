@@ -1961,6 +1961,122 @@ TEST(a_sense_reads_the_place_it_stands_on)
     CHECK(differed);
 }
 
+/* --- senses, scored as it goes -------------------------------------------- */
+
+TEST(a_sense_is_scored_as_it_goes_not_by_rereading)
+{
+    /* Scoring every sense by re-reading all the material, every round, cost
+       senses x material -- so the more it learned the slower it got, and an
+       organism that is paralysed by growing is no organism.
+
+       Now each step it takes is an observation: whatever it happens to be
+       standing on, the awake senses read it once and remember what followed.
+       Reach comes from TIME rather than from sweeping a radius. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++) feed(m, "the quick brown fox jumps over the lazy dog. ");
+    for (int i = 0; i < 6; i++) rz_sense_add(m, rz_sense_draw(m, (uint64_t)(i * 17 + 1)));
+
+    CHECK_EQ_U(rz_sense_observations(m, 0), 0u);
+    feed(m, "the quick brown fox jumps over the lazy dog. ");
+    CHECK(rz_sense_observations(m, 0) > 0u);
+
+    /* and what it is worth is read off what it already saw -- no walking */
+    uint64_t before = rz_sense_observations(m, 0);
+    double w = rz_sense_score(m, 0);
+    CHECK(w >= 0.0);
+    CHECK_EQ_U(rz_sense_observations(m, 0), before);
+}
+
+TEST(only_the_awake_senses_are_read_at_each_step)
+{
+    /* The reference organism keeps a deliberately enormous cold pool and wakes
+       only a handful per move. That is not an optimisation -- it is what makes
+       KEEPING the neutral ones affordable, and keeping them is the whole rule. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++) feed(m, "alpha beta gamma delta epsilon. ");
+    for (int i = 0; i < 40; i++) rz_sense_add(m, rz_sense_draw(m, (uint64_t)(i * 31 + 7)));
+    CHECK(rz_senses_count(m) > RZ_SENSE_HOT);
+
+    uint64_t reads_before = m->sense_reads;
+    uint64_t steps_before = m->frag_steps;
+    feed(m, "alpha beta gamma delta epsilon. ");
+    uint64_t steps = m->frag_steps - steps_before;
+    uint64_t reads = m->sense_reads - reads_before;
+
+    CHECK(steps > 0u);
+    /* bounded: a handful per step, not one per sense held */
+    CHECK(reads <= steps * (uint64_t)(RZ_SENSE_HOT + 2));
+}
+
+TEST(a_cold_sense_still_gets_its_turn)
+{
+    /* Asleep must not mean buried. A sense that never gets read can never earn
+       its way back, and the pool would silently freeze into whatever happened to
+       be hot first. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++) feed(m, "alpha beta gamma delta epsilon. ");
+    for (int i = 0; i < 40; i++) rz_sense_add(m, rz_sense_draw(m, (uint64_t)(i * 31 + 7)));
+
+    for (int i = 0; i < 40; i++) feed(m, "alpha beta gamma delta epsilon. ");
+
+    int32_t ns = rz_senses_count(m);
+    int32_t observed = 0;
+    for (int32_t i = 0; i < ns; i++)
+        if (rz_sense_observations(m, i) > 0u) observed++;
+    CHECK(observed > RZ_SENSE_HOT);   /* the cold ones got their turn too */
+}
+
+TEST(a_sense_looks_at_the_next_move_not_around_the_block)
+{
+    /* It reads what is one step away. Sweeping a radius through a graph whose
+       fan-out is the whole memory meant a single reading touched thousands of
+       places, and a sense that costs more than the organism is not a sense. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 30; i++) feed(m, "the quick brown fox jumps over the lazy dog. ");
+    int32_t here = rz_longest_match(m, (const unsigned char *)"the ", 4);
+    CHECK(here >= 0);
+
+    rz_sense g = rz_sense_draw(m, 3);
+    uint32_t reads_before = 0;
+    (void)reads_before;
+    /* whatever it counts, it cannot exceed what is directly reachable */
+    uint32_t v = rz_sense_read(m, &g, here);
+    int32_t tos[64];
+    int32_t nt = rz_frag_edges(m, here, tos, 64);
+    CHECK(v <= (uint32_t)(nt > 2 ? nt : 2));
+}
+
+TEST(a_sense_looks_at_what_is_at_hand_and_never_digs)
+{
+    /* A sense is a glance, not an excavation.
+
+       Reading a neighbour that lives in a sleeping module used to wake it from
+       disk, and with only a handful of modules resident they evicted each other
+       on every look: 245,159 wakes for 34,940 readings -- seven disk loads per
+       glance, and eating with twelve senses ran thirteen times slower than
+       eating without them.
+
+       So a sense sees what is already at hand and skips the rest, counting what
+       it skipped. The reference gene counts pieces on the board in front of it;
+       it does not page positions in from disk. */
+    rz_mind *m = fresh();
+    rz_set_nest(m, "test_sensenest.tmp");
+    for (int i = 0; i < 40; i++) feed(m, "the quick brown fox jumps over the lazy dog. ");
+
+    uint64_t wakes_plain = m->wakes;
+    feed(m, "the quick brown fox jumps over the lazy dog. ");
+    uint64_t cost_plain = m->wakes - wakes_plain;
+
+    for (int i = 0; i < 12; i++) rz_sense_add(m, rz_sense_draw(m, (uint64_t)(i * 17 + 1)));
+    uint64_t wakes_sensed = m->wakes;
+    feed(m, "the quick brown fox jumps over the lazy dog. ");
+    uint64_t cost_sensed = m->wakes - wakes_sensed;
+
+    /* looking must not cost more digging than not looking */
+    CHECK(cost_sensed <= cost_plain + 4u);
+    CHECK(m->sense_reads > 0u);
+}
+
 TEST(a_neutral_sense_is_kept_so_there_is_something_to_build_from)
 {
     /* THE rule, and the one that nearly went the other way.
@@ -1976,9 +2092,10 @@ TEST(a_neutral_sense_is_kept_so_there_is_something_to_build_from)
     rz_mind *m = fresh();
     for (int i = 0; i < 40; i++) feed(m, lived);
 
-    for (int round = 0; round < 60; round++)
-        rz_senses_live(m, (const unsigned char *)lived, strlen(lived),
-                       (uint64_t)(round * 7 + 1));
+    for (int round = 0; round < 60; round++) {
+        feed(m, lived);                       /* eating is what scores them */
+        rz_senses_live(m, (uint64_t)(round * 7 + 1));
+    }
 
     CHECK(rz_senses_count(m) > 3);
     CHECK(m->senses_born > 0u);
@@ -1996,9 +2113,10 @@ TEST(a_sense_can_be_built_on_another_sense)
     varied(lived, sizeof lived, 0);
     rz_mind *m = fresh();
     for (int i = 0; i < 40; i++) feed(m, lived);
-    for (int round = 0; round < 80; round++)
-        rz_senses_live(m, (const unsigned char *)lived, strlen(lived),
-                       (uint64_t)(round * 13 + 3));
+    for (int round = 0; round < 80; round++) {
+        feed(m, lived);                       /* eating is what scores them */
+        rz_senses_live(m, (uint64_t)(round * 13 + 3));
+    }
 
     int stacked = 0;
     for (int32_t i = 0; i < rz_senses_count(m); i++) {
@@ -2438,6 +2556,11 @@ int main(void)
     RUN(a_newborn_sense_is_a_divergent_copy);
     RUN(the_template_is_not_degenerate);
     RUN(a_sense_reads_the_place_it_stands_on);
+    RUN(a_sense_is_scored_as_it_goes_not_by_rereading);
+    RUN(only_the_awake_senses_are_read_at_each_step);
+    RUN(a_cold_sense_still_gets_its_turn);
+    RUN(a_sense_looks_at_the_next_move_not_around_the_block);
+    RUN(a_sense_looks_at_what_is_at_hand_and_never_digs);
     RUN(a_neutral_sense_is_kept_so_there_is_something_to_build_from);
     RUN(a_sense_can_be_built_on_another_sense);
     RUN(what_a_sense_is_worth_is_measured_and_never_taught);

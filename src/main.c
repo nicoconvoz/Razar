@@ -745,7 +745,10 @@ static int cmd_senses(int argc, char **argv)
            "round", "held", "born", "pruned", "kept", "the newest way of looking");
 
     for (int r = 0; r < rounds; r++) {
-        rz_senses_live(m, buf, n, (uint64_t)r * 2654435761u + 1u);
+        /* it lives by EATING: every step it takes is what scores its senses.
+           Nothing re-reads the material on their behalf. */
+        rz_ingest(m, buf, n);
+        rz_senses_live(m, (uint64_t)r * 2654435761u + 1u);
         if (r % 5 == 4 || r == rounds - 1) {
             char what[160];
             rz_sense_describe(m, rz_senses_count(m) - 1, what, sizeof what);

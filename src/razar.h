@@ -140,6 +140,7 @@ typedef struct {
 
 #define RZ_SENSES      64      /* how many it may hold at once */
 #define RZ_SENSE_HOT    8      /* how many are awake for any one reading */
+#define RZ_SENSE_BUCKETS 6     /* how coarsely a reading is remembered */
 
 
 typedef struct {
@@ -189,6 +190,19 @@ typedef struct {
     double   sense_worth[RZ_SENSES];
     int32_t  nsenses;
     uint64_t senses_born, senses_pruned, senses_kept_neutral;
+
+    /* What each sense has actually SEEN, accumulated one step at a time.
+       Re-reading the whole material once per sense per round cost senses x
+       material, so the more it learned the slower it ran -- an organism
+       paralysed by growing. Now every step it takes is an observation, and
+       reach comes from time rather than from sweeping a radius. */
+    uint32_t sense_obs[RZ_SENSES][RZ_SENSE_BUCKETS][RZ_SHAPES];
+    uint32_t sense_row[RZ_SENSES][RZ_SENSE_BUCKETS];
+    uint64_t sense_n[RZ_SENSES];
+    uint32_t sense_col[RZ_SHAPES];      /* what followed, regardless of sense */
+    uint64_t sense_col_n;
+    uint64_t sense_reads;               /* how much the faculty is costing */
+    uint32_t sense_turn;                /* which cold one gets its turn next */
 
     uint64_t sleeps_had;
     uint64_t dreams[4];          /* how many of each kind it has had */
@@ -637,8 +651,16 @@ double rz_sense_worth(rz_mind *m, const rz_sense *s,
    Keeping the neutral ones is the whole point. A sense that says little today
    is the material another sense is built from tomorrow, and an organism that
    prunes for usefulness starves its own composition. */
-void   rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t seed);
+void   rz_senses_live(rz_mind *m, uint64_t seed);
 int32_t rz_senses_count(const rz_mind *m);
+/* Add a sense to the population, clearing what it has seen. Returns its index,
+   or -1 when there is no room. */
+int32_t  rz_sense_add(rz_mind *m, rz_sense s);
+/* How many steps this sense has actually watched. Worth is read off these. */
+uint64_t rz_sense_observations(const rz_mind *m, int32_t i);
+/* One step, watched. Only the awake senses read it; a sleeping one still gets
+   its turn in rotation, because asleep must not mean buried. */
+void     rz_sense_observe(rz_mind *m, int32_t from, int32_t to);
 const rz_sense *rz_sense_at(const rz_mind *m, int32_t i);
 double  rz_sense_score(const rz_mind *m, int32_t i);
 void    rz_sense_describe(const rz_mind *m, int32_t i, char *out, size_t cap);

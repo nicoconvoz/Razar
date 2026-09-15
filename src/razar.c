@@ -752,6 +752,12 @@ static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
             m->shape_path[(size_t)sp * RZ_SHAPES + sf]++;
             m->shape_steps++;
 
+            /* Every step it takes is an observation. The senses that are awake
+               read where it stood and remember what followed -- which is how a
+               sense earns its worth without anything ever re-reading the
+               material on its behalf. */
+            rz_sense_observe(m, prev, f);
+
             uint32_t *w = edge_slot(m, prev, f);
             if (w) {
                 if (*w < RZ_EDGE_FLOOR) *w = RZ_EDGE_FLOOR;  /* a guess just became a memory */
@@ -1168,18 +1174,70 @@ uint32_t rz_sense_distance(const rz_sense *a, const rz_sense *b)
     return d;
 }
 
+/* Already at hand, or nothing. A glance may not wake a module from disk: with a
+   handful resident they evict each other on every look, and the senses were
+   paying seven disk loads per reading. What is asleep is simply not seen. */
+static rz_module *mod_at_hand(rz_mind *m, int32_t k)
+{
+    if (k < 0 || k >= RZ_MODULES) return NULL;
+    return m->mod[k];
+}
+
+/* The three questions a glance asks, answered only from what is resident. */
+static const rz_frag *frag_at_hand(rz_mind *m, int32_t f)
+{
+    if (f < 0 || f >= RZ_FRAGS) return NULL;
+    rz_module *M = mod_at_hand(m, id_mod(f));
+    int32_t l = id_slot(f);
+    if (!M || l >= M->nfrags) return NULL;
+    return &M->frag[l];
+}
+
+static uint8_t shape_at_hand(rz_mind *m, int32_t f)
+{
+    if (f < 0 || f >= RZ_FRAGS) return 0;
+    rz_module *M = mod_at_hand(m, id_mod(f));
+    int32_t l = id_slot(f);
+    if (!M || l >= M->nfrags) return 0;
+    return shape_of_local(m, M, l);
+}
+
+static int32_t degree_at_hand(rz_mind *m, int32_t f, int walked_only)
+{
+    if (f < 0 || f >= RZ_FRAGS) return 0;
+    rz_module *M = mod_at_hand(m, id_mod(f));
+    int32_t l = id_slot(f);
+    if (!M || l >= M->nfrags) return 0;
+    int32_t d = 0;
+    for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next)
+        if (!walked_only || M->pool[e].weight >= RZ_EDGE_FLOOR) d++;
+    return d;
+}
+
+static int32_t edges_at_hand(rz_mind *m, int32_t f, int32_t *out, int32_t cap)
+{
+    if (f < 0 || f >= RZ_FRAGS || cap <= 0) return 0;
+    rz_module *M = mod_at_hand(m, id_mod(f));
+    int32_t l = id_slot(f);
+    if (!M || l >= M->nfrags) return 0;
+    int32_t n = 0;
+    for (int32_t e = M->head[l]; e >= 0 && n < cap; e = M->pool[e].next)
+        out[n++] = M->pool[e].to;
+    return n;
+}
+
 /* Does this fragment answer the question the way the sense is looking for?
    Every question here is one the organism can already ask about itself. */
 static int sense_holds(rz_mind *m, const rz_sense *s, int32_t f)
 {
-    const rz_frag *fg = rz_frag_get(m, f);
-    if (!fg) return 0;
+    const rz_frag *fg = frag_at_hand(m, f);
+    if (!fg) return 0;                       /* asleep is simply not seen */
     switch (s->what) {
-    case RZ_WHAT_SHAPE:   return rz_shape_of(m, f) == s->value;
+    case RZ_WHAT_SHAPE:   return shape_at_hand(m, f) == s->value;
     case RZ_WHAT_WIDER:   return fg->span > s->value;
     case RZ_WHAT_BUSIER:  return fg->seen > (uint32_t)(1u << s->value);
-    case RZ_WHAT_FORKED:  return rz_frag_degree_walked(m, f) > (int32_t)s->value;
-    case RZ_WHAT_GUESSED: return rz_frag_degree(m, f) > rz_frag_degree_walked(m, f);
+    case RZ_WHAT_FORKED:  return degree_at_hand(m, f, 1) > (int32_t)s->value;
+    case RZ_WHAT_GUESSED: return degree_at_hand(m, f, 0) > degree_at_hand(m, f, 1);
     case RZ_WHAT_MARKED:  return fg->attention > 0;
     default:              return 0;
     }
@@ -1189,49 +1247,48 @@ uint32_t rz_sense_read(rz_mind *m, const rz_sense *s, int32_t here)
 {
     if (here < 0 || here >= RZ_FRAGS) return 0;
 
-    /* A sense looks at a BOUNDED neighbourhood. The reference gene counts
-       pieces on a board of 64 squares; here the fan-out is the whole graph, so
-       with radius 3 and 32 ways out of each place a single reading was touching
-       tens of thousands of nodes. A sense that costs more than the organism is
-       not a sense. */
-    int32_t front[24], next[24];
-    int32_t nf = 0;
-    front[nf++] = here;
+    /* One step. Not a radius.
+
+       Looking out to radius 3 in a graph where a place has dozens of ways out
+       meant a single reading touched thousands of fragments, and the faculty
+       cost more than the organism it served. A sense sees the NEXT MOVE, and
+       its reach comes from watching many moves rather than from sweeping a
+       neighbourhood on each one.
+
+       Downward is the exception and it is free: a fragment decomposes into two,
+       so the whole descent to `radius` is at most a handful of nodes. */
     uint32_t count = 0;
 
-    for (uint8_t step = 0; step < s->radius && nf > 0; step++) {
-        int32_t nn = 0;
-        for (int32_t i = 0; i < nf; i++) {
-            int32_t cur = front[i];
-            if (s->dir == RZ_DIR_DOWN) {
-                /* what it is made of. Snapshot before anything can page a
-                   module away — the discipline frag_birth already uses. */
-                const rz_frag *fg = rz_frag_get(m, cur);
+    if (s->dir == RZ_DIR_DOWN) {
+        int32_t front[8], next[8];
+        int32_t nf = 0;
+        front[nf++] = here;
+        for (uint8_t step = 0; step < s->radius && nf > 0; step++) {
+            int32_t nn = 0;
+            for (int32_t i = 0; i < nf; i++) {
+                const rz_frag *fg = frag_at_hand(m, front[i]);
                 if (!fg) continue;
                 int32_t kids[2] = { fg->left, fg->right };
                 for (int k = 0; k < 2; k++) {
                     if (kids[k] < 0) continue;
                     if (sense_holds(m, s, kids[k])) count++;
-                    if (nn < 24) next[nn++] = kids[k];
-                }
-            } else {
-                int32_t tos[32];
-                int32_t nt = rz_frag_edges(m, cur, tos, 12);
-                for (int32_t k = 0; k < nt; k++) {
-                    if (sense_holds(m, s, tos[k])) count++;
-                    if (nn < 24) next[nn++] = tos[k];
+                    if (nn < 8) next[nn++] = kids[k];
                 }
             }
+            for (int32_t i = 0; i < nn; i++) front[i] = next[i];
+            nf = nn;
         }
-        for (int32_t i = 0; i < nn; i++) front[i] = next[i];
-        nf = nn;
+        return count;
     }
+
+    int32_t tos[16];
+    int32_t nt = edges_at_hand(m, here, tos, 16);
+    for (int32_t k = 0; k < nt; k++)
+        if (sense_holds(m, s, tos[k])) count++;
     return count;
 }
 
 /* --- what a sense is worth, and the life of a population ------------------ */
-
-#define SENSE_BUCKETS 6
 
 static uint32_t sense_bucket(uint32_t v)
 {
@@ -1263,14 +1320,113 @@ static uint32_t sense_read_at(rz_mind *m, const rz_sense *s, int32_t here, int d
     return count;
 }
 
+int32_t rz_sense_add(rz_mind *m, rz_sense s)
+{
+    if (m->nsenses >= RZ_SENSES) return -1;
+    int32_t i = m->nsenses++;
+    m->senses[i] = s;
+    m->sense_worth[i] = 0.0;
+    m->sense_n[i] = 0;
+    memset(m->sense_obs[i], 0, sizeof m->sense_obs[i]);
+    memset(m->sense_row[i], 0, sizeof m->sense_row[i]);
+    return i;
+}
+
+uint64_t rz_sense_observations(const rz_mind *m, int32_t i)
+{
+    return (i >= 0 && i < m->nsenses) ? m->sense_n[i] : 0;
+}
+
+/* What this sense is worth, read off what it has already watched. Nothing walks
+   here: the information is in the counters the steps left behind. */
+static double sense_worth_now(const rz_mind *m, int32_t i)
+{
+    if (i < 0 || i >= m->nsenses) return 0.0;
+    uint64_t total = m->sense_n[i];
+    if (total < 32) return 0.0;
+
+    double info = 0.0;
+    for (uint32_t b = 0; b < RZ_SENSE_BUCKETS; b++) {
+        uint32_t rn = m->sense_row[i][b];
+        if (!rn) continue;
+        for (uint32_t sh = 0; sh < RZ_SHAPES; sh++) {
+            uint32_t k = m->sense_obs[i][b][sh];
+            if (!k) continue;
+            double pxy = (double)k / (double)total;
+            double px = (double)rn / (double)total;
+            double py = (double)m->sense_col[sh] / (double)m->sense_col_n;
+            if (py <= 0.0) continue;
+            info += pxy * log(pxy / (px * py));
+        }
+    }
+    return info < 0.0 ? 0.0 : info;
+}
+
+/* Who is awake. The hot set is simply the best it has, and a sleeping sense
+   still gets a turn in rotation -- asleep must not mean buried, or the pool
+   freezes into whatever happened to be hot first and can never be corrected. */
+static void sense_watch(rz_mind *m, int32_t idx, int32_t from, uint8_t next_shape)
+{
+    uint32_t b = sense_bucket(sense_read_at(m, &m->senses[idx], from, 0));
+    if (b >= RZ_SENSE_BUCKETS || next_shape >= RZ_SHAPES) return;
+    m->sense_obs[idx][b][next_shape]++;
+    m->sense_row[idx][b]++;
+    m->sense_n[idx]++;
+    m->sense_reads++;
+}
+
+void rz_sense_observe(rz_mind *m, int32_t from, int32_t to)
+{
+    if (m->nsenses <= 0 || from < 0 || to < 0) return;
+    uint8_t next_shape = shape_at_hand(m, to);
+    if (next_shape >= RZ_SHAPES) return;
+
+    m->sense_col[next_shape]++;
+    m->sense_col_n++;
+
+    /* the awake ones: the best it currently holds */
+    int32_t hot[RZ_SENSE_HOT];
+    int32_t nh = 0;
+    for (int32_t i = 0; i < m->nsenses; i++) {
+        if (nh < RZ_SENSE_HOT) {
+            int32_t j = nh++;
+            while (j > 0 && m->sense_worth[hot[j - 1]] < m->sense_worth[i]) {
+                hot[j] = hot[j - 1];
+                j--;
+            }
+            hot[j] = i;
+        } else if (m->sense_worth[i] > m->sense_worth[hot[RZ_SENSE_HOT - 1]]) {
+            int32_t j = RZ_SENSE_HOT - 1;
+            while (j > 0 && m->sense_worth[hot[j - 1]] < m->sense_worth[i]) {
+                hot[j] = hot[j - 1];
+                j--;
+            }
+            hot[j] = i;
+        }
+    }
+    for (int32_t k = 0; k < nh; k++) sense_watch(m, hot[k], from, next_shape);
+
+    /* and one sleeping one, by rotation, so it can earn its way back */
+    if (m->nsenses > nh) {
+        int32_t cold = (int32_t)(m->sense_turn % (uint32_t)m->nsenses);
+        m->sense_turn++;
+        int awake = 0;
+        for (int32_t k = 0; k < nh; k++) if (hot[k] == cold) { awake = 1; break; }
+        if (!awake) sense_watch(m, cold, from, next_shape);
+    }
+
+    /* worth is refreshed cheaply, from the counters, never by re-reading */
+    for (int32_t k = 0; k < nh; k++) m->sense_worth[hot[k]] = sense_worth_now(m, hot[k]);
+}
+
 double rz_sense_worth(rz_mind *m, const rz_sense *s,
                       const unsigned char *buf, size_t n)
 {
     /* How much does knowing this sense's reading tell the organism about what is
        coming next? Information, in nats, measured over material. It learns
        nothing while being asked -- the same discipline as the external bar. */
-    static uint32_t joint[SENSE_BUCKETS][RZ_SHAPES];
-    static uint32_t rowc[SENSE_BUCKETS], colc[RZ_SHAPES];
+    static uint32_t joint[RZ_SENSE_BUCKETS][RZ_SHAPES];
+    static uint32_t rowc[RZ_SENSE_BUCKETS], colc[RZ_SHAPES];
     memset(joint, 0, sizeof joint);
     memset(rowc, 0, sizeof rowc);
     memset(colc, 0, sizeof colc);
@@ -1287,7 +1443,7 @@ double rz_sense_worth(rz_mind *m, const rz_sense *s,
         if (prev >= 0) {
             uint32_t b = sense_bucket(sense_read_at(m, s, prev, 0));
             uint8_t sh = rz_shape_of(m, f);
-            if (b < SENSE_BUCKETS && sh < RZ_SHAPES) {
+            if (b < RZ_SENSE_BUCKETS && sh < RZ_SHAPES) {
                 joint[b][sh]++;
                 rowc[b]++;
                 colc[sh]++;
@@ -1300,7 +1456,7 @@ double rz_sense_worth(rz_mind *m, const rz_sense *s,
     if (total < 32) return 0.0;
 
     double info = 0.0;
-    for (uint32_t b = 0; b < SENSE_BUCKETS; b++) {
+    for (uint32_t b = 0; b < RZ_SENSE_BUCKETS; b++) {
         if (!rowc[b]) continue;
         for (uint32_t sh = 0; sh < RZ_SHAPES; sh++) {
             if (!joint[b][sh]) continue;
@@ -1378,12 +1534,20 @@ static int sense_is_redundant(rz_mind *m, int32_t idx)
    what another sense is built from tomorrow, and an organism that prunes for
    usefulness starves its own composition. */
 
-void rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t seed)
+/* A round of living. It walks nothing.
+ *
+ * Worth is already there, left behind by the steps the organism took while it
+ * was eating. What happens here is only what cannot happen mid-step: a birth,
+ * and an audit of one old sense.
+ *
+ * Birth is INSTANT, as in the reference organism -- a newborn enters expressed
+ * and in use, with no trial period and nothing to prove yet. It has watched
+ * nothing, so it is worth nothing, and gating on that would mean no sense could
+ * ever be born. Quality is looked after afterwards, by the audit, without
+ * holding up the learning. */
+void rz_senses_live(rz_mind *m, uint64_t seed)
 {
     uint64_t r = seed ? seed : 1;
-
-    for (int32_t i = 0; i < m->nsenses; i++)
-        m->sense_worth[i] = rz_sense_worth(m, &m->senses[i], buf, n);
 
     /* --- a newborn, as a divergent copy of one it already holds --- */
     if (m->nsenses < RZ_SENSES) {
@@ -1394,24 +1558,27 @@ void rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t see
             int32_t parent = (int32_t)(xorshift(&r) % (uint64_t)m->nsenses);
             baby = rz_sense_mutate(m, &m->senses[parent], xorshift(&r));
         }
-        double w = rz_sense_worth(m, &baby, buf, n);
-        if (w > SENSE_BIRTH_GATE) {
-            m->senses[m->nsenses] = baby;
-            m->sense_worth[m->nsenses] = w;
-            m->nsenses++;
-            m->senses_born++;
-        }
+        if (rz_sense_add(m, baby) >= 0) m->senses_born++;
     }
 
     if (m->nsenses < 3) return;
 
     /* --- and an audit of one old one, chosen at random --- */
     int32_t victim = (int32_t)(xorshift(&r) % (uint64_t)m->nsenses);
+
+    /* A sense that has not watched enough is not judged. Dropping one for
+       saying little before it has had the chance to say anything is how a
+       population stops accumulating. */
+    if (m->sense_n[victim] < 64) return;
+
     if (xorshift(&r) % 100 < 55) {
         if (sense_is_redundant(m, victim)) {
             for (int32_t j = victim; j + 1 < m->nsenses; j++) {
                 m->senses[j] = m->senses[j + 1];
                 m->sense_worth[j] = m->sense_worth[j + 1];
+                m->sense_n[j] = m->sense_n[j + 1];
+                memcpy(m->sense_obs[j], m->sense_obs[j + 1], sizeof m->sense_obs[j]);
+                memcpy(m->sense_row[j], m->sense_row[j + 1], sizeof m->sense_row[j]);
             }
             m->nsenses--;
             m->senses_pruned++;
@@ -1419,14 +1586,15 @@ void rz_senses_live(rz_mind *m, const unsigned char *buf, size_t n, uint64_t see
             m->senses_kept_neutral++;   /* it says little, and it stays */
         }
     } else {
+        /* A challenger cannot be compared yet -- it has watched nothing. So it
+           replaces nobody here; it is added, and the two are left to earn their
+           worth against the same steps. Whichever turns out redundant is the
+           one the audit drops later. */
         rz_sense chal = rz_sense_mutate(m, &m->senses[victim], xorshift(&r));
-        double w = rz_sense_worth(m, &chal, buf, n);
-        if (w > m->sense_worth[victim] * SENSE_SWAP_GATE) {
-            m->senses[victim] = chal;
-            m->sense_worth[victim] = w;
-        }
+        if (rz_sense_add(m, chal) >= 0) m->senses_born++;
     }
 }
+
 
 void rz_measure_harmony(rz_mind *m, const unsigned char *buf, size_t n,
                         rz_harmony *out)
