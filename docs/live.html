@@ -429,9 +429,9 @@ function setBusy(what, secs, log) {
   const c = $("console");
   if (what) {
     c.innerHTML = "<b>" + what + "</b> — " + secs.toFixed(0) + "s"
-      + (log && log.length ? "\n\n" + log.join("\n") : "\n\ntrabajando…");
+      + (log && log.length ? "\n\n" + log.map(sayLine).join("\n") : "\n\ntrabajando…");
   } else if (log && log.length) {
-    c.innerHTML = "<b>listo</b>\n\n" + log.join("\n");
+    c.innerHTML = "<b>listo</b>\n\n" + log.map(sayLine).join("\n");
   }
 }
 
