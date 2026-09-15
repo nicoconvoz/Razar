@@ -15,7 +15,9 @@
 
 /* Derived from the real layout, so a struct change makes old files
    unreadable on purpose instead of silently misaligned. */
-#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module) + 1u))
+/* bumped by hand when the FILE FORMAT changes, not only the struct size:
+   the senses it grows and the rules it learns now go down with it. */
+#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module) + 2u))
 /* Bumped by hand when the MEANING of a stored number changes, not only its
    size. Weight 1 used to mean "cold"; it now means "never walked". */
 #define RZ_SEMANTICS 1u
@@ -2409,7 +2411,33 @@ int rz_save(const rz_mind *m, const char *path)
           && (fwrite(&m->awake_strain, sizeof m->awake_strain, 1, f) == 1)
           && (fwrite(&m->awake_anticipated, sizeof m->awake_anticipated, 1, f) == 1)
           && (fwrite(&m->sleeps_had, sizeof m->sleeps_had, 1, f) == 1)
-          && (fwrite(m->dreams, sizeof m->dreams, 1, f) == 1);
+          && (fwrite(m->dreams, sizeof m->dreams, 1, f) == 1)
+          /* and what it GREW. Built and then thrown away at exit is how an
+             instrument comes to report an empty library forever while the
+             organism keeps relearning it from scratch. */
+          && (fwrite(&m->nsenses, sizeof m->nsenses, 1, f) == 1)
+          && (m->nsenses <= 0 || (
+                 fwrite(m->senses, sizeof m->senses[0], (size_t)m->nsenses, f)
+                     == (size_t)m->nsenses
+              && fwrite(m->sense_worth, sizeof m->sense_worth[0], (size_t)m->nsenses, f)
+                     == (size_t)m->nsenses
+              && fwrite(m->sense_n, sizeof m->sense_n[0], (size_t)m->nsenses, f)
+                     == (size_t)m->nsenses
+              && fwrite(m->sense_obs, sizeof m->sense_obs[0], (size_t)m->nsenses, f)
+                     == (size_t)m->nsenses
+              && fwrite(m->sense_row, sizeof m->sense_row[0], (size_t)m->nsenses, f)
+                     == (size_t)m->nsenses))
+          && (fwrite(m->sense_col, sizeof m->sense_col, 1, f) == 1)
+          && (fwrite(&m->sense_col_n, sizeof m->sense_col_n, 1, f) == 1)
+          && (fwrite(&m->senses_born, sizeof m->senses_born, 1, f) == 1)
+          && (fwrite(&m->senses_pruned, sizeof m->senses_pruned, 1, f) == 1)
+          && (fwrite(&m->senses_kept_neutral, sizeof m->senses_kept_neutral, 1, f) == 1)
+          && (fwrite(&m->nrules, sizeof m->nrules, 1, f) == 1)
+          && (m->nrules <= 0 ||
+                 fwrite(m->rules, sizeof m->rules[0], (size_t)m->nrules, f)
+                     == (size_t)m->nrules)
+          && (fwrite(&m->rules_born, sizeof m->rules_born, 1, f) == 1)
+          && (fwrite(&m->rules_used, sizeof m->rules_used, 1, f) == 1);
     if (fclose(f) != 0) ok = 0;
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -2435,6 +2463,16 @@ int rz_load(rz_mind *m, const char *path)
     uint64_t taw[4], tslept, tdreams[4];
     double   tstrain;
     int32_t  tnfrags[RZ_MODULES];
+    /* what it grew, read aside like everything else */
+    static rz_sense tsenses[RZ_SENSES];
+    static double   tsworth[RZ_SENSES];
+    static uint64_t tsn[RZ_SENSES];
+    static uint32_t tsobs[RZ_SENSES][RZ_SENSE_BUCKETS][RZ_SHAPES];
+    static uint32_t tsrow[RZ_SENSES][RZ_SENSE_BUCKETS];
+    static uint32_t tscol[RZ_SHAPES];
+    static rz_rule  trules[RZ_RULES];
+    int32_t  tns = 0, tnr = 0;
+    uint64_t tscoln = 0, tsborn = 0, tspruned = 0, tskept = 0, trborn = 0, trused = 0;
 
     int ok = (fread(tpath, sizeof tpath, 1, f) == 1)
           && (fread(tatom, sizeof tatom, 1, f) == 1)
@@ -2454,7 +2492,26 @@ int rz_load(rz_mind *m, const char *path)
           && (fread(&tstrain, sizeof tstrain, 1, f) == 1)
           && (fread(&taw[3], sizeof taw[3], 1, f) == 1)
           && (fread(&tslept, sizeof tslept, 1, f) == 1)
-          && (fread(tdreams, sizeof tdreams, 1, f) == 1);
+          && (fread(tdreams, sizeof tdreams, 1, f) == 1)
+          && (fread(&tns, sizeof tns, 1, f) == 1)
+          && (tns >= 0 && tns <= RZ_SENSES)
+          && (tns == 0 || (
+                 fread(tsenses, sizeof tsenses[0], (size_t)tns, f) == (size_t)tns
+              && fread(tsworth, sizeof tsworth[0], (size_t)tns, f) == (size_t)tns
+              && fread(tsn,     sizeof tsn[0],     (size_t)tns, f) == (size_t)tns
+              && fread(tsobs,   sizeof tsobs[0],   (size_t)tns, f) == (size_t)tns
+              && fread(tsrow,   sizeof tsrow[0],   (size_t)tns, f) == (size_t)tns))
+          && (fread(tscol, sizeof tscol, 1, f) == 1)
+          && (fread(&tscoln, sizeof tscoln, 1, f) == 1)
+          && (fread(&tsborn, sizeof tsborn, 1, f) == 1)
+          && (fread(&tspruned, sizeof tspruned, 1, f) == 1)
+          && (fread(&tskept, sizeof tskept, 1, f) == 1)
+          && (fread(&tnr, sizeof tnr, 1, f) == 1)
+          && (tnr >= 0 && tnr <= RZ_RULES)
+          && (tnr == 0 ||
+                 fread(trules, sizeof trules[0], (size_t)tnr, f) == (size_t)tnr)
+          && (fread(&trborn, sizeof trborn, 1, f) == 1)
+          && (fread(&trused, sizeof trused, 1, f) == 1);
     fclose(f);
     if (!ok) return RZ_ERR_IO;
 
@@ -2483,6 +2540,24 @@ int rz_load(rz_mind *m, const char *path)
     m->awake_anticipated = taw[3];
     m->sleeps_had = tslept;
     memcpy(m->dreams, tdreams, sizeof tdreams);
+
+    m->nsenses = tns;
+    if (tns > 0) {
+        memcpy(m->senses, tsenses, sizeof m->senses[0] * (size_t)tns);
+        memcpy(m->sense_worth, tsworth, sizeof m->sense_worth[0] * (size_t)tns);
+        memcpy(m->sense_n, tsn, sizeof m->sense_n[0] * (size_t)tns);
+        memcpy(m->sense_obs, tsobs, sizeof m->sense_obs[0] * (size_t)tns);
+        memcpy(m->sense_row, tsrow, sizeof m->sense_row[0] * (size_t)tns);
+    }
+    memcpy(m->sense_col, tscol, sizeof tscol);
+    m->sense_col_n = tscoln;
+    m->senses_born = tsborn;
+    m->senses_pruned = tspruned;
+    m->senses_kept_neutral = tskept;
+    m->nrules = tnr;
+    if (tnr > 0) memcpy(m->rules, trules, sizeof m->rules[0] * (size_t)tnr);
+    m->rules_born = trborn;
+    m->rules_used = trused;
     return RZ_OK;
 }
 

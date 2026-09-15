@@ -795,8 +795,128 @@ static int cmd_senses(int argc, char **argv)
     printf("\n  A sense that says little today is what another is built from\n");
     printf("  tomorrow. Pruning for usefulness starves the composition.\n\n");
 
+    /* what it grew is kept. Growing senses and dropping them at exit is how
+       an organism relearns the same thing forever. */
+    if (rz_save(m, MIND_PATH) != RZ_OK)
+        fprintf(stderr, "warning: could not write %s\n", MIND_PATH);
+
     rz_free(m);
     free(m);
+    return 0;
+}
+
+
+/* --- dash ------------------------------------------------------------------
+ *
+ * The whole organism as one JSON object, so an instrument outside C can read
+ * it. It reads a saved mind and changes nothing: measuring may not strengthen
+ * what it measures. */
+static void j_str(const char *s)
+{
+    putchar('"');
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p == '"' || *p == '\\') { putchar('\\'); putchar(*p); }
+        else if (*p < 0x20) printf("\\u%04x", *p);
+        else putchar(*p);
+    }
+    putchar('"');
+}
+
+static int cmd_dash(int argc, char **argv)
+{
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m) { fprintf(stderr, "out of memory\n"); return 1; }
+    rz_init(m);
+    rz_set_nest(m, MODULES);
+    if (rz_load(m, MIND_PATH) != RZ_OK) {
+        fprintf(stderr, "nothing remembered yet. Feed it first.\n");
+        free(m);
+        return 1;
+    }
+
+    rz_autopsy a;
+    rz_examine(m, &a);
+
+    printf("{\n");
+    printf("  \"memory\": {\n");
+    printf("    \"atomsEaten\": %llu,\n",   (unsigned long long)a.atoms_ingested);
+    printf("    \"paths\": %llu,\n",        (unsigned long long)a.distinct_paths);
+    printf("    \"atomsSeen\": %llu,\n",    (unsigned long long)a.distinct_atoms);
+    printf("    \"fragments\": %llu,\n",    (unsigned long long)a.frags);
+    printf("    \"births\": %llu,\n",       (unsigned long long)a.births);
+    printf("    \"fragSteps\": %llu,\n",    (unsigned long long)a.frag_steps);
+    printf("    \"orphans\": %llu,\n",      (unsigned long long)a.orphans);
+    printf("    \"entropy\": %.6f,\n",      a.entropy);
+    printf("    \"support\": %.2f,\n",      a.effective_support);
+    printf("    \"top1Share\": %.4f,\n",    a.top1_share);
+    printf("    \"plasticBytes\": %llu,\n", (unsigned long long)a.plastic_bytes);
+    printf("    \"costRatio\": %.6f\n",
+           a.atoms_ingested ? (double)a.plastic_bytes / (double)a.atoms_ingested : 0.0);
+    printf("  },\n");
+
+    printf("  \"modules\": { \"used\": %llu, \"widest\": %llu, \"busiest\": %llu,"
+           " \"wakes\": %llu, \"sleeps\": %llu },\n",
+           (unsigned long long)a.modules_used, (unsigned long long)a.widest_module,
+           (unsigned long long)a.busiest_frag, (unsigned long long)a.wakes,
+           (unsigned long long)a.sleeps);
+
+    printf("  \"forgetting\": { \"passes\": %llu, \"coldPaths\": %llu },\n",
+           (unsigned long long)a.decay_passes, (unsigned long long)a.cold_edges);
+
+    /* the shape alphabet: how many of the sixty-four roles anybody occupies.
+       It collapsed to four once, silently, so it is on the dashboard now. */
+    {
+        uint32_t occupied = 0, biggest = 0, total = 0;
+        printf("  \"shapes\": { \"occupancy\": [");
+        for (uint8_t sh = 0; sh < RZ_SHAPES; sh++) {
+            uint32_t n = rz_shape_members(m, sh);
+            total += n;
+            if (n) occupied++;
+            if (n > biggest) biggest = n;
+            printf("%s%u", sh ? "," : "", n);
+        }
+        printf("], \"occupied\": %u, \"of\": %d, \"largestShare\": %.4f },\n",
+               occupied, RZ_SHAPES, total ? (double)biggest / (double)total : 0.0);
+    }
+
+    printf("  \"night\": { \"steps\": %llu, \"built\": %llu, \"strain\": %.4f,"
+           " \"anticipated\": %llu, \"slept\": %llu,"
+           " \"needs\": ", (unsigned long long)m->awake_steps,
+           (unsigned long long)m->awake_births,
+           m->awake_steps ? m->awake_strain / (double)m->awake_steps : 0.0,
+           (unsigned long long)m->awake_anticipated,
+           (unsigned long long)m->sleeps_had);
+    j_str(rz_dream_reason(rz_dream_needed(m)));
+    printf(", \"dreams\": [%llu,%llu,%llu,%llu] },\n",
+           (unsigned long long)m->dreams[0], (unsigned long long)m->dreams[1],
+           (unsigned long long)m->dreams[2], (unsigned long long)m->dreams[3]);
+
+    printf("  \"transfer\": { \"shapesThatCarry\": %llu, \"bestShape\": %.4f },\n",
+           (unsigned long long)a.shapes_transfer, a.best_shape);
+
+    /* the senses it grew, each with what it is worth and whether it stands on
+       another sense */
+    printf("  \"senses\": [");
+    for (int32_t i = 0; i < rz_senses_count(m); i++) {
+        char what[160];
+        rz_sense_describe(m, i, what, sizeof what);
+        const rz_sense *s = rz_sense_at(m, i);
+        printf("%s\n    { \"what\": ", i ? "," : "");
+        j_str(what);
+        printf(", \"worth\": %.6f, \"watched\": %llu, \"stacked\": %s }",
+               rz_sense_score(m, i), (unsigned long long)rz_sense_observations(m, i),
+               (s && s->src) ? "true" : "false");
+    }
+    printf("%s  ],\n", rz_senses_count(m) ? "\n" : "");
+
+    printf("  \"rules\": { \"held\": %u, \"born\": %llu, \"used\": %llu }\n",
+           rz_rules_count(m), (unsigned long long)m->rules_born,
+           (unsigned long long)m->rules_used);
+    printf("}\n");
+
+    rz_free(m);
+    free(m);
+    (void)argc; (void)argv;
     return 0;
 }
 
@@ -814,6 +934,7 @@ int main(int argc, char **argv)
         printf("  razar write <cue> [n] [effort] [temp] [seed]   give it the pen\n");
         printf("  razar sleep [seed]                    let it dream on what it lived\n");
         printf("  razar senses [rounds] [path]          watch it grow its own ways of looking\n");
+        printf("  razar dash                            its whole state, as JSON\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -825,6 +946,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "write"))        return cmd_write(argc - 2, argv + 2);
     if (!strcmp(argv[1], "sleep"))        return cmd_sleep(argc - 2, argv + 2);
     if (!strcmp(argv[1], "senses"))       return cmd_senses(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "dash"))         return cmd_dash(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

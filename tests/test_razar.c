@@ -232,6 +232,28 @@ TEST(a_mind_survives_a_round_trip)
     CHECK_EQ_U(after->births, before->births);
     CHECK_NEAR(rz_effective_support(after), rz_effective_support(before), 1e-12);
 
+    /* What it GREW must survive too. Adding a field to the mind and forgetting
+       to write it down has happened five times in this project, and the symptom
+       is always the same: the instrument reports a zero that looks like a
+       result. Here it was the senses it grows and the rules it learns -- built,
+       then thrown away at exit, so a dashboard would have shown an empty
+       library forever while the organism kept relearning it. */
+    for (int i = 0; i < 6; i++) rz_sense_add(before, rz_sense_draw(before, (uint64_t)(i * 17 + 1)));
+    for (int i = 0; i < 20; i++) feed(before, "the organism remembers having read this ");
+    rz_rules_learn(before, (const unsigned char *)"the organism reads this instead ", 32);
+    CHECK(rz_senses_count(before) > 0);
+    CHECK(rz_rules_count(before) > 0u);
+
+    CHECK_EQ_U(rz_save(before, path), RZ_OK);
+    rz_mind *again = fresh();
+    rz_set_nest(again, "test_nest.tmp");
+    CHECK_EQ_U(rz_load(again, path), RZ_OK);
+
+    CHECK_EQ_U(rz_senses_count(again), rz_senses_count(before));
+    CHECK_EQ_U(rz_rules_count(again), rz_rules_count(before));
+    CHECK_EQ_U(rz_sense_observations(again, 0), rz_sense_observations(before, 0));
+    CHECK_NEAR(rz_sense_score(again, 0), rz_sense_score(before, 0), 1e-9);
+
     remove(path);
 }
 
