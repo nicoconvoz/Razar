@@ -17,7 +17,7 @@
    unreadable on purpose instead of silently misaligned. */
 /* bumped by hand when the FILE FORMAT changes, not only the struct size:
    the senses it grows and the rules it learns now go down with it. */
-#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module) + 2u))
+#define RZ_MIND_VER ((uint32_t)(RZ_ATOMS + 1000u * (uint32_t)sizeof(rz_module) + 3u))
 /* Bumped by hand when the MEANING of a stored number changes, not only its
    size. Weight 1 used to mean "cold"; it now means "never walked". */
 #define RZ_SEMANTICS 1u
@@ -703,6 +703,12 @@ static double step_strain(rz_mind *m, int32_t from, int32_t actual)
     return strain < 0.0 ? 0.0 : strain;
 }
 
+/* The exchange it has with itself, one per step. Declared here because the
+   walk is where it happens and the machinery lives further down. */
+static int32_t inner_expect(rz_mind *m, int32_t from, int32_t *rule_out);
+static void    inner_judge(rz_mind *m, int32_t from, int32_t expected,
+                           int32_t actual, int32_t rule);
+
 /* Segment the material into the widest conjunctions already known, then let the
    traffic between them decide what becomes a unit next. */
 static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
@@ -725,6 +731,12 @@ static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
         }
 
         if (prev >= 0) {
+            /* It says what it expects HERE, before the next piece has touched
+               anything. The claim has to be made in the dark or it is not a
+               claim. */
+            int32_t expect_rule = -1;
+            int32_t expect = m->inner_on ? inner_expect(m, prev, &expect_rule) : -1;
+
             /* The abstract layer is built by the same traffic, one level up:
                a fragment that LOOKED like this led to one that LOOKED like
                that. Recorded with the shapes as they stood at the time, which
@@ -760,6 +772,12 @@ static void ingest_fragments(rz_mind *m, const unsigned char *buf, size_t n)
                material on its behalf. */
             rz_sense_observe(m, prev, f);
 
+            /* And every step is an exchange with itself. It has already said
+               what it expects -- said before `f` was looked at, so the answer
+               cannot be manufactured by the answer -- and now reality replies
+               and whoever spoke is credited or blamed. */
+            if (m->inner_on) inner_judge(m, prev, expect, f, expect_rule);
+
             uint32_t *w = edge_slot(m, prev, f);
             if (w) {
                 if (*w < RZ_EDGE_FLOOR) *w = RZ_EDGE_FLOOR;  /* a guess just became a memory */
@@ -784,6 +802,10 @@ void rz_init(rz_mind *m)
     /* Every atom is already a fragment: the degenerate conjunction of one.
        Its module holds it in slot 0 and is woken on demand. */
     for (int32_t k = 0; k < RZ_MODULES; k++) m->mod_nfrags[k] = 1;
+    /* It is born listening to itself. Silence has to be asked for, because an
+       organism that never finds out whether it was right is the thing this
+       loop exists to stop being. */
+    m->inner_on = 1;
 }
 
 void rz_free(rz_mind *m)
@@ -1680,6 +1702,79 @@ void rz_rules_learn(rz_mind *m, const unsigned char *buf, size_t n)
     }
 }
 
+/* --- the inner conversation (P32) -----------------------------------------
+ *
+ * The loop that was missing. It had senses that watched and rules that voted,
+ * and nothing anywhere closed the circle: it never found out whether it had
+ * been right, so nobody paid for being wrong. That is why the rules memorised.
+ *
+ * Now every step is an exchange. Before the next piece is looked at, it says
+ * what it expects. Reality answers. And whoever spoke gets the credit or the
+ * blame, on the same exponential average the reference organism uses.
+ *
+ * A rule that keeps being wrong is never deleted. It fades until its vote
+ * cannot move anything -- it stops being listened to, which is what forgetting
+ * has always meant here.
+ */
+
+void rz_inner_listen(rz_mind *m, int on) { m->inner_on = on ? 1 : 0; }
+
+uint32_t rz_inner_count(const rz_mind *m)
+{
+    return m->inner_n < RZ_INNER ? (uint32_t)m->inner_n : (uint32_t)RZ_INNER;
+}
+
+int rz_inner_at(const rz_mind *m, uint32_t back, rz_inner *out)
+{
+    uint32_t have = rz_inner_count(m);
+    if (!out || back >= have) return 0;
+    /* 0 is the most recent thing it said */
+    uint64_t idx = m->inner_n - 1 - back;
+    *out = m->inner[idx % RZ_INNER];
+    return 1;
+}
+
+uint64_t rz_inner_right(const rz_mind *m) { return m->inner_right; }
+uint64_t rz_inner_said(const rz_mind *m)  { return m->inner_said; }
+
+/* One exchange: it has just said what it expects, and reality has answered. */
+static void inner_judge(rz_mind *m, int32_t from, int32_t expected,
+                        int32_t actual, int32_t rule)
+{
+    int right = (expected >= 0 && expected == actual);
+
+    rz_inner *e = &m->inner[m->inner_n % RZ_INNER];
+    e->from = from;
+    e->expected = expected;
+    e->actual = actual;
+    e->rule = rule;
+    e->right = (uint8_t)right;
+    m->inner_n++;
+    m->inner_said++;
+    if (right) m->inner_right++;
+
+    if (rule < 0 || rule >= m->nrules) return;
+
+    /* Credit and blame. Being right is worth what the moment was worth to get
+       right; being wrong costs, and costs immediately. */
+    rz_rule *r = &m->rules[rule];
+    double reward = right ? 1.0 : 0.0;
+    r->score = 0.7 * r->score + 0.3 * reward;
+    if (right) r->hits++;
+    else       r->misses++;
+}
+
+/* What it expects here, and who said so. Asked BEFORE the next piece is looked
+   at, so the answer cannot be manufactured by the answer. */
+static int32_t inner_expect(rz_mind *m, int32_t from, int32_t *rule_out)
+{
+    int32_t urged = -1;
+    double urge = 0.0;
+    int32_t rule = rz_rule_consult(m, from, &urged, &urge);
+    *rule_out = rule;
+    return rz_predict_next(m, from);
+}
+
 /* A round of living. It walks nothing.
  *
  * Worth is already there, left behind by the steps the organism took while it
@@ -2437,7 +2532,14 @@ int rz_save(const rz_mind *m, const char *path)
                  fwrite(m->rules, sizeof m->rules[0], (size_t)m->nrules, f)
                      == (size_t)m->nrules)
           && (fwrite(&m->rules_born, sizeof m->rules_born, 1, f) == 1)
-          && (fwrite(&m->rules_used, sizeof m->rules_used, 1, f) == 1);
+          && (fwrite(&m->rules_used, sizeof m->rules_used, 1, f) == 1)
+          /* and the conversation. The ring itself is small and a counter that
+             does not survive shows a false zero, which is how this project has
+             lost five fields already. */
+          && (fwrite(m->inner, sizeof m->inner, 1, f) == 1)
+          && (fwrite(&m->inner_n, sizeof m->inner_n, 1, f) == 1)
+          && (fwrite(&m->inner_said, sizeof m->inner_said, 1, f) == 1)
+          && (fwrite(&m->inner_right, sizeof m->inner_right, 1, f) == 1);
     if (fclose(f) != 0) ok = 0;
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -2473,6 +2575,8 @@ int rz_load(rz_mind *m, const char *path)
     static rz_rule  trules[RZ_RULES];
     int32_t  tns = 0, tnr = 0;
     uint64_t tscoln = 0, tsborn = 0, tspruned = 0, tskept = 0, trborn = 0, trused = 0;
+    static rz_inner tinner[RZ_INNER];
+    uint64_t tin = 0, tisaid = 0, tiright = 0;
 
     int ok = (fread(tpath, sizeof tpath, 1, f) == 1)
           && (fread(tatom, sizeof tatom, 1, f) == 1)
@@ -2511,7 +2615,11 @@ int rz_load(rz_mind *m, const char *path)
           && (tnr == 0 ||
                  fread(trules, sizeof trules[0], (size_t)tnr, f) == (size_t)tnr)
           && (fread(&trborn, sizeof trborn, 1, f) == 1)
-          && (fread(&trused, sizeof trused, 1, f) == 1);
+          && (fread(&trused, sizeof trused, 1, f) == 1)
+          && (fread(tinner, sizeof tinner, 1, f) == 1)
+          && (fread(&tin, sizeof tin, 1, f) == 1)
+          && (fread(&tisaid, sizeof tisaid, 1, f) == 1)
+          && (fread(&tiright, sizeof tiright, 1, f) == 1);
     fclose(f);
     if (!ok) return RZ_ERR_IO;
 
@@ -2558,6 +2666,10 @@ int rz_load(rz_mind *m, const char *path)
     if (tnr > 0) memcpy(m->rules, trules, sizeof m->rules[0] * (size_t)tnr);
     m->rules_born = trborn;
     m->rules_used = trused;
+    memcpy(m->inner, tinner, sizeof tinner);
+    m->inner_n = tin;
+    m->inner_said = tisaid;
+    m->inner_right = tiright;
     return RZ_OK;
 }
 

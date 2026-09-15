@@ -836,6 +836,11 @@ static int cmd_dash(int argc, char **argv)
 
     rz_autopsy a;
     rz_examine(m, &a);
+    uint64_t rhit = 0, rmiss = 0;
+    for (uint32_t ri = 0; ri < rz_rules_count(m); ri++) {
+        rhit += m->rules[ri].hits;
+        rmiss += m->rules[ri].misses;
+    }
 
     printf("{\n");
     printf("  \"memory\": {\n");
@@ -909,9 +914,38 @@ static int cmd_dash(int argc, char **argv)
     }
     printf("%s  ],\n", rz_senses_count(m) ? "\n" : "");
 
-    printf("  \"rules\": { \"held\": %u, \"born\": %llu, \"used\": %llu }\n",
+    printf("  \"rules\": { \"held\": %u, \"born\": %llu, \"used\": %llu,"
+           " \"right\": %llu, \"wrong\": %llu },\n",
            rz_rules_count(m), (unsigned long long)m->rules_born,
-           (unsigned long long)m->rules_used);
+           (unsigned long long)m->rules_used,
+           (unsigned long long)rhit, (unsigned long long)rmiss);
+
+    /* The conversation it has with itself: what it expected, what came,
+       and whether a rule was the one that spoke. */
+    printf("  \"inner\": { \"said\": %llu, \"right\": %llu, \"lately\": [",
+           (unsigned long long)rz_inner_said(m),
+           (unsigned long long)rz_inner_right(m));
+    {
+        uint32_t have = rz_inner_count(m);
+        uint32_t show = have < 20 ? have : 20;
+        for (uint32_t k = 0; k < show; k++) {
+            rz_inner e;
+            if (!rz_inner_at(m, k, &e)) break;
+            unsigned char here[RZ_FRAG_SPAN + 1], came[RZ_FRAG_SPAN + 1];
+            size_t hn = rz_expand(m, e.from, here, sizeof here - 1);
+            size_t cn = e.actual >= 0
+                      ? rz_expand(m, e.actual, came, sizeof came - 1) : 0;
+            here[hn] = 0; came[cn] = 0;
+            printf("%s\n    { \"at\": ", k ? "," : "");
+            j_str((const char *)here);
+            printf(", \"came\": ");
+            j_str((const char *)came);
+            printf(", \"right\": %s, \"byRule\": %s }",
+                   e.right ? "true" : "false",
+                   e.rule >= 0 ? "true" : "false");
+        }
+        printf("%s  ] }\n", show ? "\n" : "");
+    }
     printf("}\n");
 
     rz_free(m);

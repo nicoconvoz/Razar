@@ -185,6 +185,22 @@
   </section>
 
   <section>
+    <h2>Su charla interna &mdash; qu&eacute; esperaba, qu&eacute; vino</h2>
+    <div class="reads" id="innerhead"></div>
+    <div class="scroller" style="margin-top:12px">
+      <table>
+        <thead><tr>
+          <th>parado en</th><th>vino</th><th class="num"></th>
+        </tr></thead>
+        <tbody id="inner"></tbody>
+      </table>
+    </div>
+    <p class="note">Dice lo que espera <b>antes</b> de mirar la pieza siguiente,
+      y despu&eacute;s la realidad contesta. Sin ese segundo paso nadie pagaba
+      por equivocarse, y por eso las reglas memorizaban.</p>
+  </section>
+
+  <section>
     <h2>Lo que va diciendo</h2>
     <div class="console" id="console">En reposo. Toc&aacute; algo de arriba y mir&aacute;lo trabajar.</div>
   </section>
@@ -332,6 +348,36 @@ function render(s) {
       + `un sentido que hoy dice poco es de lo que se construye otro mañana, y `
       + `podar por utilidad mata la recombinación.`
     : "Ninguno todavía. Tocá «Que se haga sentidos» y mirá cómo aparecen.";
+
+  const ih = $("innerhead"); ih.textContent = "";
+  const said = s.inner ? s.inner.said : 0;
+  const rightN = s.inner ? s.inner.right : 0;
+  reading(ih, "veces que se dijo algo a sí mismo", num(said),
+    said ? `acertó <em>${(rightN / said * 100).toFixed(1)}%</em> de las veces` : "todavía ninguna",
+    moved(said, p && p.inner && p.inner.said));
+  reading(ih, "reglas cobradas por errar", num(s.rules.wrong || 0),
+    `contra <em>${num(s.rules.right || 0)}</em> veces que acertaron`,
+    moved(s.rules.wrong || 0, p && p.rules && p.rules.wrong));
+
+  const it = $("inner"); it.textContent = "";
+  const lately = (s.inner && s.inner.lately) || [];
+  if (!lately.length) {
+    const tr = document.createElement("tr");
+    const td = el("td", "what", "Todavía no dijo nada. Dale de comer y mirálo pensar.");
+    td.colSpan = 3;
+    tr.append(td); it.append(tr);
+  }
+  lately.slice(0, 10).forEach(x => {
+    const tr = document.createElement("tr");
+    tr.append(el("td", "what", JSON.stringify(x.at)));
+    tr.append(el("td", "what", JSON.stringify(x.came)));
+    const v = el("td", "num");
+    const chip = el("span", "chip", x.right ? "acertó" : "erró");
+    if (!x.right) { chip.style.background = "transparent"; chip.style.color = "var(--muted)"; }
+    v.append(chip);
+    tr.append(v);
+    it.append(tr);
+  });
 
   const rest = $("rest"); rest.textContent = "";
   reading(rest, "caminos que se enfriaron", num(s.forgetting.coldPaths),

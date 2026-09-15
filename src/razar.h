@@ -155,7 +155,17 @@ typedef struct {
     double   score;     /* how much it is worth */
     double   level;     /* 1 lived, 0 dreamt -- and a dream never weighs as much */
     uint32_t uses;
+    uint32_t hits, misses;   /* what it cost the organism to listen to it */
 } rz_rule;
+
+#define RZ_INNER 64    /* how much of the conversation it keeps */
+
+/* One exchange with itself: what it expected, what came, who said so. */
+typedef struct {
+    int32_t  from, expected, actual;
+    int32_t  rule;      /* which rule spoke, or -1 for its plain experience */
+    uint8_t  right;
+} rz_inner;
 
 
 typedef struct {
@@ -223,6 +233,11 @@ typedef struct {
     rz_rule  rules[RZ_RULES];
     int32_t  nrules;
     uint64_t rules_born, rules_used;
+
+    /* the conversation it has with itself, and whether it is listening */
+    rz_inner inner[RZ_INNER];
+    uint64_t inner_n, inner_said, inner_right;
+    int      inner_on;
 
     uint64_t sleeps_had;
     uint64_t dreams[4];          /* how many of each kind it has had */
@@ -696,6 +711,21 @@ void     rz_rule_harvest(rz_mind *m, int32_t from, int32_t to,
 int32_t  rz_rule_consult(rz_mind *m, int32_t here, int32_t *to, double *weight);
 /* Walk material and keep only what was expensive to work out. */
 void     rz_rules_learn(rz_mind *m, const unsigned char *buf, size_t n);
+
+/* --- the inner conversation (P32) -----------------------------------------
+ *
+ * It had senses that watched and rules that voted, and nothing closed the
+ * circle: it never found out whether it had been right, so nobody paid for
+ * being wrong. Now every step is an exchange -- it says what it expects before
+ * the next piece is looked at, reality answers, and whoever spoke is credited
+ * or blamed. A rule that keeps being wrong is never deleted; it fades until its
+ * vote cannot move anything, which is what forgetting has always meant here. */
+void     rz_inner_listen(rz_mind *m, int on);   /* on by default */
+uint32_t rz_inner_count(const rz_mind *m);
+/* 0 is the most recent thing it said to itself. */
+int      rz_inner_at(const rz_mind *m, uint32_t back, rz_inner *out);
+uint64_t rz_inner_right(const rz_mind *m);
+uint64_t rz_inner_said(const rz_mind *m);
 const rz_sense *rz_sense_at(const rz_mind *m, int32_t i);
 double  rz_sense_score(const rz_mind *m, int32_t i);
 void    rz_sense_describe(const rz_mind *m, int32_t i, char *out, size_t cap);

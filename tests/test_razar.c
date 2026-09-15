@@ -2070,6 +2070,105 @@ TEST(a_sense_looks_at_the_next_move_not_around_the_block)
 
 /* --- rules (P31): the sense, and the way to use it ------------------------ */
 
+/* --- the inner conversation (P32) ----------------------------------------- */
+
+TEST(it_says_what_it_expects_before_reality_answers)
+{
+    /* The loop that did not exist: it forms an expectation, reality arrives,
+       and whoever spoke gets the credit or the blame. Without that last step
+       nothing pays for being wrong, which is why the rules memorised -- they
+       were never charged for it. */
+    rz_mind *m = fresh();
+    CHECK_EQ_U(rz_inner_count(m), 0u);      /* it has not said anything yet */
+
+    for (int i = 0; i < 30; i++) feed(m, "the cat sat on the mat. ");
+    CHECK(rz_inner_count(m) > 0u);
+    CHECK(rz_inner_said(m) > 0u);
+    CHECK(rz_inner_right(m) <= rz_inner_said(m));
+
+    rz_inner said;
+    CHECK(rz_inner_at(m, 0, &said));
+    CHECK(said.expected >= -1);
+    CHECK(said.actual >= 0);
+}
+
+TEST(being_wrong_costs_the_rule_that_said_so)
+{
+    /* Credit and blame, on the same exponential average the reference organism
+       uses. A rule that keeps being wrong fades until its vote cannot move
+       anything -- it is not deleted, it stops being listened to.
+
+       The rules have to be harvested where the walk ACTUALLY goes. An earlier
+       version of this test planted one on a fragment it had picked by hand, and
+       measured nothing at all for eighteen thousand exchanges, because the
+       organism had long since composed that piece into something wider and
+       never stood there again. */
+    static char lived[4096];
+    static char other[4096];
+    varied(lived, sizeof lived, 0);
+    varied(other, sizeof other, 1);
+
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, lived);
+    rz_rules_learn(m, (const unsigned char *)lived, strlen(lived));
+    CHECK(rz_rules_count(m) > 0u);
+
+    /* they were right about the material they came from */
+    for (int i = 0; i < 10; i++) feed(m, lived);
+    double agreed = 0.0;
+    for (uint32_t i = 0; i < rz_rules_count(m); i++) agreed += m->rules[i].score;
+    uint32_t right_then = 0;
+    for (uint32_t i = 0; i < rz_rules_count(m); i++) right_then += m->rules[i].hits;
+    CHECK(right_then > 0u);
+
+    /* and material they were not harvested from charges them for it */
+    for (int i = 0; i < 25; i++) feed(m, other);
+    uint32_t wrong_now = 0;
+    for (uint32_t i = 0; i < rz_rules_count(m); i++) wrong_now += m->rules[i].misses;
+    double after = 0.0;
+    for (uint32_t i = 0; i < rz_rules_count(m); i++) after += m->rules[i].score;
+
+    CHECK(wrong_now > 0u);
+    CHECK(after < agreed);
+}
+
+TEST(the_inner_voice_keeps_only_what_is_recent)
+{
+    /* It is a conversation, not an archive. A ring of the last exchanges is
+       what an onlooker needs and what the organism can afford. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, "the cat sat on the mat. ");
+    for (int i = 0; i < 20; i++) feed(m, "the cat sat on the mat. ");
+    CHECK(rz_inner_count(m) <= (uint32_t)RZ_INNER);
+    CHECK(rz_inner_count(m) > 0u);
+}
+
+TEST(the_conversation_is_what_makes_it_correct_itself)
+{
+    /* THE test. Two organisms, the same material, the same rules -- one of them
+       told whether it was right. If the loop is worth having, that one predicts
+       held-back material better, and if it is not, this says so plainly. */
+    static char lived[4096];
+    static char held[4096];
+    varied(lived, sizeof lived, 0);
+    varied(held, sizeof held, 1);
+
+    rz_mind *deaf = fresh();
+    rz_mind *listening = fresh();
+    rz_inner_listen(deaf, 0);          /* forms expectations, is never told */
+    rz_inner_listen(listening, 1);
+
+    for (int i = 0; i < 25; i++) { feed(deaf, lived); feed(listening, lived); }
+    rz_rules_learn(deaf, (const unsigned char *)lived, strlen(lived));
+    rz_rules_learn(listening, (const unsigned char *)lived, strlen(lived));
+    for (int i = 0; i < 15; i++) { feed(deaf, lived); feed(listening, lived); }
+
+    rz_measure_result a, b;
+    measure_str(deaf, held, &a);
+    measure_str(listening, held, &b);
+    CHECK(rz_hit_rate(&b) >= rz_hit_rate(&a) - 1e-9);
+}
+
 TEST(a_rule_says_when_what_and_how_much)
 {
     /* From the reference organism, where a rule is a concept with deep=1:
@@ -2745,6 +2844,10 @@ int main(void)
     RUN(only_the_awake_senses_are_read_at_each_step);
     RUN(a_cold_sense_still_gets_its_turn);
     RUN(a_sense_looks_at_the_next_move_not_around_the_block);
+    RUN(it_says_what_it_expects_before_reality_answers);
+    RUN(being_wrong_costs_the_rule_that_said_so);
+    RUN(the_inner_voice_keeps_only_what_is_recent);
+    RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);
     RUN(a_rule_born_dreaming_weighs_less_than_one_lived);
     RUN(meeting_the_same_lesson_again_strengthens_it);
