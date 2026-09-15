@@ -135,6 +135,7 @@
     <button class="go" id="do-feed" type="button">Darle de comer el Nuevo Testamento</button>
     <button id="do-feed-c" type="button">Darle el organismo ajedrecista</button>
     <button id="do-senses" type="button">Que se haga sentidos</button>
+    <button id="do-think" type="button">Escucharlo pensar en voz alta</button>
     <button id="do-sleep" type="button">Mandarlo a dormir</button>
   </div>
 
@@ -201,7 +202,7 @@
   </section>
 
   <section>
-    <h2>Lo que va diciendo</h2>
+    <h2>Lo que va diciendo, mientras lo dice</h2>
     <div class="console" id="console">En reposo. Toc&aacute; algo de arriba y mir&aacute;lo trabajar.</div>
   </section>
 
@@ -253,6 +254,31 @@ function sayWhat(s) {
   /* these two are yes/no questions: the number is noise, so it is dropped */
   if (m[1] === "marked" || m[1] === "given not taken") return head + ", " + tail;
   return head + " " + m[2] + ", " + tail;
+}
+
+/* The C narrates in English by project convention. It is turned here, in the
+   layer that is read, so the organism stays monolingual and the panel does not. */
+function sayLine(ln) {
+  let m = ln.match(/^\s*at (.+?)\s+it saw (.+?)\s+coming\.(.*)$/);
+  if (m) {
+    return "  parado en " + m[1].trim() + "  — vio venir  " + m[2].trim()
+      + (m[3].includes("rule") ? "   (lo dijo una regla)" : "");
+  }
+  m = ln.match(/^\s*at (.+?)\s+it expected (.+?)\s+and got (.*)$/);
+  if (m) {
+    return "  parado en " + m[1].trim() + "  — esperaba " + m[2].trim()
+      + ", vino " + m[3].trim();
+  }
+  m = ln.match(/^\s*— mouthful (\d+): (\d+) exchanges, right ([\d.]+)% in all\s*$/);
+  if (m) {
+    return "  — bocado " + m[1] + ": " + m[2] + " intercambios, acierta el "
+      + m[3].replace(".", ",") + "% en total";
+  }
+  m = ln.match(/^thinking out loud over (.+)$/);
+  if (m) return "pensando en voz alta sobre " + m[1];
+  m = ln.match(/^it said (\d+) things to itself, and was right (\d+) times\.$/);
+  if (m) return "se dijo " + m[1] + " cosas a sí mismo, y acertó " + m[2] + " veces.";
+  return ln;
 }
 
 function el(tag, cls, text) {
@@ -396,7 +422,7 @@ function render(s) {
   last = s;
 }
 
-const BUTTONS = ["feed", "feed-c", "senses", "sleep"];
+const BUTTONS = ["feed", "feed-c", "senses", "think", "sleep"];
 function setBusy(what, secs, log) {
   $("pulse").dataset.working = what ? "1" : "0";
   BUTTONS.forEach(b => { $("do-" + b).disabled = !!what; });

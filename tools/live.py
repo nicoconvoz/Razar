@@ -55,19 +55,37 @@ ACTIONS = {
                 "haciendose maneras de mirar"),
     "sleep":   (["sleep", "7"],
                 "durmiendo sobre lo que vivio"),
+    "think":   (["think", "feed/nuevo-testamento.txt", "9000"],
+                "pensando en voz alta mientras lee"),
 }
 
 
 def do(name):
+    """Read what it says AS IT SAYS IT.
+
+    Waiting for the process to exit and handing over a transcript is not
+    watching something think -- by the time it arrives, the thinking is over.
+    So the lines are taken one at a time, and the panel polling the log sees
+    them arrive."""
     argv, meaning = ACTIONS[name]
     BUSY["what"] = meaning
     BUSY["since"] = time.time()
+    BUSY["log"] = []
     try:
-        p = run(argv)
-        out = (p.stdout or "") + (p.stderr or "")
-        BUSY["log"] = [ln for ln in out.splitlines() if ln.strip()][-14:]
-    except subprocess.TimeoutExpired:
-        BUSY["log"] = ["tarda mas de quince minutos: dejo de esperar"]
+        proc = subprocess.Popen([BINARY] + argv, cwd=ROOT,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, encoding="utf-8", errors="replace",
+                                bufsize=1)
+        said = []
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            said.append(line)
+            BUSY["log"] = said[-16:]          # the panel reads this as it grows
+        proc.wait(timeout=60)
+    except Exception as e:
+        BUSY["log"] = (BUSY["log"] or []) + ["se corto: %s" % e]
     finally:
         BUSY["what"] = None
 

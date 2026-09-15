@@ -955,6 +955,109 @@ static int cmd_dash(int argc, char **argv)
 }
 
 
+/* --- think ----------------------------------------------------------------
+ *
+ * The same eating, narrated. It reads the material in mouthfuls and after each
+ * one says a little of what it has been telling itself -- what it expected,
+ * what came, and whether it was right.
+ *
+ * Every line is flushed as it is written, so something watching from outside
+ * sees it thinking rather than a transcript handed over at the end.
+ */
+static void say_piece(rz_mind *m, int32_t frag, char *out, size_t cap)
+{
+    unsigned char raw[RZ_FRAG_SPAN + 1];
+    size_t n = (frag >= 0) ? rz_expand(m, frag, raw, sizeof raw - 1) : 0;
+    raw[n] = 0;
+    size_t w = 0;
+    for (size_t i = 0; i < n && w + 5 < cap; i++) {
+        unsigned char c = raw[i];
+        if (c == '\n')      { out[w++] = '\\'; out[w++] = 'n'; }
+        else if (c == '\r') { out[w++] = '\\'; out[w++] = 'r'; }
+        else if (c == '\t') { out[w++] = '\\'; out[w++] = 't'; }
+        else if (c < 0x20)  { out[w++] = '.'; }
+        else                { out[w++] = (char)c; }
+    }
+    out[w] = 0;
+    if (w == 0) snprintf(out, cap, "(nothing)");
+}
+
+static int cmd_think(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    size_t mouthful = (argc > 1) ? (size_t)strtoul(argv[1], NULL, 10) : 4000;
+    if (mouthful < 256) mouthful = 256;
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m) { fprintf(stderr, "out of memory\n"); return 1; }
+    rz_init(m);
+    MKDIR(NEST);
+    rz_set_nest(m, MODULES);
+    int rc = rz_load(m, MIND_PATH);
+    if (rc != RZ_OK && rc != RZ_ERR_MISSING) {
+        fprintf(stderr, "refusing to run on an incompatible mind\n");
+        free(m);
+        return 1;
+    }
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); free(m); return 1; }
+
+    printf("thinking out loud over %s\n\n", path);
+    fflush(stdout);
+
+    unsigned char *buf = malloc(mouthful);
+    if (!buf) { fclose(f); free(m); return 1; }
+
+    size_t n;
+    uint64_t said_before = rz_inner_said(m);
+    unsigned long mouthfuls = 0;
+    while ((n = fread(buf, 1, mouthful, f)) > 0) {
+        uint64_t before = rz_inner_said(m);
+        rz_ingest(m, buf, n);
+        mouthfuls++;
+
+        /* a couple of exchanges from the mouthful just swallowed. Not all of
+           them: a flood is not a conversation. */
+        uint32_t have = rz_inner_count(m);
+        uint32_t show = have < 3 ? have : 3;
+        for (uint32_t i = 0; i < show; i++) {
+            rz_inner e;
+            if (!rz_inner_at(m, i, &e)) break;
+            char at[80], came[80], want[80];
+            say_piece(m, e.from, at, sizeof at);
+            say_piece(m, e.actual, came, sizeof came);
+            say_piece(m, e.expected, want, sizeof want);
+            if (e.right)
+                printf("  at %-18s it saw %-18s coming.%s\n", at, came,
+                       e.rule >= 0 ? "   (a rule said so)" : "");
+            else
+                printf("  at %-18s it expected %-14s and got %s\n", at, want, came);
+        }
+        uint64_t said = rz_inner_said(m) - before;
+        printf("  — mouthful %lu: %llu exchanges, right %.1f%% in all\n\n",
+               mouthfuls, (unsigned long long)said,
+               100.0 * (double)rz_inner_right(m) / (double)(rz_inner_said(m) | 1));
+        fflush(stdout);
+    }
+    fclose(f);
+    free(buf);
+
+    printf("it said %llu things to itself, and was right %llu times.\n",
+           (unsigned long long)(rz_inner_said(m) - said_before),
+           (unsigned long long)rz_inner_right(m));
+    fflush(stdout);
+
+    MKDIR(NEST);
+    if (rz_save(m, MIND_PATH) != RZ_OK)
+        fprintf(stderr, "warning: could not write %s\n", MIND_PATH);
+
+    rz_free(m);
+    free(m);
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -969,6 +1072,7 @@ int main(int argc, char **argv)
         printf("  razar sleep [seed]                    let it dream on what it lived\n");
         printf("  razar senses [rounds] [path]          watch it grow its own ways of looking\n");
         printf("  razar dash                            its whole state, as JSON\n");
+        printf("  razar think [path] [bite]           watch it think out loud\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -981,6 +1085,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "sleep"))        return cmd_sleep(argc - 2, argv + 2);
     if (!strcmp(argv[1], "senses"))       return cmd_senses(argc - 2, argv + 2);
     if (!strcmp(argv[1], "dash"))         return cmd_dash(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "think"))        return cmd_think(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
