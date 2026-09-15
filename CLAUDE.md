@@ -108,6 +108,9 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Feed the organism | `./razar feed [path...]` (default: `feed/`) |
 | Examine it | `./razar autopsy` |
 | Let it dream | `./razar sleep [seed]` |
+| Grow its senses | `./razar senses [rounds] [path]` |
+| Dump its whole state | `./razar dash` |
+| See it | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 
 Warnings are errors: `-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror`.
 
@@ -124,6 +127,10 @@ gcc directly from Git Bash works fine; only `make` collides.
 ```bash
 "C:/msys64/usr/bin/bash.exe" -lc 'export PATH=/ucrt64/bin:/usr/bin:$PATH && make -C /e/proyectos/Razar test'
 ```
+
+The built `razar.exe` runs from any shell — but **PowerShell needs `.azar`**,
+because it does not run commands from the current directory without it. In bash
+`./razar` works as usual.
 
 `make -C <dir>` rather than `cd`, because the MSYS2 login shell starts in
 `/home/Nico`. The built `razar.exe` is a native binary and runs from any shell.

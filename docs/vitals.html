@@ -1,0 +1,398 @@
+<title>Razar Vitals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground:   #F1F2EE;
+    --surface:  #FFFFFF;
+    --sunken:   #E7E9E3;
+    --ink:      #191E24;
+    --muted:    #697382;
+    --hair:     #D5D8D1;
+    --instr:    #2E7D6B;
+    --instr-dim:#B9D3CC;
+    --warn:     #B0543B;
+    --warn-dim: #E8CFC6;
+    --shadow:   0 1px 2px rgba(25,30,36,.06), 0 6px 18px rgba(25,30,36,.05);
+    --serif: "Bitter", Georgia, "Times New Roman", serif;
+    --sans:  "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --mono:  "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #12161C;
+      --surface:  #191E26;
+      --sunken:   #0D1116;
+      --ink:      #E4E8EC;
+      --muted:    #8A95A3;
+      --hair:     #2A313A;
+      --instr:    #55B39C;
+      --instr-dim:#20443C;
+      --warn:     #D97B5C;
+      --warn-dim: #45281F;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #12161C;
+    --surface:  #191E26;
+    --sunken:   #0D1116;
+    --ink:      #E4E8EC;
+    --muted:    #8A95A3;
+    --hair:     #2A313A;
+    --instr:    #55B39C;
+    --instr-dim:#20443C;
+    --warn:     #D97B5C;
+    --warn-dim: #45281F;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    padding: 0 20px;
+    padding-block: 34px 60px;
+    margin: 0;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
+
+  /* --- masthead --- */
+  .mast { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+  h1 {
+    font-family: var(--serif); font-weight: 600; font-size: 25px;
+    margin: 0; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .sub { color: var(--muted); font-size: 14px; }
+  .sub b { color: var(--ink); font-weight: 500; font-family: var(--mono); }
+
+  /* --- the one state-like thing: what it needs right now --- */
+  .verdict {
+    background: var(--surface); border: 1px solid var(--hair);
+    border-left: 4px solid var(--warn);
+    border-radius: 3px; padding: 16px 20px; box-shadow: var(--shadow);
+    display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: baseline;
+  }
+  .verdict .lbl {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted);
+    flex-basis: 100%;
+  }
+  .verdict .said { font-family: var(--serif); font-size: 18px; }
+  .verdict .why  { color: var(--muted); font-size: 14px; }
+
+  h2 {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--muted);
+    margin: 0 0 12px; padding-bottom: 7px; border-bottom: 1px solid var(--hair);
+  }
+  section { margin: 0; }
+  .note { color: var(--muted); font-size: 13.5px; margin: 10px 0 0; max-width: 64ch; }
+
+  /* --- readings: every number beside what it is measured against --- */
+  .reads { display: grid; grid-template-columns: repeat(auto-fit, minmax(212px, 1fr)); gap: 1px;
+           background: var(--hair); border: 1px solid var(--hair); border-radius: 3px; overflow: hidden; }
+  .read { background: var(--surface); padding: 13px 15px; display: flex; flex-direction: column; gap: 3px; }
+  .read .k { font-size: 12.5px; color: var(--muted); }
+  .read .v { font-family: var(--mono); font-size: 20px; font-weight: 500;
+             font-variant-numeric: tabular-nums; letter-spacing: -.015em; }
+  .read .against { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .read .against em { font-style: normal; color: var(--instr); }
+
+  /* --- the alphabet strip: 64 roles, and how few are occupied --- */
+  .alpha { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; }
+  .cell { aspect-ratio: 1; border-radius: 1px; background: var(--sunken); position: relative; }
+  .cell[data-on="1"] { background: var(--instr); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 11px;
+            font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 1px;
+            background: var(--instr); margin-right: 5px; vertical-align: -1px; }
+  .swatch.off { background: var(--sunken); border: 1px solid var(--hair); }
+
+  /* --- senses --- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead th {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+    text-align: left; padding: 0 10px 8px 0; border-bottom: 1px solid var(--hair);
+  }
+  thead th.num { text-align: right; }
+  tbody td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--hair); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.what { font-family: var(--mono); font-size: 12.5px; }
+  td.num  { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .bar { display: block; height: 4px; border-radius: 2px; background: var(--instr); min-width: 2px; }
+  .barcell { width: 130px; }
+  .track { background: var(--sunken); border-radius: 2px; }
+  .chip {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+    padding: 2px 6px; border-radius: 2px; background: var(--instr-dim); color: var(--instr);
+    white-space: nowrap;
+  }
+  .scroller { overflow-x: auto; }
+
+  /* --- refresh --- */
+  .refresh { background: var(--surface); border: 1px solid var(--hair); border-radius: 3px;
+             padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  code.cmd { font-family: var(--mono); font-size: 12.5px; background: var(--sunken);
+             padding: 3px 7px; border-radius: 2px; }
+  textarea {
+    width: 100%; min-height: 90px; font-family: var(--mono); font-size: 12px;
+    background: var(--sunken); color: var(--ink); border: 1px solid var(--hair);
+    border-radius: 2px; padding: 9px 11px; resize: vertical;
+  }
+  button {
+    font-family: var(--sans); font-size: 13.5px; font-weight: 500;
+    background: var(--instr); color: #fff; border: 0; border-radius: 2px;
+    padding: 8px 18px; cursor: pointer; align-self: flex-start;
+  }
+  button:hover { filter: brightness(1.07); }
+  :focus-visible { outline: 2px solid var(--instr); outline-offset: 2px; }
+  .said-msg { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+  .said-msg[data-bad="1"] { color: var(--warn); }
+
+  footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--hair); padding-top: 16px; }
+  footer code { font-family: var(--mono); }
+
+  @media (max-width: 620px) {
+    .alpha { grid-template-columns: repeat(16, 1fr); }
+    h1 { font-size: 21px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <h1>Razar Vitals</h1>
+    <span class="sub">a digital organism, reading itself &middot; <b id="eaten">—</b> bytes eaten</span>
+  </header>
+
+  <div class="verdict" id="verdict">
+    <span class="lbl">what it needs right now</span>
+    <span class="said" id="needs">—</span>
+    <span class="why" id="why"></span>
+  </div>
+
+  <section>
+    <h2>What it built out of raw bytes</h2>
+    <div class="reads" id="built"></div>
+    <p class="note">Nothing here was designed. It met bytes, and the pieces that
+      kept recurring earned their place as units.</p>
+  </section>
+
+  <section>
+    <h2>Its alphabet of roles &mdash; 64 classes, and how many anybody occupies</h2>
+    <div class="alpha" id="alpha"></div>
+    <div class="legend">
+      <span><span class="swatch"></span><span id="occ">—</span> occupied</span>
+      <span><span class="swatch off"></span>empty &mdash; a role nothing plays</span>
+      <span id="largest"></span>
+    </div>
+    <p class="note">This collapsed once, silently, to four classes that differed
+      only in length &mdash; nothing was watching a formula that could not be
+      wrong. It is on the panel for that reason.</p>
+  </section>
+
+  <section>
+    <h2>Ways of looking it grew for itself</h2>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th>what it looks for</th>
+            <th class="num">worth</th>
+            <th></th>
+            <th class="num">steps watched</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="senses"></tbody>
+      </table>
+    </div>
+    <p class="note" id="sensenote"></p>
+  </section>
+
+  <section>
+    <h2>Memory, forgetting, and what carries</h2>
+    <div class="reads" id="rest"></div>
+  </section>
+
+  <section>
+    <h2>Refresh from the living organism</h2>
+    <div class="refresh">
+      <div class="sub">In <code class="cmd">E:\proyectos\Razar</code>, run
+        <code class="cmd">.azar dash</code> &mdash; PowerShell needs the
+        <code class="cmd">.\</code>, it does not run commands from the current
+        folder without it. Paste the output here.</div>
+      <label for="paste" class="sub" style="font-size:12.5px">Its state, as JSON</label>
+      <textarea id="paste" placeholder="{ &quot;memory&quot;: { ... } }" spellcheck="false"></textarea>
+      <button id="load" type="button">Read it</button>
+      <div class="said-msg" id="msg"></div>
+    </div>
+  </section>
+
+  <footer>
+    Every figure sits beside what it is measured against, because a number
+    without its baseline is not a reading &mdash; the rule this organism was
+    built under, after six measurements that said the opposite of what they
+    meant. Snapshot taken after eating the Spanish New Testament.
+  </footer>
+
+</div>
+
+<script>
+const SNAPSHOT = {
+  "memory": { "atomsEaten": 1152802, "paths": 1162, "atomsSeen": 81, "fragments": 5481,
+    "births": 5225, "fragSteps": 276728, "orphans": 2, "entropy": 5.392240,
+    "support": 219.69, "top1Share": 0.2220, "plasticBytes": 8389824, "costRatio": 7.277767 },
+  "modules": { "used": 62, "widest": 461, "busiest": 663, "wakes": 124, "sleeps": 116 },
+  "forgetting": { "passes": 13, "coldPaths": 713987 },
+  "shapes": { "occupancy": [0,0,0,4,17,0,0,33,185,0,0,231,260,0,0,366,0,3,0,0,0,43,21,0,0,302,170,0,0,152,231,4,4,1,0,0,73,24,3,0,480,109,5,0,119,27,2,0,50,0,0,0,594,1,0,0,1543,8,0,0,220,2,0,0],
+    "occupied": 33, "of": 64, "largestShare": 0.2918 },
+  "night": { "steps": 276779, "built": 5225, "strain": 0.4569, "anticipated": 118917,
+    "slept": 0, "needs": "it built a lot that has not been exercised yet.", "dreams": [0,0,0,0] },
+  "transfer": { "shapesThatCarry": 32, "bestShape": 0.5455 },
+  "senses": [
+    { "what": "where #0 reads over 0, ahead within 1", "worth": 0.443231, "watched": 6972, "stacked": true },
+    { "what": "marked 0, ahead within 1", "worth": 0.237293, "watched": 10460, "stacked": false },
+    { "what": "marked 0, ahead within 1", "worth": 0.159931, "watched": 11503, "stacked": false },
+    { "what": "where #0 reads over 0, ahead within 3", "worth": 0.101732, "watched": 12605, "stacked": true },
+    { "what": "where #0 reads over 0, ahead within 3", "worth": 0.061501, "watched": 13751, "stacked": true },
+    { "what": "marked 0, downward within 1", "worth": 0.033632, "watched": 14942, "stacked": false },
+    { "what": "where #0 reads over 0, downward within 3", "worth": 0.003323, "watched": 17534, "stacked": true },
+    { "what": "marked 0, downward within 3", "worth": 0.000000, "watched": 18923, "stacked": false },
+    { "what": "marked 0, ahead within 1", "worth": 0.000000, "watched": 499, "stacked": false },
+    { "what": "where #10 reads over 0, ahead within 3", "worth": 0.000000, "watched": 437, "stacked": true },
+    { "what": "where #0 reads over 0, downward within 1", "worth": 0.000000, "watched": 382, "stacked": true },
+    { "what": "wider than 7, ahead within 1", "worth": 0.000000, "watched": 327, "stacked": false },
+    { "what": "wider than 7, ahead within 2", "worth": 0.000000, "watched": 279, "stacked": false },
+    { "what": "marked 0, downward within 1", "worth": 0.000000, "watched": 233, "stacked": false },
+    { "what": "where #0 reads over 0, downward within 1", "worth": 0.000000, "watched": 196, "stacked": true },
+    { "what": "where #2 reads over 7, ahead within 1", "worth": 0.000000, "watched": 169, "stacked": true },
+    { "what": "marked 0, ahead within 2", "worth": 0.000000, "watched": 169, "stacked": false },
+    { "what": "where #5 reads over 0, ahead within 1", "worth": 0.000000, "watched": 145, "stacked": true }
+  ],
+  "rules": { "held": 0, "born": 0, "used": 0 }
+};
+
+const num = (n, d) => Number(n).toLocaleString("en-US",
+  { minimumFractionDigits: d ?? 0, maximumFractionDigits: d ?? 0 });
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function reading(host, key, value, against) {
+  const box = el("div", "read");
+  box.append(el("span", "k", key), el("span", "v", value));
+  const a = el("span", "against");
+  a.innerHTML = against;
+  box.append(a);
+  host.append(box);
+}
+
+function render(s) {
+  document.getElementById("eaten").textContent = num(s.memory.atomsEaten);
+
+  document.getElementById("needs").textContent = s.night.needs;
+  const slept = s.night.slept;
+  document.getElementById("why").textContent =
+    slept > 0 ? `${num(slept)} night${slept === 1 ? "" : "s"} slept so far`
+              : "it has not slept yet";
+  document.getElementById("verdict").style.borderLeftColor =
+    s.night.strain > 0.55 ? "var(--warn)" : "var(--instr)";
+
+  const built = document.getElementById("built");
+  built.textContent = "";
+  reading(built, "units that earned their place", num(s.memory.births),
+    `out of <em>${num(s.memory.fragments)}</em> it holds`);
+  reading(built, "strain per step", s.memory.entropy ? s.night.strain.toFixed(4) : "—",
+    `overwhelmed above <em>0.55</em> &middot; noise reads 0.65&ndash;0.72`);
+  reading(built, "steps between units", num(s.memory.fragSteps),
+    `over <em>${num(s.memory.atomsEaten)}</em> bytes met`);
+  reading(built, "memory per byte eaten", s.memory.costRatio.toFixed(2) + " B",
+    `<em>${num(s.memory.plasticBytes / 1024 / 1024, 1)}&nbsp;MB</em> held in all`);
+
+  const alpha = document.getElementById("alpha");
+  alpha.textContent = "";
+  const occ = s.shapes.occupancy;
+  const top = Math.max(1, ...occ);
+  occ.forEach((n, i) => {
+    const c = el("div", "cell");
+    c.dataset.on = n > 0 ? "1" : "0";
+    if (n > 0) c.style.opacity = (0.34 + 0.66 * Math.sqrt(n / top)).toFixed(2);
+    c.title = `role ${i}: ${num(n)} fragment${n === 1 ? "" : "s"}`;
+    alpha.append(c);
+  });
+  document.getElementById("occ").textContent =
+    `${s.shapes.occupied} of ${s.shapes.of}`;
+  document.getElementById("largest").textContent =
+    `busiest role holds ${(s.shapes.largestShare * 100).toFixed(1)}% of everything`;
+
+  const tb = document.getElementById("senses");
+  tb.textContent = "";
+  const shown = s.senses.slice(0, 12);
+  const best = Math.max(0.0001, ...s.senses.map(x => x.worth));
+  shown.forEach(x => {
+    const tr = document.createElement("tr");
+    tr.append(el("td", "what", x.what));
+    tr.append(el("td", "num", x.worth.toFixed(4)));
+    const bc = el("td", "barcell track");
+    const bar = el("span", "bar");
+    bar.style.width = Math.max(2, (x.worth / best) * 100) + "%";
+    if (x.worth === 0) bar.style.background = "var(--hair)";
+    bc.append(bar);
+    tr.append(bc);
+    tr.append(el("td", "num", num(x.watched)));
+    const last = el("td");
+    if (x.stacked) last.append(el("span", "chip", "stands on another"));
+    tr.append(last);
+    tb.append(tr);
+  });
+  const stacked = s.senses.filter(x => x.stacked).length;
+  const quiet = s.senses.filter(x => x.worth === 0).length;
+  document.getElementById("sensenote").textContent =
+    `${s.senses.length} held, ${stacked} of them built on other senses. `
+    + `${quiet} say nothing yet and are kept anyway: a sense that says little `
+    + `today is what another is built from tomorrow, and pruning for usefulness `
+    + `starves the composition.`;
+
+  const rest = document.getElementById("rest");
+  rest.textContent = "";
+  reading(rest, "paths gone cold", num(s.forgetting.coldPaths),
+    `after <em>${s.forgetting.passes}</em> passes of forgetting`);
+  reading(rest, "roles that carry into new ground", num(s.transfer.shapesThatCarry),
+    `best one right <em>${(s.transfer.bestShape * 100).toFixed(1)}%</em> of the time`);
+  reading(rest, "lineages awake", num(s.modules.used),
+    `<em>${num(s.modules.wakes)}</em> woken, <em>${num(s.modules.sleeps)}</em> put to sleep`);
+  reading(rest, "rules it can act on", num(s.rules.held),
+    s.rules.held ? `consulted <em>${num(s.rules.used)}</em> times`
+                 : `none learned in this run`);
+}
+
+document.getElementById("load").addEventListener("click", () => {
+  const msg = document.getElementById("msg");
+  const raw = document.getElementById("paste").value.trim();
+  if (!raw) { msg.dataset.bad = "1"; msg.textContent = "Nothing pasted yet."; return; }
+  try {
+    const s = JSON.parse(raw);
+    if (!s.memory || !s.shapes) throw new Error("that is not a razar dash");
+    render(s);
+    msg.dataset.bad = "0";
+    msg.textContent = "Read it. The panel is showing the organism as it stands now.";
+  } catch (e) {
+    msg.dataset.bad = "1";
+    msg.textContent = "Could not read that: " + e.message
+      + ". Paste the whole output of razar dash, braces included.";
+  }
+});
+
+render(SNAPSHOT);
+</script>
