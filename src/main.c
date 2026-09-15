@@ -806,6 +806,11 @@ int main(int argc, char **argv)
         printf("  razar autopsy                         examine and report the diff\n");
         printf("  razar recall <cue> [steps] [effort]   ask it what follows\n");
         printf("  razar recall-atoms <cue> ...          the same, addressed by atoms\n");
+        printf("  razar predict <path>                  the fixed bar: guess before reading\n");
+        printf("  razar interest <path>                 what is opaque, frontier, mastered\n");
+        printf("  razar write <cue> [n] [effort] [temp] [seed]   give it the pen\n");
+        printf("  razar sleep [seed]                    let it dream on what it lived\n");
+        printf("  razar senses [rounds]                 watch it grow its own ways of looking\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
