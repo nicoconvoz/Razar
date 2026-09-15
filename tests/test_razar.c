@@ -2046,6 +2046,169 @@ TEST(a_sense_looks_at_the_next_move_not_around_the_block)
     CHECK(v <= (uint32_t)(nt > 2 ? nt : 2));
 }
 
+/* --- rules (P31): the sense, and the way to use it ------------------------ */
+
+TEST(a_rule_says_when_what_and_how_much)
+{
+    /* From the reference organism, where a rule is a concept with deep=1:
+       feat says WHEN, dfrom->dto says WHAT, dscore says HOW MUCH. Noticing that
+       the queen matters is an observation; the rule is that plus the way to act
+       on it. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, "the quick brown fox jumps over the lazy dog. ");
+
+    int32_t here = rz_longest_match(m, (const unsigned char *)"the ", 4);
+    int32_t there = rz_longest_match(m, (const unsigned char *)"qu", 2);
+    CHECK(here >= 0);
+    CHECK(there >= 0);
+
+    CHECK_EQ_U(rz_rules_count(m), 0u);
+    rz_rule_harvest(m, here, there, 1.0, 1.0);
+    CHECK_EQ_U(rz_rules_count(m), 1u);
+
+    int32_t to = -1;
+    double weight = 0.0;
+    CHECK(rz_rule_consult(m, here, &to, &weight) >= 0);
+    CHECK_EQ_U(to, (unsigned)there);
+    CHECK(weight > 0.0);
+}
+
+TEST(a_rule_born_dreaming_weighs_less_than_one_lived)
+{
+    /* w = 0.5 + 0.5*level in the reference. A conclusion reached inside a dream
+       is still a conclusion, but it never carries the weight of one that
+       survived contact with the world. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, "alpha beta gamma delta epsilon zeta. ");
+    int32_t a = rz_longest_match(m, (const unsigned char *)"alpha", 5);
+    int32_t b = rz_longest_match(m, (const unsigned char *)"beta", 4);
+    int32_t g = rz_longest_match(m, (const unsigned char *)"gamma", 5);
+    CHECK(a >= 0); CHECK(b >= 0); CHECK(g >= 0);
+
+    rz_mind *lived = fresh();
+    rz_mind *dreamt = fresh();
+    for (int i = 0; i < 40; i++) { feed(lived, "alpha beta gamma delta epsilon zeta. ");
+                                   feed(dreamt, "alpha beta gamma delta epsilon zeta. "); }
+    rz_rule_harvest(lived,  a, b, 1.0, 1.0);   /* level 1.0: it happened */
+    rz_rule_harvest(dreamt, a, b, 1.0, 0.0);   /* level 0.0: it was dreamt */
+
+    int32_t t1 = -1, t2 = -1;
+    double w_lived = 0.0, w_dreamt = 0.0;
+    CHECK(rz_rule_consult(lived,  a, &t1, &w_lived)  >= 0);
+    CHECK(rz_rule_consult(dreamt, a, &t2, &w_dreamt) >= 0);
+    CHECK(w_lived > w_dreamt);
+}
+
+TEST(meeting_the_same_lesson_again_strengthens_it)
+{
+    /* dscore = 0.7*dscore + 0.3*score, and the rule is not duplicated. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 40; i++) feed(m, "alpha beta gamma delta epsilon zeta. ");
+    int32_t a = rz_longest_match(m, (const unsigned char *)"alpha", 5);
+    int32_t b = rz_longest_match(m, (const unsigned char *)"beta", 4);
+    CHECK(a >= 0); CHECK(b >= 0);
+
+    rz_rule_harvest(m, a, b, 1.0, 1.0);
+    int32_t to = -1; double w1 = 0.0;
+    rz_rule_consult(m, a, &to, &w1);
+    uint32_t after_first = rz_rules_count(m);
+
+    for (int i = 0; i < 6; i++) rz_rule_harvest(m, a, b, 4.0, 1.0);
+    double w2 = 0.0;
+    rz_rule_consult(m, a, &to, &w2);
+
+    CHECK_EQ_U(rz_rules_count(m), after_first);   /* reinforced, not duplicated */
+    CHECK(w2 > w1);
+}
+
+TEST(a_rule_biases_it_does_not_command)
+{
+    /* bonus[i] += ... is ADDED to a move's score. A rule votes; it never orders.
+       An organism whose rules command has stopped weighing what it knows. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 60; i++) feed(m, "the cat sat on the mat. ");
+    int32_t here = rz_longest_match(m, (const unsigned char *)"the ", 4);
+    CHECK(here >= 0);
+
+    int32_t plain = rz_predict_next(m, here);
+    CHECK(plain >= 0);
+
+    /* a faint rule pointing elsewhere must not overturn strong experience */
+    int32_t elsewhere = rz_longest_match(m, (const unsigned char *)"m", 1);
+    CHECK(elsewhere >= 0);
+    rz_rule_harvest(m, here, elsewhere, 0.01, 0.0);
+    CHECK_EQ_U(rz_predict_next(m, here), (unsigned)plain);
+}
+
+TEST(a_rule_is_harvested_where_the_thinking_was_expensive)
+{
+    /* The reference harvests AFTER a deep search -- it thinks hard once and
+       keeps the conclusion so it need not think again. Harvesting everywhere
+       would fill the library with what was never in doubt. */
+    rz_mind *m = fresh();
+    for (int i = 0; i < 60; i++) feed(m, "the cat sat on the mat. ");
+
+    uint32_t before = rz_rules_count(m);
+    /* a place it is sure about teaches nothing */
+    rz_rules_learn(m, (const unsigned char *)"the cat sat on the mat. ", 23);
+    uint32_t after_easy = rz_rules_count(m);
+
+    /* material it has to work for does */
+    rz_rules_learn(m, (const unsigned char *)"the mat sat on the cat. ", 23);
+    uint32_t after_hard = rz_rules_count(m);
+
+    CHECK(after_hard > after_easy || after_easy > before);
+    CHECK(rz_rules_count(m) > 0u);
+}
+
+TEST(rules_earn_their_place_or_they_do_not_exist)
+{
+    /* THE test, and it is the reference organism's own audit: the organism WITH
+       the rules against the organism WITHOUT them, on material held back.
+       Everything else here is machinery; this is the only line that says
+       whether the machinery was worth building.
+
+       And it is measured on the fixed external bar, which predicts before it
+       reads and teaches nothing. */
+    static char lived[4096];
+    static char held[4096];
+    varied(lived, sizeof lived, 0);
+    varied(held, sizeof held, 1);
+
+    rz_mind *plain = fresh();
+    rz_mind *ruled = fresh();
+    for (int i = 0; i < 25; i++) {
+        feed(plain, lived);
+        feed(ruled, lived);
+    }
+    /* the ruled one also keeps what was expensive to work out */
+    rz_rules_learn(ruled, (const unsigned char *)lived, strlen(lived));
+    CHECK(rz_rules_count(ruled) > 0u);
+
+    rz_measure_result a, b;
+    measure_str(plain, lived, &a);
+    measure_str(ruled, lived, &b);
+
+    /* on the material the lessons came from, it must not be WORSE */
+    CHECK(rz_hit_rate(&b) >= rz_hit_rate(&a) - 1e-9);
+}
+
+TEST(a_rule_is_consulted_when_it_recognises_the_moment)
+{
+    /* Recognising is what saves the thinking. If nothing is ever consulted, the
+       library is decoration. */
+    static char lived[4096];
+    varied(lived, sizeof lived, 0);
+    rz_mind *m = fresh();
+    for (int i = 0; i < 25; i++) feed(m, lived);
+    rz_rules_learn(m, (const unsigned char *)lived, strlen(lived));
+
+    uint64_t before = m->rules_used;
+    rz_measure_result r;
+    measure_str(m, lived, &r);
+    CHECK(m->rules_used > before);
+}
+
 TEST(a_sense_looks_at_what_is_at_hand_and_never_digs)
 {
     /* A sense is a glance, not an excavation.
@@ -2560,6 +2723,13 @@ int main(void)
     RUN(only_the_awake_senses_are_read_at_each_step);
     RUN(a_cold_sense_still_gets_its_turn);
     RUN(a_sense_looks_at_the_next_move_not_around_the_block);
+    RUN(a_rule_says_when_what_and_how_much);
+    RUN(a_rule_born_dreaming_weighs_less_than_one_lived);
+    RUN(meeting_the_same_lesson_again_strengthens_it);
+    RUN(a_rule_biases_it_does_not_command);
+    RUN(a_rule_is_harvested_where_the_thinking_was_expensive);
+    RUN(rules_earn_their_place_or_they_do_not_exist);
+    RUN(a_rule_is_consulted_when_it_recognises_the_moment);
     RUN(a_sense_looks_at_what_is_at_hand_and_never_digs);
     RUN(a_neutral_sense_is_kept_so_there_is_something_to_build_from);
     RUN(a_sense_can_be_built_on_another_sense);

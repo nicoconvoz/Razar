@@ -141,6 +141,21 @@ typedef struct {
 #define RZ_SENSES      64      /* how many it may hold at once */
 #define RZ_SENSE_HOT    8      /* how many are awake for any one reading */
 #define RZ_SENSE_BUCKETS 6     /* how coarsely a reading is remembered */
+#define RZ_RULES       256     /* how many lessons it may keep */
+
+/* A rule: the sense, AND the way to use it.
+ *
+ * From the reference organism, where a rule is a concept with deep=1 -- feat
+ * says WHEN, dfrom->dto says WHAT, dscore says HOW MUCH, level says how real the
+ * experience that formed it was. Noticing that the queen matters is an
+ * observation; the rule is that plus the way to act on it. */
+typedef struct {
+    uint32_t when;      /* the situation: the shape here, and what the senses read */
+    int32_t  from, to;  /* the step it recommends */
+    double   score;     /* how much it is worth */
+    double   level;     /* 1 lived, 0 dreamt -- and a dream never weighs as much */
+    uint32_t uses;
+} rz_rule;
 
 
 typedef struct {
@@ -203,6 +218,11 @@ typedef struct {
     uint64_t sense_col_n;
     uint64_t sense_reads;               /* how much the faculty is costing */
     uint32_t sense_turn;                /* which cold one gets its turn next */
+
+    /* what it has learned to DO, not merely to notice */
+    rz_rule  rules[RZ_RULES];
+    int32_t  nrules;
+    uint64_t rules_born, rules_used;
 
     uint64_t sleeps_had;
     uint64_t dreams[4];          /* how many of each kind it has had */
@@ -661,6 +681,21 @@ uint64_t rz_sense_observations(const rz_mind *m, int32_t i);
 /* One step, watched. Only the awake senses read it; a sleeping one still gets
    its turn in rotation, because asleep must not mean buried. */
 void     rz_sense_observe(rz_mind *m, int32_t from, int32_t to);
+
+/* --- rules (P31) ----------------------------------------------------------
+ *
+ * WHEN this moment looks like that: the shape of where it stands together with
+ * what the awake senses read there. This is where the senses stop observing and
+ * start being the thing a decision is keyed on. */
+uint32_t rz_situation(rz_mind *m, int32_t here);
+uint32_t rz_rules_count(const rz_mind *m);
+/* Born from having thought, reinforced by meeting the same lesson again. */
+void     rz_rule_harvest(rz_mind *m, int32_t from, int32_t to,
+                         double score, double level);
+/* Recognising it is what saves the thinking. Returns the rule, or -1. */
+int32_t  rz_rule_consult(rz_mind *m, int32_t here, int32_t *to, double *weight);
+/* Walk material and keep only what was expensive to work out. */
+void     rz_rules_learn(rz_mind *m, const unsigned char *buf, size_t n);
 const rz_sense *rz_sense_at(const rz_mind *m, int32_t i);
 double  rz_sense_score(const rz_mind *m, int32_t i);
 void    rz_sense_describe(const rz_mind *m, int32_t i, char *out, size_t cap);

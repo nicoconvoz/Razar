@@ -961,13 +961,27 @@ int32_t rz_predict_next(rz_mind *m, int32_t from)
     rz_module *M = mod_ensure(m, k);
     if (!M || l >= M->nfrags) return -1;
 
+    /* If a rule recognises this moment, it VOTES. It does not command.
+       `bonus[i] += ...` in the reference is added to a move's score, and that
+       distinction is the whole difference between an organism that weighs what
+       it knows and one that obeys itself.
+
+       The vote is priced in the only currency the evidence uses: traversals. A
+       rule worth two experiences cannot overturn a path walked five hundred
+       times, and does not need a fudge factor to be kept in its place. */
+    int32_t urged = -1;
+    double  urge = 0.0;
+    rz_rule_consult(m, from, &urged, &urge);
+
     int32_t next = -1;
-    uint32_t best = 0;
+    double best = -1.0;
     for (int32_t e = M->head[l]; e >= 0; e = M->pool[e].next) {
         if (M->pool[e].weight == 0) continue;
-        if (next < 0 || M->pool[e].weight > best
-            || (M->pool[e].weight == best && M->pool[e].to < next)) {
-            best = M->pool[e].weight;
+        double score = (double)M->pool[e].weight;
+        if (M->pool[e].to == urged) score += urge;
+        if (next < 0 || score > best
+            || (score == best && M->pool[e].to < next)) {
+            best = score;
             next = M->pool[e].to;
         }
     }
@@ -1533,6 +1547,136 @@ static int sense_is_redundant(rz_mind *m, int32_t idx)
    Keeping the neutral ones is the whole point. A sense that says little today is
    what another sense is built from tomorrow, and an organism that prunes for
    usefulness starves its own composition. */
+
+/* --- rules (P31): the sense, and the way to use it ------------------------
+ *
+ * From the reference organism, where a rule is a concept with deep=1:
+ *
+ *     feat      -> WHEN it applies
+ *     dfrom,dto -> WHAT to do
+ *     dscore    -> HOW MUCH it is worth
+ *     level     -> how real the experience that formed it
+ *
+ * Noticing that the queen matters is an observation. The rule is that, plus the
+ * way to act on it -- and an organism that only notices has opinions where it
+ * should have senses.
+ */
+
+/* WHEN: the shape of where it stands, together with what the awake senses read
+   there. This is the one place the senses stop being observers and start being
+   the thing a decision is keyed on. */
+uint32_t rz_situation(rz_mind *m, int32_t here)
+{
+    if (here < 0 || here >= RZ_FRAGS) return 0;
+    uint32_t sig = (uint32_t)shape_at_hand(m, here) + 1u;
+    int32_t used = 0;
+    for (int32_t i = 0; i < m->nsenses && used < 4; i++) {
+        if (m->sense_n[i] == 0) continue;            /* it has not watched yet */
+        uint32_t b = sense_bucket(sense_read_at(m, &m->senses[i], here, 0));
+        sig = sig * 31u + (b + 1u);
+        used++;
+    }
+    return sig ? sig : 1u;
+}
+
+uint32_t rz_rules_count(const rz_mind *m) { return (uint32_t)m->nrules; }
+
+/* A rule is born from having thought, and reinforced by meeting the same lesson
+   again: dscore = 0.7*dscore + 0.3*score, never duplicated. */
+void rz_rule_harvest(rz_mind *m, int32_t from, int32_t to, double score, double level)
+{
+    if (from < 0 || to < 0 || from >= RZ_FRAGS || to >= RZ_FRAGS) return;
+    uint32_t when = rz_situation(m, from);
+
+    for (int32_t i = 0; i < m->nrules; i++) {
+        rz_rule *r = &m->rules[i];
+        if (r->when != when || r->to != to) continue;
+        r->score = 0.7 * r->score + 0.3 * score;
+        if (level > r->level) r->level += 0.34 * (level - r->level);
+        r->uses++;
+        return;
+    }
+
+    if (m->nrules >= RZ_RULES) {
+        /* the library is full: the least used gives way, so a rule nobody
+           consults cannot hold a slot against one being learned now */
+        int32_t worst = 0;
+        for (int32_t i = 1; i < m->nrules; i++)
+            if (m->rules[i].uses < m->rules[worst].uses) worst = i;
+        m->rules[worst] = m->rules[m->nrules - 1];
+        m->nrules--;
+    }
+
+    rz_rule *r = &m->rules[m->nrules++];
+    r->when = when;
+    r->from = from;
+    r->to = to;
+    r->score = score;
+    r->level = level;
+    r->uses = 1;
+    m->rules_born++;
+}
+
+/* Recognising it is what saves the thinking. Returns the rule, or -1. */
+int32_t rz_rule_consult(rz_mind *m, int32_t here, int32_t *to, double *weight)
+{
+    if (to) *to = -1;
+    if (weight) *weight = 0.0;
+    if (here < 0 || here >= RZ_FRAGS || m->nrules == 0) return -1;
+
+    uint32_t when = rz_situation(m, here);
+    int32_t best = -1;
+    double best_w = 0.0;
+    for (int32_t i = 0; i < m->nrules; i++) {
+        rz_rule *r = &m->rules[i];
+        if (r->when != when) continue;
+        /* weighted by how real the experience that formed it was: a conclusion
+           reached inside a dream is still a conclusion, but it never carries
+           the weight of one that survived contact with the world */
+        double w = r->score * (0.5 + 0.5 * r->level);
+        if (w > best_w) { best_w = w; best = i; }
+    }
+    if (best < 0) return -1;
+    m->rules[best].uses++;
+    m->rules_used++;
+    if (to) *to = m->rules[best].to;
+    if (weight) *weight = best_w;
+    return best;
+}
+
+/* Walk material and keep what was worth keeping.
+ *
+ * Only where the thinking was EXPENSIVE. The reference harvests after a deep
+ * search -- it thinks hard once so it need not think again. Harvesting
+ * everywhere would fill the library with what was never in doubt, and a library
+ * of the obvious saves nobody any effort. */
+void rz_rules_learn(rz_mind *m, const unsigned char *buf, size_t n)
+{
+    if (!buf || n == 0) return;
+    int32_t prev = -1;
+    size_t i = 0;
+    while (i < n) {
+        int32_t f = rz_longest_match(m, buf + i, n - i);
+        if (f < 0) break;
+        const rz_frag *fg = rz_frag_get(m, f);
+        if (!fg) break;
+        uint16_t span = fg->span;
+
+        if (prev >= 0) {
+            /* what it cost to choose here, and whether it got it right */
+            double branch = rz_frag_branching(m, prev);
+            int32_t guess = rz_predict_next(m, prev);
+            if (branch > 1.5 || guess != f) {
+                /* it was in doubt, or it was wrong. Worth remembering what
+                   actually followed, keyed to how this moment looked. */
+                double score = branch > 1.0 ? log(branch) : 0.25;
+                rz_rule_harvest(m, prev, f, score, 1.0);
+            }
+        }
+        prev = f;
+        i += span;
+    }
+}
 
 /* A round of living. It walks nothing.
  *
