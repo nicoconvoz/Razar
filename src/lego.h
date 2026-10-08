@@ -125,6 +125,63 @@ typedef enum {
 uint32_t rz_lexicon_wonder(rz_lexicon *x, int32_t subject, int32_t relation,
                            int32_t *chain, uint32_t cap, rz_wonder_end *end);
 
+/* Cut a text into words the way read_words does, but only look them up: ids in
+   x's own numbering, -1 for a word it never met. Nothing is learned. */
+uint32_t rz_lexicon_words_of(const rz_lexicon *x, const rz_mind *m,
+                             const unsigned char *t, size_t n,
+                             int32_t *ids, uint32_t cap);
+
+/* --- behaviours (P35): acting, and what it wants -------------------------
+ *
+ * What it wants is a mix (author's decision, D73): HARMONY -- an answer is worth
+ * something when what accompanies the answer already describes what
+ * accompanies the subject -- and TRANSFER -- in text it has not read yet, the
+ * subject is followed by something never seen after it, but seen after the
+ * answer. Each is read against the same count made with words of similar
+ * frequency picked blind; the worth is the sum of the two gains. */
+void rz_answer_worth(rz_lexicon *x, const int32_t *later, uint32_t nlater,
+                     int32_t subject, int32_t answer,
+                     double *harmony, double *transfer);
+
+/* A way of asking: a relation, and what asking with it has paid. */
+typedef struct {
+    int32_t  relation;
+    uint32_t tries;
+    double   paid;
+    uint8_t  imitated;               /* shown by someone, not found */
+} rz_habit;
+
+#define RZ_HABITS 32
+
+typedef struct {
+    rz_habit habit[RZ_HABITS];
+    uint32_t nhabit;
+    uint8_t *asked;                  /* habit x lego: already asked */
+    uint32_t asked_n;                /* lexicon size it was sized for */
+    uint64_t acts;
+    double   sum, sumsq;             /* every pay seen, for the spread */
+    uint64_t blind;                  /* nonzero: the bar -- chooses its way of
+                                        asking at random, from this seed */
+} rz_player;
+
+typedef struct {
+    int32_t  relation, subject, answer;
+    double   harmony, transfer, pay;
+    uint8_t  new_form;               /* it tried a way of asking for the first time */
+} rz_act;
+
+void rz_player_init(rz_player *p);
+void rz_player_free(rz_player *p);
+/* Imitation: a way of asking someone used in front of it. */
+void rz_player_imitate(rz_player *p, int32_t relation);
+/* One act. It chooses a way of asking -- one it never tried first, otherwise
+   the one whose pay, plus what it still does not know about it, is highest --
+   and a subject it never asked that way. Then it asks, judges the answer
+   against `later`, and credits the way of asking. 0 when it has nothing left
+   to ask. */
+int  rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
+                   uint32_t nlater, rz_act *out);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

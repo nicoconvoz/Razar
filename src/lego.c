@@ -324,7 +324,8 @@ static double widest_gap(const double v[RZ_ATOMS], const uint64_t at[RZ_ATOMS])
  *            but only ever after an "o".
  *
  * On the New Testament read as continuous text this finds , . : ; ) and the
- * space. One round: with line breaks read as spaces there is no "" standing
+ * space. One round: with line breaks read as spaces there is no "
+" standing
  * between a period and its separator. */
 static void edge_atoms(const unsigned char *t, size_t n, const unsigned char *wend,
                        uint8_t sep[RZ_ATOMS], uint8_t edge[RZ_ATOMS])
@@ -364,20 +365,22 @@ static void edge_atoms(const unsigned char *t, size_t n, const unsigned char *we
         if (at[b] && !sep[b] && share[b] > smid && variety[b] > vmid) edge[b] = 1;
 }
 
-void rz_lexicon_read_words(rz_lexicon *x, const rz_mind *m,
-                           const unsigned char *t, size_t n)
+/* Every word becomes its core and, when it has one, its closing mark; the
+   separators themselves are dropped -- the order already says where a word
+   ends. Learning interns and counts; looking up only finds. */
+static uint32_t walk_words(rz_lexicon *x, const rz_mind *m,
+                           const unsigned char *t, size_t n, int learn,
+                           int32_t *ids, uint32_t cap)
 {
-    if (n == 0) return;
+    if (n == 0) return 0;
     unsigned char *wend = malloc(n);
-    if (!wend) return;
+    if (!wend) return 0;
     rz_word_cut(m, t, n, wend);
     uint8_t sep[RZ_ATOMS], edge[RZ_ATOMS];
     edge_atoms(t, n, wend, sep, edge);
 
-    /* every word becomes its core and, when it has one, its closing mark; the
-       separators themselves are dropped -- the order already says where a
-       word ends */
-    drop_derived(x);
+    if (learn) drop_derived(x);
+    uint32_t k = 0;
     int32_t prev = -1;
     size_t start = 0;
     for (size_t i = 0; i < n; i++) {
@@ -386,27 +389,43 @@ void rz_lexicon_read_words(rz_lexicon *x, const rz_mind *m,
         while (c > start && edge[t[c - 1]]) c--;
         unsigned char mark[RZ_LEGO_SPAN];
         size_t ml = 0;
-        for (size_t k = c; k <= i && ml < RZ_LEGO_SPAN; k++)
-            if (!sep[t[k]]) mark[ml++] = t[k];
+        for (size_t q = c; q <= i && ml < RZ_LEGO_SPAN; q++)
+            if (!sep[t[q]]) mark[ml++] = t[q];
         if (c == start && ml == 0) { start = i + 1; continue; }
 
-        for (size_t from = start; from < c; from += RZ_LEGO_SPAN) {
-            size_t len = c - from < RZ_LEGO_SPAN ? c - from : RZ_LEGO_SPAN;
-            int32_t id = intern(x, t + from, len);
-            if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
-            remember(x, id);
-            prev = id;
-        }
-        if (ml) {
-            int32_t id = intern(x, mark, ml);
-            if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
-            remember(x, id);
-            prev = id;
+        for (int part = 0; part < 2; part++) {
+            const unsigned char *s0 = part ? mark : t + start;
+            size_t len = part ? ml : c - start;
+            if (len == 0) continue;
+            if (len > RZ_LEGO_SPAN) len = RZ_LEGO_SPAN;
+            if (learn) {
+                int32_t id = intern(x, s0, len);
+                if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
+                remember(x, id);
+                prev = id;
+            } else if (k < cap) {
+                ids[k++] = rz_lexicon_find(x, s0, len);
+            }
         }
         start = i + 1;
     }
-    remember(x, -1);
+    if (learn) remember(x, -1);
     free(wend);
+    return k;
+}
+
+void rz_lexicon_read_words(rz_lexicon *x, const rz_mind *m,
+                           const unsigned char *t, size_t n)
+{
+    walk_words(x, m, t, n, 1, NULL, 0);
+}
+
+uint32_t rz_lexicon_words_of(const rz_lexicon *x, const rz_mind *m,
+                             const unsigned char *t, size_t n,
+                             int32_t *ids, uint32_t cap)
+{
+    /* the walker only finds when not learning; nothing in x is touched */
+    return walk_words((rz_lexicon *)x, m, t, n, 0, ids, cap);
 }
 
 /* takes ends and frees it */
@@ -904,3 +923,198 @@ uint32_t rz_lexicon_wonder(rz_lexicon *x, int32_t subject, int32_t relation,
     }
 }
 
+
+
+/* ===================== behaviours (P35) ================================== */
+
+static void ensure_index(rz_lexicon *x)
+{
+    if (!x->out_start) build_index(x);
+}
+
+/* how much of what follows a is also what follows b: the shared mass of the
+   two follower distributions */
+static double shared_company(const rz_lexicon *x, double *scratch, int32_t a, int32_t b)
+{
+    double ta = 0, tb = 0, s = 0;
+    for (uint32_t o = x->out_start[a]; o < x->out_start[a + 1]; o++) ta += x->pair[x->out_pair[o]].count;
+    for (uint32_t o = x->out_start[b]; o < x->out_start[b + 1]; o++) tb += x->pair[x->out_pair[o]].count;
+    if (ta <= 0 || tb <= 0) return 0.0;
+    for (uint32_t o = x->out_start[a]; o < x->out_start[a + 1]; o++) {
+        const rz_lego_pair *q = &x->pair[x->out_pair[o]];
+        scratch[q->b] = q->count / ta;
+    }
+    for (uint32_t o = x->out_start[b]; o < x->out_start[b + 1]; o++) {
+        const rz_lego_pair *q = &x->pair[x->out_pair[o]];
+        double pb = q->count / tb;
+        s += scratch[q->b] < pb ? scratch[q->b] : pb;
+    }
+    for (uint32_t o = x->out_start[a]; o < x->out_start[a + 1]; o++) scratch[x->pair[x->out_pair[o]].b] = 0;
+    return s;
+}
+
+/* in the text still to come: of the steps after `a` it never saw, how many it
+   had seen after `b` */
+static double carried(const rz_lexicon *x, const int32_t *later, uint32_t nlater,
+                      int32_t a, int32_t b)
+{
+    uint32_t steps = 0, hits = 0;
+    for (uint32_t i = 0; i + 1 < nlater; i++) {
+        if (later[i] != a || later[i + 1] < 0) continue;
+        if (find_pair(x, (uint32_t)a, (uint32_t)later[i + 1]) >= 0) continue;
+        steps++;
+        if (find_pair(x, (uint32_t)b, (uint32_t)later[i + 1]) >= 0) hits++;
+    }
+    return steps ? (double)hits / steps : 0.0;
+}
+
+#define RZ_BLIND 8   /* words of similar frequency the answer is compared against */
+
+void rz_answer_worth(rz_lexicon *x, const int32_t *later, uint32_t nlater,
+                     int32_t subject, int32_t answer,
+                     double *harmony, double *transfer)
+{
+    *harmony = *transfer = 0.0;
+    if (subject < 0 || answer < 0 || (uint32_t)subject >= x->n || (uint32_t)answer >= x->n) return;
+    ensure_index(x);
+    double *scratch = calloc(x->n, sizeof *scratch);
+    if (!x->out_start || !scratch) { free(scratch); return; }
+
+    double h = shared_company(x, scratch, subject, answer);
+    double tr = carried(x, later, nlater, subject, answer);
+
+    /* the blind comparison: the words whose count is nearest the answer's */
+    int32_t near[RZ_BLIND];
+    uint32_t gap[RZ_BLIND], k = 0;
+    uint32_t want = x->lego[answer].count;
+    for (uint32_t i = 0; i < x->n; i++) {
+        if ((int32_t)i == subject || (int32_t)i == answer) continue;
+        uint32_t c = x->lego[i].count;
+        uint32_t g = c > want ? c - want : want - c;
+        if (k < RZ_BLIND) { near[k] = (int32_t)i; gap[k++] = g; continue; }
+        uint32_t worst = 0;
+        for (uint32_t j = 1; j < k; j++) if (gap[j] > gap[worst]) worst = j;
+        if (g < gap[worst]) { near[worst] = (int32_t)i; gap[worst] = g; }
+    }
+    double hb = 0, tb = 0;
+    for (uint32_t j = 0; j < k; j++) {
+        hb += shared_company(x, scratch, subject, near[j]);
+        tb += carried(x, later, nlater, subject, near[j]);
+    }
+    if (k) { hb /= k; tb /= k; }
+    *harmony = h - hb;
+    *transfer = tr - tb;
+    free(scratch);
+}
+
+void rz_player_init(rz_player *p)
+{
+    memset(p, 0, sizeof *p);
+}
+
+void rz_player_free(rz_player *p)
+{
+    free(p->asked);
+    memset(p, 0, sizeof *p);
+}
+
+static int has_habit(const rz_player *p, int32_t relation)
+{
+    for (uint32_t i = 0; i < p->nhabit; i++) if (p->habit[i].relation == relation) return 1;
+    return 0;
+}
+
+void rz_player_imitate(rz_player *p, int32_t relation)
+{
+    if (relation < 0 || has_habit(p, relation) || p->nhabit == RZ_HABITS) return;
+    p->habit[p->nhabit++] = (rz_habit){ relation, 0, 0.0, 1 };
+}
+
+/* the commonest word, seen at least twice, not yet asked this way */
+static int32_t next_subject(const rz_player *p, const rz_lexicon *x, uint32_t h)
+{
+    int32_t best = -1;
+    for (uint32_t i = 0; i < x->n; i++) {
+        if (p->asked[(size_t)h * x->n + i] || x->lego[i].count < 2) continue;
+        if ((int32_t)i == p->habit[h].relation) continue;
+        if (best < 0 || x->lego[i].count > x->lego[best].count) best = (int32_t)i;
+    }
+    return best;
+}
+
+int rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
+                  uint32_t nlater, rz_act *out)
+{
+    memset(out, 0, sizeof *out);
+    if (x->n == 0) return 0;
+    if (!p->asked || p->asked_n != x->n) {
+        free(p->asked);
+        p->asked = calloc((size_t)RZ_HABITS * x->n, 1);
+        p->asked_n = x->n;
+        if (!p->asked) return 0;
+    }
+
+    /* Exploration: once every way of asking it has has been tried, it finds a
+       new one -- the commonest word it never used as a relation. */
+    int untried = 0;
+    for (uint32_t i = 0; i < p->nhabit; i++) if (!p->habit[i].tries) untried = 1;
+    if (!untried && p->nhabit < RZ_HABITS) {
+        int32_t form = -1;
+        for (uint32_t i = 0; i < x->n; i++) {
+            if (x->lego[i].count < 2 || has_habit(p, (int32_t)i)) continue;
+            if (form < 0 || x->lego[i].count > x->lego[form].count) form = (int32_t)i;
+        }
+        if (form >= 0) p->habit[p->nhabit++] = (rz_habit){ form, 0, 0.0, 0 };
+    }
+
+    /* Repeat what pays, let go of what does not: the mean pay plus how little
+       it knows yet, scaled by how much pays spread -- no number chosen. A way
+       never tried comes first. */
+    double spread = 0.0;
+    if (p->acts > 1) {
+        double mean = p->sum / p->acts;
+        double var = p->sumsq / p->acts - mean * mean;
+        spread = var > 0 ? sqrt(var) : 0.0;
+    }
+    int32_t pick = -1, subject = -1;
+    double best = -HUGE_VAL;
+    uint32_t open_ways = 0;
+    for (uint32_t i = 0; i < p->nhabit; i++) {
+        int32_t s = next_subject(p, x, i);
+        if (s < 0) continue;
+        const rz_habit *h = &p->habit[i];
+        double v = h->tries == 0 ? HUGE_VAL
+                 : h->paid / h->tries
+                   + spread * sqrt(2.0 * log((double)p->acts + 1.0) / h->tries);
+        if (p->blind) {
+            /* the bar: every open way equally likely (reservoir of one) */
+            open_ways++;
+            p->blind ^= p->blind << 13; p->blind ^= p->blind >> 7; p->blind ^= p->blind << 17;
+            v = (p->blind % open_ways) == 0 ? 1.0 : -1.0;
+            if (v > 0) { pick = (int32_t)i; subject = s; }
+            continue;
+        }
+        if (v > best) { best = v; pick = (int32_t)i; subject = s; }
+    }
+    if (pick < 0) return 0;
+
+    rz_habit *h = &p->habit[pick];
+    p->asked[(size_t)pick * x->n + (uint32_t)subject] = 1;
+    out->relation = h->relation;
+    out->subject = subject;
+    out->answer = -1;
+    out->new_form = h->tries == 0;
+
+    rz_answer a;
+    if (rz_lexicon_ask(x, subject, h->relation, &a, 1) == 1) {
+        out->answer = a.lego;
+        rz_answer_worth(x, later, nlater, subject, a.lego, &out->harmony, &out->transfer);
+        out->pay = out->harmony + out->transfer;
+    }
+    h->tries++;
+    h->paid += out->pay;
+    p->acts++;
+    p->sum += out->pay;
+    p->sumsq += out->pay * out->pay;
+    return 1;
+}

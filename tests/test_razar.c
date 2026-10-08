@@ -3098,6 +3098,166 @@ TEST(what_nothing_explains_stays_an_open_question)
     CHECK_EQ_U(end, RZ_WONDER_DEEP);
 }
 
+/* --- behaviours (P35) ----------------------------------------------------- */
+
+/* Before: rex is the dog, tom is the cat, and each animal makes its own sound.
+   Later, text it has not read: rex barked, tom meowed. Knowing rex is the dog
+   is worth something only because the dog barks. */
+static const char *wb_join[] = { "then", "and", "so", "now", "yet", "while" };
+
+static size_t world_before(char *out, size_t cap, int clauses)
+{
+    /* the joiners and articles vary, so that what follows a space is the most
+       uncertain thing in this little world -- as it is in real text; with
+       "the" and "then" everywhere, the word cut took the "o" for the edge */
+    static const char *det[] = { "the", "a", "my", "one", "his" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen", "fox" };
+    static const char *sound[] = { "barked", "meowed", "mooed", "clucked", "yelped" };
+    size_t n = 0;
+    uint64_t r = 5;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *d = det[(r >> 26) % 5];
+        int w;
+        if ((r >> 60) % 4 == 0)
+            w = snprintf(out + n, cap - n, "%s is %s %s %s ",
+                         (r >> 33) % 2 ? "rex" : "tom", d, (r >> 33) % 2 ? "dog" : "cat", j);
+        else {
+            int a = (int)((r >> 40) % 5);
+            w = snprintf(out + n, cap - n, "%s %s %s %s ", d, noun[a], sound[a], j);
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+typedef struct {
+    rz_mind   *m;
+    rz_lexicon x;
+    int32_t    later[4000];
+    uint32_t   nlater;
+} little_life;
+
+static little_life *live_a_little(void)
+{
+    static char before[80000], after[8000];
+    size_t nb = world_before(before, sizeof before, 3000);
+    size_t na = 0;
+    for (int k = 0; k < 200; k++)
+        na += (size_t)snprintf(after + na, sizeof after - na, "%s %s ",
+                               k % 2 ? "rex barked" : "tom meowed", wb_join[k % 6]);
+    little_life *l = malloc(sizeof *l);
+    l->m = world_mind(before, nb);
+    rz_lexicon_init(&l->x);
+    rz_lexicon_read_words(&l->x, l->m, (const unsigned char *)before, nb);
+    l->nlater = rz_lexicon_words_of(&l->x, l->m, (const unsigned char *)after, na,
+                                    l->later, 4000);
+    return l;
+}
+
+TEST(looking_up_words_learns_nothing)
+{
+    little_life *l = live_a_little();
+    uint32_t n = l->x.n, pairs = l->x.npair, seq = l->x.nseq;
+    CHECK(l->nlater > 100);
+    CHECK_EQ_U(l->later[0], lego_of(&l->x, "tom"));
+    CHECK_EQ_U(l->later[1], lego_of(&l->x, "meowed"));
+    CHECK_EQ_U(l->x.n, n);
+    CHECK_EQ_U(l->x.npair, pairs);
+    CHECK_EQ_U(l->x.nseq, seq);
+}
+
+TEST(an_answer_is_worth_what_it_carries_into_what_comes_later)
+{
+    little_life *l = live_a_little();
+    double h, tr, h2, tr2;
+    rz_answer_worth(&l->x, l->later, l->nlater, lego_of(&l->x, "rex"),
+                    lego_of(&l->x, "dog"), &h, &tr);
+    rz_answer_worth(&l->x, l->later, l->nlater, lego_of(&l->x, "rex"),
+                    lego_of(&l->x, "cat"), &h2, &tr2);
+    CHECK(tr > 0.5);          /* the dog barks, and later rex barks */
+    CHECK(tr2 < 0.1);         /* the cat never barked: the wrong answer carries nothing */
+    CHECK(h + tr > h2 + tr2);
+}
+
+TEST(it_imitates_first_and_never_asks_the_same_thing_twice)
+{
+    little_life *l = live_a_little();
+    rz_player p;
+    rz_player_init(&p);
+    rz_player_imitate(&p, lego_of(&l->x, "is"));
+
+    rz_act a;
+    CHECK(rz_player_act(&p, &l->x, l->later, l->nlater, &a));
+    CHECK_EQ_U(a.relation, lego_of(&l->x, "is"));   /* the form it was shown */
+    CHECK(a.new_form);
+
+    static uint8_t seen[64][256];
+    memset(seen, 0, sizeof seen);
+    uint32_t forms = 0, acts = 1, repeated = 0;
+    seen[0][a.subject & 255] = 1;
+    int32_t form_of[64];
+    form_of[0] = a.relation;
+    forms = 1;
+    while (acts < 400 && rz_player_act(&p, &l->x, l->later, l->nlater, &a)) {
+        acts++;
+        uint32_t f = 0;
+        while (f < forms && form_of[f] != a.relation) f++;
+        if (f == forms && forms < 64) form_of[forms++] = a.relation;
+        if (f < 64) { if (seen[f][a.subject & 255]) repeated++; seen[f][a.subject & 255] = 1; }
+    }
+    CHECK(forms >= 3);                  /* it explored ways of asking it was never shown */
+    CHECK_EQ_U(repeated, 0u);
+    rz_player_free(&p);
+}
+
+TEST(rex_is_the_dog_is_worth_asking)
+{
+    /* asked with the form it was shown, "rex is ?" answers "dog", and that
+       answer carries into the text it had not read: later, rex barks */
+    little_life *l = live_a_little();
+    rz_player p;
+    rz_player_init(&p);
+    rz_player_imitate(&p, lego_of(&l->x, "is"));
+    rz_act a;
+    int found = 0;
+    while (rz_player_act(&p, &l->x, l->later, l->nlater, &a))
+        if (a.subject == lego_of(&l->x, "rex") && a.relation == lego_of(&l->x, "is")) {
+            CHECK_EQ_U(a.answer, lego_of(&l->x, "dog"));
+            CHECK(a.transfer > 0.5);
+            found = 1;
+        }
+    CHECK(found);
+    rz_player_free(&p);
+}
+
+TEST(it_repeats_what_pays_and_lets_go_of_what_does_not)
+{
+    /* With a budget, not to exhaustion: a way of asking that pays gets asked
+       again, one that does not is tried less. Exhausting every question makes
+       every way end with the same count, and says nothing. */
+    little_life *l = live_a_little();
+    rz_player p;
+    rz_player_init(&p);
+    rz_player_imitate(&p, lego_of(&l->x, "is"));
+    rz_act a;
+    for (int i = 0; i < 200 && rz_player_act(&p, &l->x, l->later, l->nlater, &a); i++) {}
+
+    const rz_habit *best = NULL, *worst = NULL;
+    for (uint32_t i = 0; i < p.nhabit; i++) {
+        const rz_habit *h = &p.habit[i];
+        if (h->tries < 2) continue;
+        double mean = h->paid / h->tries;
+        if (!best || mean > best->paid / best->tries) best = h;
+        if (!worst || mean < worst->paid / worst->tries) worst = h;
+    }
+    CHECK(best && worst && best != worst);
+    if (best && worst) CHECK(best->tries > worst->tries);
+    CHECK(p.nhabit >= 3);
+    rz_player_free(&p);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3219,6 +3379,11 @@ int main(void)
     RUN(an_answer_can_come_from_behind);
     RUN(why_is_asking_again_about_the_answer);
     RUN(what_nothing_explains_stays_an_open_question);
+    RUN(looking_up_words_learns_nothing);
+    RUN(an_answer_is_worth_what_it_carries_into_what_comes_later);
+    RUN(it_imitates_first_and_never_asks_the_same_thing_twice);
+    RUN(rex_is_the_dog_is_worth_asking);
+    RUN(it_repeats_what_pays_and_lets_go_of_what_does_not);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

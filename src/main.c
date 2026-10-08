@@ -1341,6 +1341,88 @@ static int cmd_ask(int argc, char **argv)
     return 0;
 }
 
+/* --- behaviours (P35) ----------------------------------------------------- */
+
+static int cmd_play(int argc, char **argv)
+{
+    uint32_t acts = (argc > 0) ? (uint32_t)strtoul(argv[0], NULL, 10) : 300;
+    const char *shown = (argc > 1) ? argv[1] : "es";
+    const char *path = FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    /* it lives four fifths; the last fifth is what comes later, which it has
+       not read -- an answer is worth what it carries into it */
+    size_t split = n / 5 * 4;
+    while (split < n && t[split] != ' ') split++;
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, split);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, split);
+    int32_t *later = malloc((n - split) * sizeof *later);
+    uint32_t nlater = later ? rz_lexicon_words_of(&x, m, t + split, n - split,
+                                                  later, (uint32_t)(n - split)) : 0;
+
+    int32_t form = lego_for_word(&x, shown);
+    printf("it lived %zu bytes; shown how to ask with [%s]; %u acts\n\n", split, shown, acts);
+
+    double total[2] = {0, 0};
+    for (int run = 0; run < 2; run++) {
+        rz_player p;
+        rz_player_init(&p);
+        if (run == 1) p.blind = 0x9E3779B97F4A7C15ull;    /* the bar */
+        rz_player_imitate(&p, form);
+        rz_act a;
+        uint32_t done = 0, shown_acts = 0;
+        while (done < acts && rz_player_act(&p, &x, later, nlater, &a)) {
+            done++;
+            total[run] += a.pay;
+            if (run == 0 && a.answer >= 0 && a.pay > 0.2 && shown_acts < 15) {
+                char s[80], r[80], w[80];
+                say_lego(&x, a.subject, s, sizeof s);
+                say_lego(&x, a.relation, r, sizeof r);
+                say_lego(&x, a.answer, w, sizeof w);
+                printf("  %s %s ?  ->  %-16s harmony %+.2f  transfer %+.2f%s\n",
+                       s, r, w, a.harmony, a.transfer, a.new_form ? "   (a new way of asking)" : "");
+                shown_acts++;
+            }
+        }
+        if (run == 0) {
+            printf("\n  ways of asking, by what they paid:\n");
+            for (uint32_t i = 0; i < p.nhabit; i++) {
+                const rz_habit *h = &p.habit[i];
+                if (!h->tries) continue;
+                char r[80];
+                say_lego(&x, h->relation, r, sizeof r);
+                printf("    %-12s tried %3u   pays %+.3f%s\n", r, h->tries, h->paid / h->tries,
+                       h->imitated ? "   (shown to it)" : "");
+            }
+        }
+        printf("\n  %s: %u acts, mean pay %+.4f\n", run == 0 ? "choosing" : "blind (the bar)",
+               done, done ? total[run] / done : 0.0);
+        total[run] = done ? total[run] / done : 0.0;
+        rz_player_free(&p);
+    }
+
+    free(later);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1372,6 +1454,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "think"))        return cmd_think(argc - 2, argv + 2);
     if (!strcmp(argv[1], "legos"))        return cmd_legos(argc - 2, argv + 2);
     if (!strcmp(argv[1], "ask"))          return cmd_ask(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "play"))         return cmd_play(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

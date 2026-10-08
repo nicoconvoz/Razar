@@ -1,4 +1,4 @@
-# Behaviours (P35) — designed, not built
+# Behaviours (P35) — the first three built
 
 Recorded 2026-10-08, in the author's words and order:
 
@@ -54,6 +54,75 @@ exist in the project, each measured:
 Being right alone selects obsession (that is why D23 became a prerequisite).
 Harmony and transfer do not. This is the author's choice to make.
 
+## What it wants: decided
+
+**A mix of harmony and transfer** (author, 2026-10-08; being right alone stays
+out, it selects obsession). Made measurable before building, so it could not be
+bent afterwards — for a question "X r ?" answered Y:
+
+- **harmony** — the shared mass of what follows X and what follows Y: how much
+  of X's company Y's company already describes;
+- **transfer** — in text it has not read yet, of the steps after X it had never
+  seen, the share it had seen after Y;
+- each against the same count with the 8 words nearest Y in frequency, picked
+  blind; the worth is the sum of the two gains.
+
+## Built: exploration, imitation, repeat or let go
+
+`rz_player_act`, `razar play [acts] [relation]`.
+
+- **Imitation** — a way of asking someone used (`es`) enters the repertoire
+  first and is tried first.
+- **Exploration** — never the same question twice; once every way of asking it
+  has was tried, it finds a new one (the commonest word it never used as a
+  relation), up to 32.
+- **Repeat what pays, let go of what does not** — each way of asking keeps its
+  pay; the next is the highest mean pay plus what it still does not know about
+  it, scaled by how much pays spread (UCB, no number chosen).
+- **The bar** — the same player choosing its way of asking at random.
+
+### In the little world it behaves
+
+"rex is ?" → dog, and that answer carries into the text it had not read: later,
+rex barks (transfer 1.000; the wrong answer, cat, 0.000). With a budget of 200
+acts it asks again the ways that pay (`my`, `the`, `one`: 15–23 tries) and lets
+go of the ones that do not (`yet`, `then`: 3).
+
+Two things it showed:
+
+- **Harmony as defined finds syntactic twins.** "yet" and "is" are both followed
+  by articles, so asking through an article returns a word that stands in the
+  same slot. That is harmony honestly — merging them describes the same with
+  less — but it is the silhouette, not the meaning, and in the mix it dominates.
+- **It abandoned the way it was shown.** "is" was tried on the commonest words
+  first ("the", "a"), paid nothing, and was let go after 3 tries — it never
+  reached "rex". A child dropping the adult's question because it tried it on
+  the wrong things.
+
+### On the New Testament: not better than blind
+
+Four fifths lived, the last fifth as what comes later, 300 acts, shown `es`:
+
+| | Mean pay |
+| --- | --- |
+| choosing | +0.0021 |
+| blind (the bar) | +0.0037 |
+
+**Choosing does not beat chance.** The pays are noise-sized because it asks
+about the commonest words first — `.`, `se`, `los` — whose answers mean nothing.
+`es` ended as the best-paying way (+0.028 over 20 tries), but the margin is
+inside the noise.
+
+### Lessons that came from getting it wrong
+
+- The first behaviour test let the player ask everything; every way ended with
+  the same count and the test said nothing. Repetition is only visible with a
+  budget.
+- The little world first used "the" and "then" everywhere; after a space came a
+  "t" so often that the word cut took the "o" for the edge. **The word cut
+  assumes the separator is the most uncertain atom** — true on the NT, not on a
+  poor vocabulary.
+
 ## Proposed order, from the most basic
 
 1. **The act loop** with one act (ask) and the curiosity of P34 as the first
@@ -72,8 +141,14 @@ material.
 
 ## Open
 
-- **D73** — what it wants: harmony, transfer, being right, or a mix. Author's
-  decision.
+- **D73** — *decided:* a mix of harmony and transfer. Still open: their units
+  differ, and harmony as defined rewards syntactic twins over meaning.
+- **D76** — what to ask about. By frequency it asks about function words and
+  learns nothing; the frontier of interest (P16) or its own surprises (P32)
+  would point it at what it does not understand.
+- **D77** — a way of asking is judged on its first subjects. The shown form
+  should keep a longer trust before being let go, or be judged per kind of
+  subject (the silhouette, behaviour 4).
 - **D74** — what counts as an act, and whether reading a stretch it chose is an
   act (it changes the mind; asking does not).
 - **D75** — silhouette: a kind (P33) is one silhouette; whether the shape of a
