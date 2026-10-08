@@ -134,6 +134,43 @@ Two honest verdicts:
 
 ---
 
+## The sentence as a frame (author's idea, 2026-10-08)
+
+> Every sentence starts at a capital and ends at a period, has a subject and a
+> predicate most of the time, and that structure is a recognisable pattern across
+> many variants. That can order it further.
+
+Under the master rule the capital and the period cannot be declared; they enter
+as the bar. So the question measured was: **does the frame find itself?**
+
+**What already emerged.** Step 2 found the sentence's edges with no help: four
+kinds are made of sentence endings (72–92% of their legos hold a period, against
+3.9% overall), and one kind is the opening of speech (`«¿` `«No` `«Señor,`).
+The pieces of the frame are there as kinds.
+
+**What did not.** Two readings tried to find the edges *as edges*, one level up
+from the word cut:
+
+| Reading | Where it pointed | Share holding a period |
+| --- | --- | --- |
+| the past stops informing the future (MI of kind before / kind after, low) | nouns and determiners | 2.7% (base 3.9%) |
+| the next lego is most uncertain (entropy after the kind, high) | determiners: `sus` `la` `este` | 1.7% at the top |
+
+Neither finds the period. At the level of kinds, the most uncertain place is not
+the end of a sentence but **after an article** — anything may follow "la". The
+word cut worked because uncertainty peaks where a word ends; one level up, the
+same reading picks the noun slot, not the frame.
+
+**Slot in the frame**, counted from the closers the MI reading chose, adds
+nothing to predicting the next kind (34.1% vs 34.3% from the kind before; always
+the same kind 28.2%). Two kinds before, with no frame at all, gives **36.0%** —
+small, and the only lift measured.
+
+So the idea stands and the pieces are found, but the way to *read* the frame is
+not yet found. Recorded as D67.
+
+---
+
 ## Open
 
 - **D62** — what comes next is not decided by the one kind before. The kind *of
@@ -150,3 +187,9 @@ Two honest verdicts:
   needs it to build them online, the way senses learned to score online.
 - **D66** — the number of kinds is still chosen (40, not tuned). Harmony (D39)
   should be the one to say how many kinds pay for themselves.
+- **D67** — the sentence as a frame. The edge kinds emerge by company, but
+  neither "the past stops informing" nor "the next lego is most uncertain" finds
+  them as edges. Candidates not yet tried: the frame as what **repeats as a
+  whole** (a sequence of kinds that recurs across many sentences, the way a
+  fragment is a sequence of bytes that recurs), and subject–predicate as two
+  halves that each recur on their own.

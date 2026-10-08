@@ -399,7 +399,7 @@ they still hold; a status changed because code now answers it says so.
 | D50–D53 | [what-the-context-did-not-give.md](what-the-context-did-not-give.md) |
 | D54–D58 | [senses.md](senses.md) |
 | D59–D61 | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
-| D62–D66 | [the-legos.md](the-legos.md) |
+| D62–D67 | [the-legos.md](the-legos.md) |
 
 ### Pieces built after this document
 
