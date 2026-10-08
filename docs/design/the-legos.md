@@ -169,6 +169,30 @@ small, and the only lift measured.
 So the idea stands and the pieces are found, but the way to *read* the frame is
 not yet found. Recorded as D67.
 
+### The atoms that open and close it (author's correction)
+
+> It must identify the atom that gives origin and end to a sentence — or the atoms.
+
+Not the kind: the **atom**. Measured on bytes alone (probe `atomframe.py`), with
+capitals and periods only as the bar:
+
+- **Openers.** An atom that opens a frame always stands after the same few
+  things. For every atom, the entropy of the atom two places before it; the exact
+  optimal split of those entropies picks the concentrated ones. **19 of the 22
+  common capitals** come out, plus the bytes of `«` `¿` and the line feed — the
+  other ways a frame opens in this text.
+- **Closers.** What the openers depend on: the atoms that stand two places before
+  them, ranked by how much more often than usual. In order: **`.` 12.2×, line
+  end 8.9×, `!` 5.7×, `?` 5.3×**, the bytes of `»`, then `;` 3.6×. The space,
+  which is everywhere, scores 1.8×.
+- **Bar.** Two atoms after a `.` there is an opener 96.0% of the time; after any
+  atom, 7.9%.
+
+So the atoms that begin and end a sentence **are** discoverable without being
+named. One number in the probe is still declared: the distance *two* (closer,
+separator, opener). It should be read off the material — the distance at which
+the concentration is sharpest — before this goes into `src/`.
+
 ---
 
 ## Open
