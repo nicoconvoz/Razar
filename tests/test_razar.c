@@ -1,5 +1,6 @@
 #include "harness.h"
 #include "razar.h"
+#include "lego.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -2770,6 +2771,197 @@ TEST(a_marked_fragment_is_spared_by_forgetting)
     CHECK(rz_mean_surprise(&with) <= rz_mean_surprise(&without));
 }
 
+/* --- the legos (P33) ------------------------------------------------------ */
+
+/* A small world with three kinds in it, and nobody says which: a determiner,
+   a noun, a verb that closes the sentence. `sep` stands between words so a test
+   can swap it and show the cut never looked at it. "yak" is left out, to be met
+   later; "my" never stands before "fox", so that pair is never seen. */
+static const char *lw_det[]  = { "the", "a", "my" };
+static const char *lw_noun[] = { "cat", "dog", "cow", "fox", "hen" };
+static const char *lw_verb[] = { "sat.", "ran.", "ate.", "hid." };
+
+static size_t little_world(char *out, size_t cap, char sep, int sentences)
+{
+    size_t n = 0;
+    uint64_t r = 12345;
+    for (int k = 0; k < sentences; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *d = lw_det[(r >> 33) % 3];
+        const char *o = lw_noun[(r >> 40) % 5];
+        const char *v = lw_verb[(r >> 50) % 4];
+        if (d[0] == 'm' && o[0] == 'f') o = "cat";
+        int w = snprintf(out + n, cap - n, "%s%c%s%c%s%c", d, sep, o, sep, v, sep);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static rz_mind *world_mind(const char *t, size_t n)
+{
+    rz_mind *m = fresh();
+    for (int p = 0; p < 2; p++) rz_ingest(m, (const unsigned char *)t, n);
+    return m;
+}
+
+static int32_t lego_of(const rz_lexicon *x, const char *s)
+{
+    return rz_lexicon_find(x, (const unsigned char *)s, strlen(s));
+}
+
+TEST(a_lego_never_crosses_from_one_word_into_the_next)
+{
+    /* The spaces mark the exam. A lego that swallowed the end of one word and
+       the start of the next is exactly what made the kinds come out mixed. */
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+
+    unsigned char *ends = calloc(n, 1);
+    size_t legos = rz_lego_cut(m, (const unsigned char *)t, n, ends);
+
+    size_t words = 0, missed = 0;
+    for (size_t i = 0; i < n; i++)
+        if (t[i] == ' ') { words++; if (!ends[i]) missed++; }
+    CHECK_EQ_U(missed, 0u);
+    CHECK(legos >= words);
+    CHECK(legos <= words + words / 2);        /* mostly whole words, not letters */
+    CHECK(ends[n - 1]);
+    free(ends);
+}
+
+TEST(the_cut_never_looks_at_the_space)
+{
+    /* The same world written with '_' between words is cut in exactly the
+       same places: nothing in the rule knows what a space is. */
+    static char a[60000], b[60000];
+    size_t na = little_world(a, sizeof a, ' ', 2000);
+    size_t nb = little_world(b, sizeof b, '_', 2000);
+    CHECK_EQ_U(na, nb);
+
+    rz_mind *ma = world_mind(a, na), *mb = world_mind(b, nb);
+    unsigned char *ea = calloc(na, 1), *eb = calloc(nb, 1);
+    rz_lego_cut(ma, (const unsigned char *)a, na, ea);
+    rz_lego_cut(mb, (const unsigned char *)b, nb, eb);
+    CHECK(memcmp(ea, eb, na) == 0);
+    free(ea); free(eb);
+}
+
+TEST(reading_legos_leaves_the_mind_untouched)
+{
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    uint64_t before = m->traversals;
+
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read(&x, m, (const unsigned char *)t, n);
+    CHECK_EQ_U(m->traversals, before);
+    CHECK(lego_of(&x, "cat ") >= 0);
+    CHECK(lego_of(&x, "sat. ") >= 0);
+    CHECK_EQ_U(lego_of(&x, "yak "), (unsigned long long)-1);
+    rz_lexicon_free(&x);
+}
+
+TEST(legos_that_keep_the_same_company_are_the_same_kind)
+{
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read(&x, m, (const unsigned char *)t, n);
+    rz_lexicon_sort(&x, 3, 7);
+
+    int32_t det = rz_lexicon_kind(&x, lego_of(&x, "the "));
+    int32_t noun = rz_lexicon_kind(&x, lego_of(&x, "cat "));
+    int32_t verb = rz_lexicon_kind(&x, lego_of(&x, "sat. "));
+    CHECK(det >= 0 && noun >= 0 && verb >= 0);
+    CHECK(det != noun && noun != verb && det != verb);
+
+    CHECK_EQ_U(rz_lexicon_kind(&x, lego_of(&x, "a ")), det);
+    CHECK_EQ_U(rz_lexicon_kind(&x, lego_of(&x, "my ")), det);
+    CHECK_EQ_U(rz_lexicon_kind(&x, lego_of(&x, "hen ")), noun);
+    CHECK_EQ_U(rz_lexicon_kind(&x, lego_of(&x, "fox ")), noun);
+    CHECK_EQ_U(rz_lexicon_kind(&x, lego_of(&x, "hid. ")), verb);
+    rz_lexicon_free(&x);
+}
+
+TEST(a_lego_never_met_is_known_by_where_it_sits)
+{
+    /* "the yak sat." -- it has never seen a yak, but it sits where nouns sit. */
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read(&x, m, (const unsigned char *)t, n);
+    rz_lexicon_sort(&x, 3, 7);
+
+    int32_t guess = rz_lexicon_guess_kind(&x, lego_of(&x, "the "), lego_of(&x, "sat. "));
+    CHECK_EQ_U(guess, rz_lexicon_kind(&x, lego_of(&x, "cat ")));
+    CHECK_EQ_U(rz_lexicon_guess_kind(&x, -1, -1), (unsigned long long)-1);
+    rz_lexicon_free(&x);
+}
+
+TEST(it_plays_the_kind_first_and_the_lego_inside_it)
+{
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read(&x, m, (const unsigned char *)t, n);
+    rz_lexicon_sort(&x, 3, 7);
+
+    int32_t det = rz_lexicon_kind(&x, lego_of(&x, "the "));
+    int32_t noun = rz_lexicon_kind(&x, lego_of(&x, "cat "));
+    int32_t verb = rz_lexicon_kind(&x, lego_of(&x, "sat. "));
+    CHECK_EQ_U(rz_lexicon_next_kind(&x, det), noun);
+    CHECK_EQ_U(rz_lexicon_next_kind(&x, noun), verb);
+    CHECK_EQ_U(rz_lexicon_next_kind(&x, verb), det);
+
+    /* after "the" a noun, and a noun that really followed "the" */
+    int32_t after_the = rz_lexicon_next(&x, lego_of(&x, "the "));
+    CHECK_EQ_U(rz_lexicon_kind(&x, after_the), noun);
+    /* "my fox" was never seen, and it still never plays "my" "fox": it plays a
+       noun that did follow "my" */
+    int32_t after_my = rz_lexicon_next(&x, lego_of(&x, "my "));
+    CHECK_EQ_U(rz_lexicon_kind(&x, after_my), noun);
+    CHECK(after_my != lego_of(&x, "fox "));
+    rz_lexicon_free(&x);
+}
+
+TEST(the_lexicon_survives_a_round_trip)
+{
+    const char *path = "test_lexicon.tmp";
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon a, b;
+    rz_lexicon_init(&a);
+    rz_lexicon_read(&a, m, (const unsigned char *)t, n);
+    rz_lexicon_sort(&a, 3, 7);
+    CHECK_EQ_U(rz_lexicon_save(&a, path), RZ_OK);
+
+    rz_lexicon_init(&b);
+    CHECK_EQ_U(rz_lexicon_load(&b, path), RZ_OK);
+    CHECK_EQ_U(b.n, a.n);
+    CHECK_EQ_U(b.npair, a.npair);
+    CHECK_EQ_U(b.kinds, a.kinds);
+    int32_t cat = lego_of(&b, "cat ");
+    CHECK(cat >= 0);
+    CHECK_EQ_U(rz_lexicon_kind(&b, cat), rz_lexicon_kind(&a, lego_of(&a, "cat ")));
+    CHECK_EQ_U(rz_lexicon_next(&b, lego_of(&b, "the ")),
+               rz_lexicon_next(&a, lego_of(&a, "the ")));
+    CHECK(rz_lexicon_load(&b, "no_such_lexicon.tmp") != RZ_OK);
+    rz_lexicon_free(&a);
+    rz_lexicon_free(&b);
+    remove(path);
+}
+
 int main(void)
 {
     printf("razar spike 13\n");
@@ -2847,6 +3039,13 @@ int main(void)
     RUN(it_says_what_it_expects_before_reality_answers);
     RUN(being_wrong_costs_the_rule_that_said_so);
     RUN(the_inner_voice_keeps_only_what_is_recent);
+    RUN(a_lego_never_crosses_from_one_word_into_the_next);
+    RUN(the_cut_never_looks_at_the_space);
+    RUN(reading_legos_leaves_the_mind_untouched);
+    RUN(legos_that_keep_the_same_company_are_the_same_kind);
+    RUN(a_lego_never_met_is_known_by_where_it_sits);
+    RUN(it_plays_the_kind_first_and_the_lego_inside_it);
+    RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);
     RUN(a_rule_born_dreaming_weighs_less_than_one_lived);

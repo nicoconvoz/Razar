@@ -119,6 +119,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Grow its senses | `./razar senses [rounds] [path]` |
 | Dump its whole state | `./razar dash` |
 | Hear it think | `./razar think [path] [bite]` |
+| Its legos, their kinds, a game | `./razar legos [path] [kinds]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

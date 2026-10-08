@@ -8,6 +8,7 @@
  * measures.
  */
 #include "razar.h"
+#include "lego.h"
 
 #include <dirent.h>
 #include <stdio.h>
@@ -27,6 +28,7 @@
 #define MODULES   NEST "/modules"
 #define AUTOPSIES "autopsies"
 #define FEED_DIR  "feed"
+#define LEXICON   NEST "/lexicon.dat"
 
 static int is_dir(const char *path)
 {
@@ -1058,6 +1060,172 @@ static int cmd_think(int argc, char **argv)
 }
 
 
+/* --- the legos (P33) ------------------------------------------------------ */
+
+static void say_lego(const rz_lexicon *x, int32_t id, char *out, size_t cap)
+{
+    size_t k = 0;
+    if (id < 0 || (uint32_t)id >= x->n) { snprintf(out, cap, "(none)"); return; }
+    out[k++] = '[';
+    for (uint8_t i = 0; i < x->lego[id].len && k + 2 < cap; i++) {
+        unsigned char c = x->lego[id].s[i];
+        out[k++] = (c == '\n' || c == '\r' || c == '\t') ? ' ' : (char)c;
+    }
+    out[k++] = ']';
+    out[k] = 0;
+}
+
+typedef struct { uint64_t steps, kind_ok, kind_base, lego_ok, memory_ok, common_ok; } exam_row;
+
+static void exam_print(const char *label, const exam_row *r)
+{
+    if (!r->steps) return;
+    double n = (double)r->steps;
+    printf("  %-28s %7llu   kind %5.1f%% (always the same kind %5.1f%%)   lego %5.1f%% "
+           "(memory alone %5.1f%%, commonest %4.1f%%)\n",
+           label, (unsigned long long)r->steps,
+           100.0 * (double)r->kind_ok / n, 100.0 * (double)r->kind_base / n,
+           100.0 * (double)r->lego_ok / n, 100.0 * (double)r->memory_ok / n,
+           100.0 * (double)r->common_ok / n);
+}
+
+static int cmd_legos(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    uint32_t kinds = (argc > 1) ? (uint32_t)strtoul(argv[1], NULL, 10) : 40;
+    if (kinds < 2) kinds = 2;
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m) { fprintf(stderr, "out of memory\n"); return 1; }
+    rz_init(m);
+    MKDIR(NEST);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); rz_free(m); free(m); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    if (n < 1000) { fprintf(stderr, "not enough material in %s\n", path); free(t); rz_free(m); free(m); return 1; }
+
+    /* learn on four fifths, examine on the fifth it never read */
+    size_t split = n / 5 * 4;
+    while (split < n && t[split] != ' ' && t[split] != '\n') split++;
+
+    /* The mind that cuts has read the four fifths and nothing else: the one in
+       the nest has eaten other material (and maybe this fifth), which moves
+       where it is uncertain and would leak the exam. Twice, as the probes did.
+       It has no nest, so nothing it learns here is written anywhere. */
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, split);
+
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read(&x, m, t, split);
+    rz_lexicon_sort(&x, kinds, 7);
+    printf("cut %zu bytes into %u different legos, sorted into %u kinds by their company\n\n",
+           split, x.n, x.kinds);
+
+    /* what the kinds look like */
+    printf("the kinds it found, by their commonest members:\n\n");
+    for (uint32_t k = 0; k < x.kinds && k < 14; k++) {
+        printf("  kind %2u ", k);
+        int32_t shown[8];
+        int ns = 0;
+        for (int s = 0; s < 8; s++) {
+            int32_t best = -1;
+            for (uint32_t i = 0; i < x.n; i++) {
+                if (x.lego[i].kind != (int32_t)k) continue;
+                int dup = 0;
+                for (int q = 0; q < ns; q++) if (shown[q] == (int32_t)i) dup = 1;
+                if (!dup && (best < 0 || x.lego[i].count > x.lego[best].count)) best = (int32_t)i;
+            }
+            if (best < 0) break;
+            shown[ns++] = best;
+            char w[80];
+            say_lego(&x, best, w, sizeof w);
+            printf(" %s", w);
+        }
+        printf("\n");
+    }
+
+    /* the exam */
+    const unsigned char *h = t + split;
+    size_t hn = n - split;
+    unsigned char *ends = malloc(hn);
+    int32_t *ids = malloc(hn * sizeof *ids);
+    size_t nl = 0, start = 0, never = 0;
+    rz_lego_cut(m, h, hn, ends);
+    for (size_t i = 0; i < hn; i++) {
+        if (!ends[i]) continue;
+        ids[nl] = rz_lexicon_find(&x, h + start, i + 1 - start);
+        if (ids[nl] < 0) never++;
+        nl++;
+        start = i + 1;
+    }
+
+    /* baselines, each from the four fifths only */
+    uint64_t *into = calloc(x.kinds, sizeof *into);
+    for (uint32_t a = 0; a < x.kinds; a++)
+        for (uint32_t b = 0; b < x.kinds; b++) into[b] += x.follow[(size_t)a * x.kinds + b];
+    uint32_t majority = 0;
+    for (uint32_t k = 1; k < x.kinds; k++) if (into[k] > into[majority]) majority = k;
+    int32_t commonest = 0;
+    for (uint32_t i = 1; i < x.n; i++) if (x.lego[i].count > x.lego[commonest].count) commonest = (int32_t)i;
+
+    exam_row seen = {0}, unseen = {0}, guess = {0};
+    for (size_t i = 1; i < nl; i++) {
+        int32_t a = ids[i - 1], b = ids[i];
+        if (a < 0 || b < 0) continue;
+        int32_t ka = rz_lexicon_kind(&x, a), kb = rz_lexicon_kind(&x, b);
+        if (ka < 0 || kb < 0) continue;
+
+        int32_t mem = -1;
+        uint32_t most = 0, had = 0;
+        for (uint32_t o = x.out_start[a]; o < x.out_start[a + 1]; o++) {
+            const rz_lego_pair *q = &x.pair[x.out_pair[o]];
+            if (q->count > most) { most = q->count; mem = (int32_t)q->b; }
+            if ((int32_t)q->b == b) had = 1;
+        }
+        exam_row *r = had ? &seen : &unseen;
+        r->steps++;
+        r->kind_ok += rz_lexicon_next_kind(&x, ka) == kb;
+        r->kind_base += (int32_t)majority == kb;
+        r->lego_ok += rz_lexicon_next(&x, a) == b;
+        r->memory_ok += mem == b;
+        r->common_ok += commonest == b;
+
+        /* recognise a lego by where it sits: hide it, read its neighbours */
+        if (i + 1 < nl) {
+            int32_t g = rz_lexicon_guess_kind(&x, a, ids[i + 1]);
+            guess.steps++;
+            guess.kind_ok += g == kb;
+            guess.kind_base += (int32_t)majority == kb;
+        }
+    }
+
+    printf("\non the fifth it never read: %zu legos, %zu of them never met before\n\n", nl, never);
+    exam_print("it had seen this pair", &seen);
+    exam_print("it had NEVER seen this pair", &unseen);
+    if (guess.steps)
+        printf("\n  a lego hidden, its kind read from its two neighbours: %.1f%% (always the same kind %.1f%%)\n",
+               100.0 * (double)guess.kind_ok / (double)guess.steps,
+               100.0 * (double)guess.kind_base / (double)guess.steps);
+
+    if (rz_lexicon_save(&x, LEXICON) != RZ_OK)
+        fprintf(stderr, "warning: could not write %s\n", LEXICON);
+    else
+        printf("\n  kept in %s\n", LEXICON);
+
+    free(into); free(ids); free(ends); free(t);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    return 0;
+}
+
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1072,7 +1240,8 @@ int main(int argc, char **argv)
         printf("  razar sleep [seed]                    let it dream on what it lived\n");
         printf("  razar senses [rounds] [path]          watch it grow its own ways of looking\n");
         printf("  razar dash                            its whole state, as JSON\n");
-        printf("  razar think [path] [bite]           watch it think out loud\n");
+        printf("  razar think [path] [bite]             watch it think out loud\n");
+        printf("  razar legos [path] [kinds]            its legos, their kinds, and a game\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -1086,6 +1255,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "senses"))       return cmd_senses(argc - 2, argv + 2);
     if (!strcmp(argv[1], "dash"))         return cmd_dash(argc - 2, argv + 2);
     if (!strcmp(argv[1], "think"))        return cmd_think(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "legos"))        return cmd_legos(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

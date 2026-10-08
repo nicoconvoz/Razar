@@ -4,8 +4,8 @@ CC      := gcc
 CFLAGS  ?= -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror
 LDLIBS  ?= -lm
 
-SRC     := src/razar.c
-HDR     := src/razar.h
+SRC     := src/razar.c src/lego.c
+HDR     := src/razar.h src/lego.h
 BIN     := razar
 TESTBIN := run_tests
 
