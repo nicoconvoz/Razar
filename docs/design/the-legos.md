@@ -219,6 +219,46 @@ and that the something is the same for every letter. Not built into `src/` yet.
 
 ---
 
+## Asking: the relation the question brings (author's idea, 2026-10-08)
+
+> If I ask "¿Quién es Cristo?" it only has to look for "es" + el + Señor, for
+> example, and relate it to Señor. "Señor es…". Then Cristo "es" + the
+> explanation of Señor.
+
+Nothing has to be declared: **the question brings its own relation** (`es`) and
+its own subject (`Cristo`), and step 2 had already found `es` `son` `será` `sea`
+`soy` as one kind by itself. Answering is reading the other side of that
+relation in the frames that hold both, then asking the same of the answer.
+
+Measured on the NT (probe `quien.py`; words at spaces stand in for legos, which
+keep every word whole):
+
+| Question read as | What the text says |
+| --- | --- |
+| `Cristo es ___` | la cabeza (×3), de Dios, nuestra paz, la imagen de Dios |
+| `___ es el Cristo` | **Jesús** (both times: "que Jesús es el Cristo") |
+| `___ es el Señor` | **Jesús**, **Jesucristo** ("Jesús es el Señor", "Jesucristo es el Señor") |
+
+Both directions matter, and the backward one carries the answer a person would
+give: *Cristo* and *Señor* are each said **of Jesús**. The chain the author
+described closes: Cristo → Jesús ← Señor.
+
+What gets in the way, and what already exists to remove it:
+
+- **The subject is not the word before `es`.** "El que vive en Cristo es una
+  nueva criatura" — the subject is *the one who lives in Christ*. This is the
+  subject–predicate frame the author named, and it is exactly where it is needed.
+- **`es` is not always the relation.** "Cristo es anunciado" — here it is an
+  auxiliary. The kind of what follows tells them apart: a noun after it is an
+  answer, a participle is not.
+- **Function words flood the counts** ("Dios es el que…", "es lo que Dios…").
+  An answer should be of the subject's own kind (noun with noun), and D50 —
+  count only what the context did not already give — removes the rest.
+
+Recorded as D68. Not built into `src/`.
+
+---
+
 ## Open
 
 - **D62** — what comes next is not decided by the one kind before. The kind *of
