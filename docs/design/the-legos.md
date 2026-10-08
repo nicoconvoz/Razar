@@ -193,6 +193,30 @@ named. One number in the probe is still declared: the distance *two* (closer,
 separator, opener). It should be read off the material — the distance at which
 the concentration is sharpest — before this goes into `src/`.
 
+### Capital as a property, whatever the letter (author's next step)
+
+> Now distinguish that one property is being a capital, no matter the letter.
+
+`E` and `e` keep the same **right** (`El`/`el`, `En`/`en`) and differ in their
+**left** (a capital stands after a closer). So each opener is paired with the
+non-opener atom whose start-of-lego right — the two atoms after it, wherever a
+lego begins — is most alike (probe `capital.c`; letter case is the bar):
+
+- **17 of 20 openers pair with their own lowercase** (`A→a` … `Y→y`, `Q→q`
+  at 0.97). A blind pick among the candidates would be about 1 in 40. The three
+  misses: `G→t`, `U→e` — `U` could not find `u` because `u` itself was wrongly
+  taken for an opener (it stands after `q`) — and `u→e`, that same false opener.
+- **It is one property, not seventeen.** Take what separates each capital from
+  its twin (the left of one minus the left of the other) and compare pair against
+  pair: **0.45** alike, against **0.08** between two plain letters. The pairs
+  differ *in the same way*.
+- **And that way points at the frame.** The shared difference is, in order:
+  line end, the first byte of `«`/`¿`, `.`, `?`. Being a capital means *standing
+  where a frame opens* — the property is the position, carried by the letter.
+
+So the organism can tell, without being told, that `E` is `e` plus something,
+and that the something is the same for every letter. Not built into `src/` yet.
+
 ---
 
 ## Open
