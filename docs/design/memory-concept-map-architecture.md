@@ -400,6 +400,7 @@ they still hold; a status changed because code now answers it says so.
 | D54–D58 | [senses.md](senses.md) |
 | D59–D61 | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
 | D62–D68 | [the-legos.md](the-legos.md) |
+| D69–D72 | [curiosity.md](curiosity.md) |
 
 ### Pieces built after this document
 
@@ -413,6 +414,7 @@ they still hold; a status changed because code now answers it says so.
 | P30 senses | [senses.md](senses.md) |
 | P31 rules, P32 the inner conversation | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
 | P33 the legos: clean cuts, kinds, play | [the-legos.md](the-legos.md) |
+| P34 curiosity: words, marks, asking, why | [curiosity.md](curiosity.md) |
 
 ---
 

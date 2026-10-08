@@ -1060,6 +1060,24 @@ static int cmd_think(int argc, char **argv)
 }
 
 
+/* Line breaks are read as continuous writing: every run of line breaks is one
+   space (none if a space is already there). The author's decision
+   (2026-10-08): a line break is layout, not language. Applied where material
+   is read into words and legos; `feed` still eats the raw bytes. */
+static size_t continuous(unsigned char *t, size_t n)
+{
+    size_t k = 0;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char c = t[i];
+        if (c == 13 || c == 10) {      /* carriage return, line feed */
+            if (k > 0 && t[k - 1] == ' ') continue;
+            c = ' ';
+        }
+        t[k++] = c;
+    }
+    return k;
+}
+
 /* --- the legos (P33) ------------------------------------------------------ */
 
 static void say_lego(const rz_lexicon *x, int32_t id, char *out, size_t cap)
@@ -1108,6 +1126,7 @@ static int cmd_legos(int argc, char **argv)
     unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
     size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
     fclose(f);
+    n = continuous(t, n);
     if (n < 1000) { fprintf(stderr, "not enough material in %s\n", path); free(t); rz_free(m); free(m); return 1; }
 
     /* learn on four fifths, examine on the fifth it never read */
@@ -1226,6 +1245,102 @@ static int cmd_legos(int argc, char **argv)
 }
 
 
+/* --- curiosity (P34) ------------------------------------------------------ */
+
+/* The person types a word; the lexicon holds it as several legos ("Cristo ",
+   "Cristo, ", "Cristo."). Take the commonest one that is the word plus only
+   its edge -- this is the typing interface, not something the organism is told. */
+static int32_t lego_for_word(const rz_lexicon *x, const char *w)
+{
+    size_t wl = strlen(w);
+    int32_t best = -1;
+    for (uint32_t i = 0; i < x->n; i++) {
+        const rz_lego *g = &x->lego[i];
+        if (g->len < wl || memcmp(g->s, w, wl) != 0) continue;
+        int edge = 1;
+        for (size_t k = wl; k < g->len; k++) {
+            unsigned char c = g->s[k];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= 0x80) edge = 0;
+        }
+        if (edge && (best < 0 || g->count > x->lego[best].count)) best = (int32_t)i;
+    }
+    if (best >= 0) return best;
+
+    /* A Windows console hands "Jesús" over in Latin-1 while the text is UTF-8:
+       try the word again re-encoded. */
+    char u[128];
+    size_t k = 0, high = 0;
+    for (size_t i = 0; i < wl && k + 2 < sizeof u; i++) {
+        unsigned char c = (unsigned char)w[i];
+        if (c < 0x80) { u[k++] = (char)c; continue; }
+        u[k++] = (char)(0xC0 | (c >> 6));
+        u[k++] = (char)(0x80 | (c & 0x3F));
+        high++;
+    }
+    u[k] = 0;
+    return high ? lego_for_word(x, u) : -1;
+}
+
+static int cmd_ask(int argc, char **argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "usage: razar ask <word> [relation] [path]\n");
+        return 1;
+    }
+    const char *word = argv[0];
+    const char *rel = (argc > 1) ? argv[1] : "es";
+    const char *path = (argc > 2) ? argv[2] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);   /* a question is asked in words */
+
+    int32_t subject = lego_for_word(&x, word), relation = lego_for_word(&x, rel);
+    if (subject < 0 || relation < 0) {
+        printf("it has never met %s\n", subject < 0 ? word : rel);
+    } else {
+        int32_t chain[12];
+        rz_wonder_end end;
+        uint32_t k = rz_lexicon_wonder(&x, subject, relation, chain, 12, &end);
+        for (uint32_t i = 0; i < k; i++) {
+            char w[80];
+            say_lego(&x, chain[i], w, sizeof w);
+            rz_answer a[4];
+            uint32_t got = rz_lexicon_ask(&x, chain[i], relation, a, 4);
+            printf("%s %s %s ?\n", i == 0 ? "asked:" : "  why?", w, rel);
+            for (uint32_t j = 0; j < got; j++) {
+                char ans[80];
+                say_lego(&x, a[j].lego, ans, sizeof ans);
+                printf("        %s %-22s said %u time%s\n",
+                       a[j].dir > 0 ? "it is  " : "it is said of", ans,
+                       a[j].support, a[j].support == 1 ? "" : "s");
+            }
+        }
+        printf("\n%s\n", end == RZ_WONDER_CIRCLE ? "the answers lead back to what it asked: a circle closed"
+                       : end == RZ_WONDER_GAP    ? "nothing answers the last one: the question stays open"
+                                                 : "still asking when it ran out of room");
+    }
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1256,6 +1371,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "dash"))         return cmd_dash(argc - 2, argv + 2);
     if (!strcmp(argv[1], "think"))        return cmd_think(argc - 2, argv + 2);
     if (!strcmp(argv[1], "legos"))        return cmd_legos(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "ask"))          return cmd_ask(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

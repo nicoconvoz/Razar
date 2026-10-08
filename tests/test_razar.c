@@ -2848,6 +2848,65 @@ TEST(the_cut_never_looks_at_the_space)
     free(ea); free(eb);
 }
 
+TEST(a_word_ends_only_where_a_lego_does)
+{
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    unsigned char *legos = calloc(n, 1), *words = calloc(n, 1);
+    rz_lego_cut(m, (const unsigned char *)t, n, legos);
+    size_t nw = rz_word_cut(m, (const unsigned char *)t, n, words);
+
+    size_t outside = 0, spaces = 0, missed = 0, extra = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (words[i] && !legos[i]) outside++;
+        if (t[i] == ' ') { spaces++; if (!words[i]) missed++; }
+        else if (words[i] && i + 1 < n) extra++;
+    }
+    CHECK_EQ_U(outside, 0u);
+    CHECK_EQ_U(missed, 0u);
+    CHECK_EQ_U(extra, 0u);                 /* the words are exactly the words */
+    CHECK_EQ_U(nw, spaces);
+    free(legos); free(words);
+}
+
+TEST(the_word_cut_never_looks_at_the_space_either)
+{
+    static char a[60000], b[60000];
+    size_t na = little_world(a, sizeof a, ' ', 2000);
+    size_t nb = little_world(b, sizeof b, '_', 2000);
+    rz_mind *ma = world_mind(a, na), *mb = world_mind(b, nb);
+    unsigned char *ea = calloc(na, 1), *eb = calloc(nb, 1);
+    rz_word_cut(ma, (const unsigned char *)a, na, ea);
+    rz_word_cut(mb, (const unsigned char *)b, nb, eb);
+    CHECK(memcmp(ea, eb, na) == 0);
+    free(ea); free(eb);
+}
+
+TEST(a_word_is_read_without_the_marks_that_close_it)
+{
+    /* "sat. " is the word "sat" and the mark "." -- nothing names the period:
+       it is an atom that is always followed by the edge of a word */
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    CHECK(lego_of(&x, "sat") >= 0);
+    CHECK(lego_of(&x, ".") >= 0);
+    CHECK(lego_of(&x, "cat") >= 0);
+    CHECK_EQ_U(lego_of(&x, "sat. "), (unsigned long long)-1);
+    CHECK_EQ_U(lego_of(&x, "cat "), (unsigned long long)-1);
+    /* and the mark stands in the sequence, right after its word */
+    int32_t sat = lego_of(&x, "sat"), dot = lego_of(&x, ".");
+    size_t after = 0, total = 0;
+    for (uint32_t i = 0; i + 1 < x.nseq; i++)
+        if (x.seq[i] == sat) { total++; if (x.seq[i + 1] == dot) after++; }
+    CHECK(total > 0 && after == total);
+    rz_lexicon_free(&x);
+}
+
 TEST(reading_legos_leaves_the_mind_untouched)
 {
     static char t[60000];
@@ -2934,6 +2993,111 @@ TEST(it_plays_the_kind_first_and_the_lego_inside_it)
     rz_lexicon_free(&x);
 }
 
+/* --- curiosity (P34) ------------------------------------------------------ */
+
+/* A world with things said about things. Clauses are joined by "then" so every
+   word stands alone. rex is the dog, tom is the cat, the dog is the beast and
+   the beast is the dog; nothing says what a cow is, though cows do things. */
+static size_t curious_world(char *out, size_t cap, int clauses)
+{
+    static const char *said[] = {
+        "rex is the dog", "tom is the cat", "dog is the beast", "beast is the dog",
+    };
+    static const char *noun[] = { "dog", "cat", "beast", "cow", "hen", "fox" };
+    static const char *verb[] = { "ran", "sat", "ate" };
+    size_t n = 0;
+    uint64_t r = 99;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w;
+        if ((r >> 60) % 4 == 0)
+            w = snprintf(out + n, cap - n, "%s then ", said[(r >> 33) % 4]);
+        else
+            w = snprintf(out + n, cap - n, "the %s %s then ",
+                         noun[(r >> 40) % 6], verb[(r >> 50) % 3]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static rz_lexicon *curious_lexicon(void)
+{
+    static char t[80000];
+    size_t n = curious_world(t, sizeof t, 3000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon *x = malloc(sizeof *x);
+    rz_lexicon_init(x);
+    rz_lexicon_read(x, m, (const unsigned char *)t, n);
+    return x;
+}
+
+TEST(an_article_answers_nothing)
+{
+    /* "the" follows "is" whatever is asked, so it is never an answer; and
+       nothing in the code knows what an article is */
+    rz_lexicon *x = curious_lexicon();
+    rz_answer a[16];
+    const char *who[] = { "rex ", "tom ", "dog ", "cat ", "beast " };
+    for (int w = 0; w < 5; w++) {
+        uint32_t k = rz_lexicon_ask(x, lego_of(x, who[w]), lego_of(x, "is "), a, 16);
+        for (uint32_t i = 0; i < k; i++) CHECK(a[i].lego != lego_of(x, "the "));
+    }
+}
+
+TEST(a_question_is_answered_across_the_relation_it_brings)
+{
+    /* "who is rex?" -- the answer stands across "is", past the article */
+    rz_lexicon *x = curious_lexicon();
+    rz_answer a[8];
+    uint32_t k = rz_lexicon_ask(x, lego_of(x, "rex "), lego_of(x, "is "), a, 8);
+    CHECK(k >= 1);
+    CHECK_EQ_U(a[0].lego, lego_of(x, "dog "));
+    CHECK(a[0].dir == 1);
+    CHECK(a[0].support > 10);
+    for (uint32_t i = 0; i < k; i++) CHECK(a[i].lego != lego_of(x, "the "));
+}
+
+TEST(an_answer_can_come_from_behind)
+{
+    /* "who is the cat?" -- only "tom is the cat" says, and it says it backwards */
+    rz_lexicon *x = curious_lexicon();
+    rz_answer a[8];
+    uint32_t k = rz_lexicon_ask(x, lego_of(x, "cat "), lego_of(x, "is "), a, 8);
+    CHECK(k >= 1);
+    CHECK_EQ_U(a[0].lego, lego_of(x, "tom "));
+    CHECK(a[0].dir == -1);
+}
+
+TEST(why_is_asking_again_about_the_answer)
+{
+    /* rex -> dog -> beast, and the beast leads back to the dog: a circle */
+    rz_lexicon *x = curious_lexicon();
+    int32_t chain[8];
+    rz_wonder_end end;
+    uint32_t k = rz_lexicon_wonder(x, lego_of(x, "rex "), lego_of(x, "is "), chain, 8, &end);
+    CHECK_EQ_U(k, 3u);
+    CHECK_EQ_U(chain[0], lego_of(x, "rex "));
+    CHECK_EQ_U(chain[1], lego_of(x, "dog "));
+    CHECK_EQ_U(chain[2], lego_of(x, "beast "));
+    CHECK_EQ_U(end, RZ_WONDER_CIRCLE);
+}
+
+TEST(what_nothing_explains_stays_an_open_question)
+{
+    rz_lexicon *x = curious_lexicon();
+    int32_t chain[8];
+    rz_wonder_end end;
+    uint32_t k = rz_lexicon_wonder(x, lego_of(x, "cow "), lego_of(x, "is "), chain, 8, &end);
+    CHECK_EQ_U(k, 1u);
+    CHECK_EQ_U(end, RZ_WONDER_GAP);
+
+    /* and a chain with no room left says so instead of pretending */
+    k = rz_lexicon_wonder(x, lego_of(x, "rex "), lego_of(x, "is "), chain, 2, &end);
+    CHECK_EQ_U(k, 2u);
+    CHECK_EQ_U(end, RZ_WONDER_DEEP);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -2951,6 +3115,8 @@ TEST(the_lexicon_survives_a_round_trip)
     CHECK_EQ_U(b.n, a.n);
     CHECK_EQ_U(b.npair, a.npair);
     CHECK_EQ_U(b.kinds, a.kinds);
+    CHECK_EQ_U(b.nseq, a.nseq);
+    CHECK(a.nseq > 0 && b.nseq == a.nseq && memcmp(a.seq, b.seq, a.nseq * sizeof *a.seq) == 0);
     int32_t cat = lego_of(&b, "cat ");
     CHECK(cat >= 0);
     CHECK_EQ_U(rz_lexicon_kind(&b, cat), rz_lexicon_kind(&a, lego_of(&a, "cat ")));
@@ -3041,10 +3207,18 @@ int main(void)
     RUN(the_inner_voice_keeps_only_what_is_recent);
     RUN(a_lego_never_crosses_from_one_word_into_the_next);
     RUN(the_cut_never_looks_at_the_space);
+    RUN(a_word_ends_only_where_a_lego_does);
+    RUN(the_word_cut_never_looks_at_the_space_either);
+    RUN(a_word_is_read_without_the_marks_that_close_it);
     RUN(reading_legos_leaves_the_mind_untouched);
     RUN(legos_that_keep_the_same_company_are_the_same_kind);
     RUN(a_lego_never_met_is_known_by_where_it_sits);
     RUN(it_plays_the_kind_first_and_the_lego_inside_it);
+    RUN(an_article_answers_nothing);
+    RUN(a_question_is_answered_across_the_relation_it_brings);
+    RUN(an_answer_can_come_from_behind);
+    RUN(why_is_asking_again_about_the_answer);
+    RUN(what_nothing_explains_stays_an_open_question);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

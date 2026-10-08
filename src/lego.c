@@ -7,6 +7,45 @@
 
 /* ===================== step 1: clean legos =============================== */
 
+/* The split of per-atom values into two groups that best separates them,
+   weighted by how often each atom stands there: the exact optimum, tried at
+   every value. -HUGE_VAL when there is only one value. */
+static double otsu(const double v[RZ_ATOMS], const uint64_t at[RZ_ATOMS])
+{
+    unsigned char ord[RZ_ATOMS];
+    int k = 0;
+    for (int b = 0; b < RZ_ATOMS; b++) {
+        if (!at[b]) continue;
+        int j = k++;
+        while (j > 0 && v[ord[j - 1]] > v[b]) { ord[j] = ord[j - 1]; j--; }
+        ord[j] = (unsigned char)b;
+    }
+    double W = 0, S = 0;
+    for (int j = 0; j < k; j++) { W += (double)at[ord[j]]; S += (double)at[ord[j]] * v[ord[j]]; }
+    double w0 = 0, s0 = 0, best = 0, mid = -HUGE_VAL;
+    for (int j = 0; j + 1 < k; j++) {
+        w0 += (double)at[ord[j]];
+        s0 += (double)at[ord[j]] * v[ord[j]];
+        if (v[ord[j + 1]] <= v[ord[j]]) continue;
+        double d = s0 / w0 - (S - s0) / (W - w0);
+        double between = w0 * (W - w0) * d * d;
+        if (between > best) { best = between; mid = (v[ord[j]] + v[ord[j + 1]]) / 2.0; }
+    }
+    return mid;
+}
+
+/* the same over the mind's uncertainty about what follows each atom */
+static double best_split(const rz_mind *m, const uint64_t at[RZ_ATOMS])
+{
+    double hv[RZ_ATOMS] = {0};
+    for (int b = 0; b < RZ_ATOMS; b++) {
+        if (!at[b]) continue;
+        double v = rz_branching(m, (unsigned char)b);
+        hv[b] = v > 0.0 ? log(v) : 0.0;
+    }
+    return otsu(hv, at);
+}
+
 size_t rz_lego_cut(const rz_mind *m, const unsigned char *t, size_t n,
                    unsigned char *ends)
 {
@@ -39,37 +78,8 @@ size_t rz_lego_cut(const rz_mind *m, const unsigned char *t, size_t n,
        two-means started from the extremes got caught on a few rare bytes and
        halved its precision on long text). The text decides; no number is
        written here. */
-    double mid = -HUGE_VAL;
-    int two = 0;
-    {
-        unsigned char ord[RZ_ATOMS];
-        double hv[RZ_ATOMS];
-        int k = 0;
-        for (int b = 0; b < RZ_ATOMS; b++) {
-            if (!at[b]) continue;
-            double v = rz_branching(m, (unsigned char)b);
-            hv[b] = v > 0.0 ? log(v) : 0.0;
-            int j = k++;
-            while (j > 0 && hv[ord[j - 1]] > hv[b]) { ord[j] = ord[j - 1]; j--; }
-            ord[j] = (unsigned char)b;
-        }
-        double W = 0, S = 0;
-        for (int j = 0; j < k; j++) { W += (double)at[ord[j]]; S += (double)at[ord[j]] * hv[ord[j]]; }
-        double w0 = 0, s0 = 0, best = 0;
-        for (int j = 0; j + 1 < k; j++) {
-            w0 += (double)at[ord[j]];
-            s0 += (double)at[ord[j]] * hv[ord[j]];
-            double w1 = W - w0;
-            if (hv[ord[j + 1]] <= hv[ord[j]]) continue;
-            double d = s0 / w0 - (S - s0) / w1;
-            double between = w0 * w1 * d * d;
-            if (between > best) {
-                best = between;
-                mid = (hv[ord[j]] + hv[ord[j + 1]]) / 2.0;
-                two = 1;
-            }
-        }
-    }
+    double mid = best_split(m, at);
+    int two = mid > -HUGE_VAL;
 
     size_t legos = 0, len = 0;
     for (size_t i = 0; i < n; i++) {
@@ -84,6 +94,29 @@ size_t rz_lego_cut(const rz_mind *m, const unsigned char *t, size_t n,
     free(h);
     free(peak);
     return legos;
+}
+
+size_t rz_word_cut(const rz_mind *m, const unsigned char *t, size_t n,
+                   unsigned char *ends)
+{
+    size_t legos = rz_lego_cut(m, t, n, ends);
+    if (legos == 0) return 0;
+
+    /* the atoms legos end on, and the split of their heights once more */
+    uint64_t at[RZ_ATOMS] = {0};
+    for (size_t i = 0; i < n; i++) if (ends[i]) at[t[i]]++;
+    double mid = best_split(m, at);
+    if (mid == -HUGE_VAL) return legos;    /* one height: every lego is a word */
+
+    size_t words = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!ends[i]) continue;
+        double v = rz_branching(m, t[i]);
+        double h = v > 0.0 ? log(v) : 0.0;
+        if (h > mid || i + 1 == n) words++;
+        else ends[i] = 0;
+    }
+    return words;
 }
 
 /* ===================== the lexicon ======================================= */
@@ -122,6 +155,7 @@ void rz_lexicon_free(rz_lexicon *x)
     free(x->slot);
     free(x->pair);
     free(x->pslot);
+    free(x->seq);
     memset(x, 0, sizeof *x);
 }
 
@@ -210,6 +244,18 @@ static int32_t find_pair(const rz_lexicon *x, uint32_t a, uint32_t b)
     return -1;
 }
 
+static void remember(rz_lexicon *x, int32_t id)
+{
+    if (x->nseq == x->seqcap) {
+        uint32_t cap = x->seqcap ? x->seqcap * 2 : 4096;
+        int32_t *q = realloc(x->seq, (size_t)cap * sizeof *q);
+        if (!q) return;
+        x->seq = q;
+        x->seqcap = cap;
+    }
+    x->seq[x->nseq++] = id;
+}
+
 static void count_pair(rz_lexicon *x, uint32_t a, uint32_t b)
 {
     int32_t p = find_pair(x, a, b);
@@ -233,6 +279,9 @@ static void count_pair(rz_lexicon *x, uint32_t a, uint32_t b)
     x->pslot[k] = (int32_t)(x->npair - 1);
 }
 
+static void read_cut(rz_lexicon *x, const unsigned char *t, size_t n,
+                     unsigned char *ends);
+
 void rz_lexicon_read(rz_lexicon *x, const rz_mind *m,
                      const unsigned char *t, size_t n)
 {
@@ -240,6 +289,130 @@ void rz_lexicon_read(rz_lexicon *x, const rz_mind *m,
     unsigned char *ends = malloc(n);
     if (!ends) return;
     rz_lego_cut(m, t, n, ends);
+    read_cut(x, t, n, ends);
+}
+
+/* the cut at the widest gap between sorted values: no weights, no parameter */
+static double widest_gap(const double v[RZ_ATOMS], const uint64_t at[RZ_ATOMS])
+{
+    unsigned char ord[RZ_ATOMS];
+    int k = 0;
+    for (int b = 0; b < RZ_ATOMS; b++) {
+        if (!at[b]) continue;
+        int j = k++;
+        while (j > 0 && v[ord[j - 1]] > v[b]) { ord[j] = ord[j - 1]; j--; }
+        ord[j] = (unsigned char)b;
+    }
+    double best = 0, mid = -HUGE_VAL;
+    for (int j = 0; j + 1 < k; j++)
+        if (v[ord[j + 1]] - v[ord[j]] > best) {
+            best = v[ord[j + 1]] - v[ord[j]];
+            mid = (v[ord[j + 1]] + v[ord[j]]) / 2.0;
+        }
+    return mid;
+}
+
+/* The atoms that close a word, without naming one. The separators are the
+ * atoms words end on. A mark must do two things:
+ *
+ *   close    be followed by a separator nearly always -- cut at the widest gap
+ *            between atoms. (Cut by the weighted optimum, the letters -- most of
+ *            the text -- dragged the cut down and "s", then every letter,
+ *            joined: "que" came apart as "q" + "ue". Grown round by round, a
+ *            small vocabulary let whole words join, letter after letter.)
+ *   attach   come after many different atoms. The "g" of "dog" closes its word
+ *            but only ever after an "o".
+ *
+ * On the New Testament read as continuous text this finds , . : ; ) and the
+ * space. One round: with line breaks read as spaces there is no "" standing
+ * between a period and its separator. */
+static void edge_atoms(const unsigned char *t, size_t n, const unsigned char *wend,
+                       uint8_t sep[RZ_ATOMS], uint8_t edge[RZ_ATOMS])
+{
+    memset(sep, 0, RZ_ATOMS);
+    /* the last byte is left out: the text simply stopped there */
+    for (size_t i = 0; i + 1 < n; i++) if (wend[i]) sep[t[i]] = 1;
+    memcpy(edge, sep, RZ_ATOMS);
+
+    uint64_t at[RZ_ATOMS] = {0}, one[RZ_ATOMS] = {0}, closed[RZ_ATOMS] = {0};
+    for (size_t i = 0; i < n; i++) at[t[i]]++;
+    for (int b = 0; b < RZ_ATOMS; b++) one[b] = at[b] ? 1 : 0;
+    for (size_t i = 0; i + 1 < n; i++) if (sep[t[i + 1]]) closed[t[i]]++;
+
+    double share[RZ_ATOMS] = {0}, variety[RZ_ATOMS] = {0};
+    for (int b = 0; b < RZ_ATOMS; b++)
+        if (at[b]) share[b] = (double)closed[b] / (double)at[b];
+
+    uint32_t *before = calloc((size_t)RZ_ATOMS * RZ_ATOMS, sizeof *before);
+    if (!before) return;
+    for (size_t i = 1; i < n; i++) before[(size_t)t[i] * RZ_ATOMS + t[i - 1]]++;
+    for (int b = 0; b < RZ_ATOMS; b++) {
+        if (!at[b]) continue;
+        double tot = 0, h = 0;
+        for (int a = 0; a < RZ_ATOMS; a++) tot += before[(size_t)b * RZ_ATOMS + a];
+        for (int a = 0; a < RZ_ATOMS; a++) {
+            double c = before[(size_t)b * RZ_ATOMS + a];
+            if (c > 0) h -= c / tot * log(c / tot);
+        }
+        variety[b] = h;
+    }
+    free(before);
+
+    double smid = widest_gap(share, at), vmid = otsu(variety, one);
+    if (smid == -HUGE_VAL || vmid == -HUGE_VAL) return;
+    for (int b = 0; b < RZ_ATOMS; b++)
+        if (at[b] && !sep[b] && share[b] > smid && variety[b] > vmid) edge[b] = 1;
+}
+
+void rz_lexicon_read_words(rz_lexicon *x, const rz_mind *m,
+                           const unsigned char *t, size_t n)
+{
+    if (n == 0) return;
+    unsigned char *wend = malloc(n);
+    if (!wend) return;
+    rz_word_cut(m, t, n, wend);
+    uint8_t sep[RZ_ATOMS], edge[RZ_ATOMS];
+    edge_atoms(t, n, wend, sep, edge);
+
+    /* every word becomes its core and, when it has one, its closing mark; the
+       separators themselves are dropped -- the order already says where a
+       word ends */
+    drop_derived(x);
+    int32_t prev = -1;
+    size_t start = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (!wend[i]) continue;
+        size_t c = i + 1;
+        while (c > start && edge[t[c - 1]]) c--;
+        unsigned char mark[RZ_LEGO_SPAN];
+        size_t ml = 0;
+        for (size_t k = c; k <= i && ml < RZ_LEGO_SPAN; k++)
+            if (!sep[t[k]]) mark[ml++] = t[k];
+        if (c == start && ml == 0) { start = i + 1; continue; }
+
+        for (size_t from = start; from < c; from += RZ_LEGO_SPAN) {
+            size_t len = c - from < RZ_LEGO_SPAN ? c - from : RZ_LEGO_SPAN;
+            int32_t id = intern(x, t + from, len);
+            if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
+            remember(x, id);
+            prev = id;
+        }
+        if (ml) {
+            int32_t id = intern(x, mark, ml);
+            if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
+            remember(x, id);
+            prev = id;
+        }
+        start = i + 1;
+    }
+    remember(x, -1);
+    free(wend);
+}
+
+/* takes ends and frees it */
+static void read_cut(rz_lexicon *x, const unsigned char *t, size_t n,
+                     unsigned char *ends)
+{
     drop_derived(x);                  /* new counts: the kinds are stale */
 
     int32_t prev = -1;
@@ -248,9 +421,11 @@ void rz_lexicon_read(rz_lexicon *x, const rz_mind *m,
         if (!ends[i]) continue;
         int32_t id = intern(x, t + start, i + 1 - start);
         if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
+        remember(x, id);
         prev = id;
         start = i + 1;
     }
+    remember(x, -1);                  /* two reads never run into each other */
     free(ends);
 }
 
@@ -554,16 +729,17 @@ int32_t rz_lexicon_next(const rz_lexicon *x, int32_t lego)
 /* ===================== persistence ======================================= */
 
 #define RZ_LEXICON_MAGIC 0x584C5A52u   /* "RZLX" */
-#define RZ_LEXICON_VER   (1u + 1000u * (uint32_t)sizeof(rz_lego))
+#define RZ_LEXICON_VER   (2u + 1000u * (uint32_t)sizeof(rz_lego))
 
 int rz_lexicon_save(const rz_lexicon *x, const char *path)
 {
     FILE *f = fopen(path, "wb");
     if (!f) return RZ_ERR_IO;
-    uint32_t head[5] = { RZ_LEXICON_MAGIC, RZ_LEXICON_VER, x->n, x->npair, x->kinds };
+    uint32_t head[6] = { RZ_LEXICON_MAGIC, RZ_LEXICON_VER, x->n, x->npair, x->kinds, x->nseq };
     int ok = fwrite(head, sizeof head, 1, f) == 1
           && (x->n == 0 || fwrite(x->lego, sizeof *x->lego, x->n, f) == x->n)
-          && (x->npair == 0 || fwrite(x->pair, sizeof *x->pair, x->npair, f) == x->npair);
+          && (x->npair == 0 || fwrite(x->pair, sizeof *x->pair, x->npair, f) == x->npair)
+          && (x->nseq == 0 || fwrite(x->seq, sizeof *x->seq, x->nseq, f) == x->nseq);
     if (ok && x->kinds)
         ok = fwrite(x->follow, sizeof *x->follow, (size_t)x->kinds * x->kinds, f)
              == (size_t)x->kinds * x->kinds;
@@ -575,7 +751,7 @@ int rz_lexicon_load(rz_lexicon *x, const char *path)
 {
     FILE *f = fopen(path, "rb");
     if (!f) return RZ_ERR_MISSING;
-    uint32_t head[5];
+    uint32_t head[6];
     if (fread(head, sizeof head, 1, f) != 1) { fclose(f); return RZ_ERR_IO; }
     if (head[0] != RZ_LEXICON_MAGIC || head[1] != RZ_LEXICON_VER) { fclose(f); return RZ_ERR_VERSION; }
 
@@ -584,11 +760,14 @@ int rz_lexicon_load(rz_lexicon *x, const char *path)
     y.n = y.cap = head[2];
     y.npair = y.pcap = head[3];
     y.kinds = head[4];
+    y.nseq = y.seqcap = head[5];
     y.lego = malloc(((size_t)y.n + 1) * sizeof *y.lego);
     y.pair = malloc(((size_t)y.npair + 1) * sizeof *y.pair);
-    int ok = y.lego && y.pair
+    y.seq = malloc(((size_t)y.nseq + 1) * sizeof *y.seq);
+    int ok = y.lego && y.pair && y.seq
           && fread(y.lego, sizeof *y.lego, y.n, f) == y.n
-          && fread(y.pair, sizeof *y.pair, y.npair, f) == y.npair;
+          && fread(y.pair, sizeof *y.pair, y.npair, f) == y.npair
+          && fread(y.seq, sizeof *y.seq, y.nseq, f) == y.nseq;
     if (ok && y.kinds) {
         y.follow = malloc((size_t)y.kinds * y.kinds * sizeof *y.follow);
         ok = y.follow && fread(y.follow, sizeof *y.follow, (size_t)y.kinds * y.kinds, f)
@@ -611,3 +790,117 @@ int rz_lexicon_load(rz_lexicon *x, const char *path)
     *x = y;
     return RZ_OK;
 }
+
+
+/* ===================== curiosity (P34) =================================== */
+
+/* Where the answer can stand around the relation r: just after it, one
+   further, or just before it (with the subject on the other side). */
+enum { AT_NEXT, AT_FAR, AT_BEFORE, AT_N };
+
+static int32_t at(const rz_lexicon *x, uint32_t i, int d)
+{
+    int64_t j = (int64_t)i + d;
+    return (j >= 0 && (uint64_t)j < x->nseq) ? x->seq[j] : -1;
+}
+
+uint32_t rz_lexicon_ask(rz_lexicon *x, int32_t subject, int32_t relation,
+                        rz_answer *out, uint32_t cap)
+{
+    if (subject < 0 || relation < 0 || cap == 0 || !x->nseq || !x->n) return 0;
+
+    /* What the relation gives by itself, at each place -- and what it gives
+       when the subject is on the other side. An answer is only what the
+       subject added (D50): "la" stands after "es" whatever is asked, so it
+       answers nothing; "cabeza" stands after "Cristo es" far more than after
+       "es" alone. No article is named or skipped. */
+    uint32_t *base = calloc((size_t)x->n * AT_N, sizeof *base);
+    uint32_t *with = calloc((size_t)x->n * AT_N, sizeof *with);
+    uint32_t nbase = 0, nwith[AT_N] = {0};
+    if (!base || !with) { free(base); free(with); return 0; }
+
+    for (uint32_t i = 0; i < x->nseq; i++) {
+        if (x->seq[i] != relation) continue;
+        nbase++;
+        int32_t next = at(x, i, 1), far = at(x, i, 2), before = at(x, i, -1);
+        if (next >= 0)   base[(size_t)next * AT_N + AT_NEXT]++;
+        if (far >= 0)    base[(size_t)far * AT_N + AT_FAR]++;
+        if (before >= 0) base[(size_t)before * AT_N + AT_BEFORE]++;
+
+        if (before == subject) {
+            nwith[AT_NEXT]++; nwith[AT_FAR]++;
+            if (next >= 0) with[(size_t)next * AT_N + AT_NEXT]++;
+            if (far >= 0)  with[(size_t)far * AT_N + AT_FAR]++;
+        }
+        if ((next == subject || far == subject) && before >= 0) {
+            nwith[AT_BEFORE]++;
+            with[(size_t)before * AT_N + AT_BEFORE]++;
+        }
+    }
+
+    uint32_t n = 0;
+    double *score = malloc((size_t)x->n * sizeof *score);
+    rz_answer *all = malloc((size_t)x->n * sizeof *all);
+    if (!score || !all) { free(base); free(with); free(score); free(all); return 0; }
+    for (uint32_t y = 0; y < x->n; y++) {
+        if ((int32_t)y == subject || (int32_t)y == relation) continue;
+        double best = 0;
+        uint32_t sup = 0;
+        int8_t dir = 1;
+        for (int p = 0; p < AT_N; p++) {
+            uint32_t w = with[(size_t)y * AT_N + p];
+            if (!w) continue;
+            double lift = ((double)w / nwith[p]) / ((double)base[(size_t)y * AT_N + p] / nbase);
+            if (lift <= 1.0) continue;
+            /* How much more it stands here when this subject is asked about --
+               not how often. Weighted by volume, "el" (10 times after "Jesús
+               es") outranked "Mesías" (3); it is said after "es" whatever is
+               asked, Mesías is not. Said once is an anecdote, the same rule the
+               kinds use: it ranks behind anything said twice. */
+            double s = log(lift) + (w >= 2 ? 1e6 : 0.0);
+            if (s > best) { best = s; sup = w; dir = p == AT_BEFORE ? -1 : 1; }
+        }
+        if (best <= 0) continue;
+        score[n] = best;
+        all[n++] = (rz_answer){ (int32_t)y, sup, dir };
+    }
+
+    /* the most telling first */
+    for (uint32_t i = 1; i < n; i++) {
+        rz_answer v = all[i];
+        double sv = score[i];
+        uint32_t j = i;
+        while (j > 0 && score[j - 1] < sv) { all[j] = all[j - 1]; score[j] = score[j - 1]; j--; }
+        all[j] = v;
+        score[j] = sv;
+    }
+    uint32_t k = n < cap ? n : cap;
+    memcpy(out, all, k * sizeof *out);
+    free(base); free(with); free(score); free(all);
+    return k;
+}
+
+uint32_t rz_lexicon_wonder(rz_lexicon *x, int32_t subject, int32_t relation,
+                           int32_t *chain, uint32_t cap, rz_wonder_end *end)
+{
+    *end = RZ_WONDER_GAP;
+    if (cap == 0 || subject < 0) return 0;
+    chain[0] = subject;
+    uint32_t k = 1;
+    rz_answer a[64];
+    for (;;) {
+        uint32_t got = rz_lexicon_ask(x, chain[k - 1], relation, a, 64);
+        if (got == 0) { *end = RZ_WONDER_GAP; return k; }
+
+        int32_t next = -1;
+        for (uint32_t i = 0; i < got && next < 0; i++) {
+            int asked = 0;
+            for (uint32_t c = 0; c < k; c++) if (chain[c] == a[i].lego) asked = 1;
+            if (!asked) next = a[i].lego;
+        }
+        if (next < 0) { *end = RZ_WONDER_CIRCLE; return k; }
+        if (k == cap) { *end = RZ_WONDER_DEEP; return k; }
+        chain[k++] = next;
+    }
+}
+

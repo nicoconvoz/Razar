@@ -120,6 +120,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Dump its whole state | `./razar dash` |
 | Hear it think | `./razar think [path] [bite]` |
 | Its legos, their kinds, a game | `./razar legos [path] [kinds]` |
+| Ask it, and let it ask why | `./razar ask <word> [relation] [path]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 
@@ -149,7 +150,8 @@ directory without it. In bash `./razar` works as usual.
 ## Layout
 
 ```
-src/        The organism: razar.h (the whole API), razar.c, main.c (the CLI)
+src/        The organism: razar.h, razar.c; lego.h, lego.c (legos, kinds,
+            curiosity); main.c (the CLI)
 tests/      test_razar.c and the harness it runs on
 tools/      live.py — serves docs/live.html and drives the real binary
 docs/       design/ (what each piece is and what it measured),

@@ -33,6 +33,14 @@
 size_t rz_lego_cut(const rz_mind *m, const unsigned char *t, size_t n,
                    unsigned char *ends);
 
+/* One level up, the same reading again. The atoms that end legos fall into two
+   heights once more: the stem ends inside a word, and the tallest -- on the New
+   Testament that side holds exactly the space and the line feed, found, not
+   named (precision 1.000, recall 1.000 against the spaces). A word ends only
+   where a lego ends on that tallest side. Returns how many words. */
+size_t rz_word_cut(const rz_mind *m, const unsigned char *t, size_t n,
+                   unsigned char *ends);
+
 /* --- step 2: kinds by company --------------------------------------------- */
 typedef struct {
     uint8_t       len;
@@ -56,6 +64,8 @@ typedef struct {
     uint32_t      pslots;
     uint32_t      kinds;             /* 0 until sorted */
     uint64_t     *follow;            /* kinds x kinds: kind a before kind b */
+    int32_t      *seq;               /* every lego read, in order; -1 between reads */
+    uint32_t      nseq, seqcap;
     /* derived, rebuilt by sort and load: never saved */
     uint32_t     *out_start;         /* n + 1 offsets into out_pair */
     uint32_t     *out_pair;          /* pair indices, grouped by the lego before */
@@ -67,6 +77,9 @@ void    rz_lexicon_free(rz_lexicon *x);
 /* Cut the text with the mind and count every lego and every pair. */
 void    rz_lexicon_read(rz_lexicon *x, const rz_mind *m,
                         const unsigned char *t, size_t n);
+/* The same, cut into words instead of legos: what a question is asked in. */
+void    rz_lexicon_read_words(rz_lexicon *x, const rz_mind *m,
+                              const unsigned char *t, size_t n);
 int32_t rz_lexicon_find(const rz_lexicon *x, const unsigned char *s, size_t len);
 /* Group the legos by the company they keep. Deterministic for a seed. */
 void    rz_lexicon_sort(rz_lexicon *x, uint32_t kinds, uint64_t seed);
@@ -79,6 +92,38 @@ int32_t rz_lexicon_next_kind(const rz_lexicon *x, int32_t kind);
 /* The kind first, then the lego inside it: the one that followed this lego
    most if any did, else the commonest of that kind. */
 int32_t rz_lexicon_next(const rz_lexicon *x, int32_t lego);
+
+/* --- curiosity (P34) -------------------------------------------------------
+ *
+ * A question brings its own relation: "¿Quién es Cristo?" brings `es` and
+ * `Cristo`. Answering is reading the other side of that relation wherever the
+ * two stand together -- both ways, because "Jesús es el Cristo" answers it
+ * from behind. An answer is only what the subject added beyond what the
+ * relation gives by itself (D50): an article follows "es" whatever is asked,
+ * so it answers nothing, and nothing has to name it.
+ *
+ * And the child's "why?" is asking again about the answer. It stops when the
+ * answers lead back to what it already asked (a circle closed) or when nothing
+ * answers (a gap -- the question stays open). */
+typedef struct {
+    int32_t  lego;
+    uint32_t support;                /* frames that said so */
+    int8_t   dir;                    /* +1 "X r answer", -1 "answer r X" */
+} rz_answer;
+
+uint32_t rz_lexicon_ask(rz_lexicon *x, int32_t subject, int32_t relation,
+                        rz_answer *out, uint32_t cap);
+
+typedef enum {
+    RZ_WONDER_CIRCLE = 0,            /* every answer leads back: understood */
+    RZ_WONDER_GAP    = 1,            /* nothing answers: the question stays open */
+    RZ_WONDER_DEEP   = 2             /* still asking when the room ran out */
+} rz_wonder_end;
+
+/* chain[0] is the subject; every next one is the answer to "why?" about the
+   one before. Returns the length of the chain. */
+uint32_t rz_lexicon_wonder(rz_lexicon *x, int32_t subject, int32_t relation,
+                           int32_t *chain, uint32_t cap, rz_wonder_end *end);
 
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
