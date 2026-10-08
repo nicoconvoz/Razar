@@ -3,9 +3,10 @@
 Original name (author's): **Arquitectura de Memoria de Mapa Conceptual (AMMC)**.
 Author: Nico. First stated 2026-08-02.
 
-Status: **concept decomposition.** No decisions made. No implementation.
-This document breaks the stated concept into separable pieces and names the
-decision each piece forces. It does not choose.
+Status: **the founding decomposition.** Written 2026-08-02 before any code, to
+break the stated concept into separable pieces and name the decision each forces.
+It did not choose. Most of those decisions have since been made and many of the
+pieces built — §6 records which, and links the documents that came after.
 
 ---
 
@@ -360,30 +361,56 @@ live, if it lives anywhere.
 
 ## 6. Open decisions
 
+Updated 2026-10-08 against what is built. The original statuses are kept where
+they still hold; a status changed because code now answers it says so.
+
 | # | Decision | Status | Blocks |
 | --- | --- | --- | --- |
 | D1 | Atoms: types or tokens | **Resolved** — types, fixed base (§7.1) | Everything (3.1) |
 | D2 | What "pruned" means | **Resolved** — attenuate / compress, revival costs effort (§7.2) | P7, P8 (3.2) |
-| D3 | Color: storage or view | **Resolved in direction** — roots stored, color is expressive contour (§7.3) | P6, P10 (3.3) |
+| D3 | Color: storage or view | **Resolved in direction** — roots stored, color is expressive contour (§7.3). Not built. | P6, P10 (3.3) |
+| D4 | Dimensionality and coordinate encoding | **Open, and possibly moot** — nothing is placed in a coordinate space; the graph is the space. The only coordinate-like thing is the 64-class shape. | P3, P10 |
 | D5 | Composites: nodes or subgraphs | **Resolved** — neither; real-time coordinate projections (§7.1) | P2 |
-| D4 | Dimensionality and coordinate encoding | Open | P3, P10 |
-| D6 | Does affect steer traversal | Open | P6, P8 |
-| D7 | Must the whole graph fit in RAM | Open | P9 |
-| D8 | Representation | Open | P10 |
-| D9 | Language and runtime | Open — resolve last | P11 |
-| D10 | What persists in the plastic layer | **New** (§7.4) | Cost, P5, P7, P8 |
-| D11 | What "effort" is, and its budget | **New** (§7.2) | P8 |
-| D12 | Number of root primaries | **New** (§7.3) | P6, P10 |
-| D13 | Is affect composition invertible | **New** (§7.3) | P6, P10 |
-| D14 | Repeated ingestion: allowed, throttled, or reported | Open | P13 |
+| D6 | Does affect steer traversal | **Open** — the affect layer (P6) was never built | P6, P8 |
+| D7 | Must the whole graph fit in RAM | **Answered, built** — no; modules page in and out, `RZ_RESIDENT` held at once | P9 |
+| D8 | Representation | **Decided in code** — fragments with left/right in per-module tables, edges in a per-module pool, integer weights | P10 |
+| D9 | Language and runtime | **Resolved** — C11, gcc, no dependencies beyond libm (2026-08-03) | P11 |
+| D10 | What persists in the plastic layer | **Built** — fragments, edges, weights; reopened by D45/D46, since the flattened atoms are 62% of a fragment and redundant | Cost, P5, P7, P8 |
+| D11 | What "effort" is, and its budget | **Resolved** — effective branching, `exp(H)` of the outgoing paths | P8 |
+| D12 | Number of root primaries | **Open** — affect not built | P6, P10 |
+| D13 | Is affect composition invertible | **Open in practice** — required (§7.3), not built | P6, P10 |
+| D14 | Repeated ingestion | **Resolved** — a second experience, not idempotent (§8.1); interest relies on it | P13 |
 | D15 | Novelty mechanism during dreaming | **Answered** — context wake-up ([extraction](reference-organismo-extraction.md) §1.3) | P14 |
 | D16 | Dream learning rate relative to waking | **Answered** — graduated reality (extraction §1.1) | P14, P5 |
 | D17 | Criterion for which dreams count | **Answered** — reality-confirmation after the fact (extraction §1.2) | P14 |
-| D7 | Must the whole graph fit in RAM | **Answered** — no; one situation folder resident (extraction §1.5) | P9 |
-| D18–D22 | Autopsy decisions | Open — see [autopsy.md](autopsy.md) | P12 |
-| D23 | *New:* Razar's fixed external bar | Open (extraction §4) | P12 |
-| D24 | *New:* what carries "outcome quality" with no game to win | Open (extraction §1.6) | P5, P7 |
-| D25 | *New:* what defines "what is happening" for a general organism | Open (extraction §3.4) | P2, P3, P13 |
+| D18–D22 | Autopsy decisions | See [autopsy.md](autopsy.md); the autopsy is built | P12 |
+| D23 | Razar's fixed external bar | **Built** — `rz_measure` / `razar predict`: guesses before reading, learns nothing | P12 |
+| D24 | What carries "outcome quality" with no game to win | **Closed by D39** — harmony, describing the same material with less while still accounting for all of it ([harmony.md](harmony.md)) | P5, P7 |
+| D25 | What defines "what is happening" for a general organism | **Partly answered** — `rz_situation` (P31): the shape where it stands plus what the awake senses read there | P2, P3, P13 |
+
+### Later decisions, by document
+
+| Range | Where |
+| --- | --- |
+| D26–D30 | [skills.md](skills.md) |
+| D31–D38 | [dreaming-as-analogy.md](dreaming-as-analogy.md) — design and its NO-GO verdict |
+| D39–D44 | [harmony.md](harmony.md) |
+| D45–D49 | [the-floor-rises.md](the-floor-rises.md) |
+| D50–D53 | [what-the-context-did-not-give.md](what-the-context-did-not-give.md) |
+| D54–D58 | [senses.md](senses.md) |
+| D59–D61 | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
+
+### Pieces built after this document
+
+| Piece | Where |
+| --- | --- |
+| P16 interest, P17 the pen, P18 vertical composition | [interest-pen-composition.md](interest-pen-composition.md) |
+| P19–P24 analogy dreaming — designed, not built | [dreaming-as-analogy.md](dreaming-as-analogy.md) |
+| P25–P27 harmony, symmetry, the unit | [harmony.md](harmony.md) |
+| P28 the floor rises | [the-floor-rises.md](the-floor-rises.md) |
+| P29 what the context did not give | [what-the-context-did-not-give.md](what-the-context-did-not-give.md) |
+| P30 senses | [senses.md](senses.md) |
+| P31 rules, P32 the inner conversation | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
 
 ---
 

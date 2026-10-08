@@ -225,6 +225,16 @@ a coincidence about content. *Something shaped like X* is the transferable claim
 and the shape layer is already the level where transfer demonstrably works
 (18.18% rescue where the specific layer is blind, 11.6× chance).
 
+> **Correction, 2026-10-08.** That warrant did not hold. The 11.6× was measured
+> against a uniform 1/64 null, but successor shapes are not uniform — the best
+> constant guess already scores 0.40, and the honest lift was **1.32×**. Worse,
+> the shape alphabet then collapsed to four length classes and the rescue read
+> **0.0000**. After paths given were separated from paths taken it recovered:
+> 0.35 on held-out Spanish, 0.19 on this repository's CLAUDE.md — still printed
+> against the 1/64 null. The verdict below stands for its own reasons, but this
+> sentence was never a sound basis for it. See
+> [interest-pen-composition.md](interest-pen-composition.md) §P18.
+
 Each consequence is one row in the ledger. That is the unit that gets scored.
 
 ---

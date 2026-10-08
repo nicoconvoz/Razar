@@ -4,20 +4,24 @@
 
 ## Project Status
 
-**Bootstrap. No stack chosen yet.**
+**A working organism, in C11.** Stack chosen 2026-08-03 (D9): C11, gcc, no
+dependencies beyond libm. ~9,000 lines across `src/razar.c`, `src/razar.h`,
+`src/main.c`; 887 checks in `tests/test_razar.c`.
 
-As of 2026-08-02 this repository contains no source code, no package manifest, no
-build configuration, and no tests. The git repository is initialized on branch
-`master` with **zero commits**.
+It eats raw bytes, composes the pieces that recur into fragments, forgets
+without deleting, recalls, predicts before it reads, reports its interest,
+writes, chooses which dream it needs, grows its own senses, learns rules, and
+holds a running conversation with itself about whether it was right.
 
-### Hard rule: do not assume a stack
+What each piece is and what it measured lives in `docs/design/`. The decision
+table in [memory-concept-map-architecture.md](docs/design/memory-concept-map-architecture.md)
+§6 says what is resolved, what is built, and which document carries the rest.
 
-There is no `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`, or `Makefile`.
-Do **not** infer a language, framework, or architecture pattern from the project
-name, from the domain, or from what "usually" fits an AI reasoning project.
-Scaffolding an unrequested stack is a defect, not a head start.
+### Hard rule: no new dependencies
 
-The stack is decided by the user, recorded here, and only then implemented.
+The organism takes nothing beyond libm, and its tooling (`tools/`) takes nothing
+beyond the Python standard library. A dependency is a decision for the user, not
+a convenience.
 
 ## Working Agreements
 
@@ -33,28 +37,32 @@ here, create it here.
 The user designs the path. The project moves from the most basic to the most
 complex, at the pace the user sets.
 
-As of 2026-08-02 the project is in the **vision framing phase**: the user is
-describing direction in broad strokes and **nothing is to be programmed yet**.
-While this phase lasts:
+The vision-framing phase (2026-08-02) is over and the project is being built,
+but the division of labour has not changed: **the user designs, and records the
+direction; implementation follows it.** When the user describes an idea, capture
+it in `docs/design/` before or alongside building it, and mark what stays open.
 
-- Do not request a testable spec, propose a stack, or scaffold anything.
-- Do not end every reply with a question. Listen and record.
-- Capture each concept as it lands, organize it, and mark what stays open
-  without forcing it closed.
+**Never declare what the organism should discover.** The master rule since
+2026-08-03: build the structure under which a behaviour can emerge, never the
+behaviour. A dictionary, a delimiter list, or a hand-written detector enters as a
+*bar that grades*, never as a foundation.
 
-The falsifiability constraint below is recorded and still applies — but it
-applies when implementation starts, not during framing. Do not re-raise it.
+**Every measurement carries its baseline.** A number without the chance figure of
+the same place is not a reading. This project has shipped six measurements that
+said the opposite of what they meant; each one was a figure read in absolute.
 
 ### Strict TDD
 
 Strict TDD mode is enabled globally and applies to this project.
 
-**No test runner exists yet.** Until one does, Strict TDD has nothing to execute
-against. Therefore: the first implementation task after the stack is chosen must
-establish the test runner and a passing baseline, before any production code is
-written.
+The runner is `tests/test_razar.c` on the minimal harness in `tests/harness.h`
+(`TEST`, `RUN`, `CHECK`, `CHECK_EQ_U`, `CHECK_NEAR`), run by `make test`.
 
-Cycle once a runner exists:
+A passing test is not enough: check it passes **for the reason you think**. Twice
+in this project a test passed because a different term happened to refuse the
+same input. Printing the raw numbers once is usually enough to tell.
+
+Cycle:
 
 1. Write the failing test first. Run it. Confirm it fails for the expected reason.
 2. Write the minimum code to make it pass.
@@ -130,10 +138,9 @@ gcc directly from Git Bash works fine; only `make` collides.
 "C:/msys64/usr/bin/bash.exe" -lc 'export PATH=/ucrt64/bin:/usr/bin:$PATH && make -C /e/proyectos/Razar test'
 ```
 
-The built `razar.exe` runs from any shell — but **PowerShell needs `.
-azar`**,
-because it does not run commands from the current directory without it. In bash
-`./razar` works as usual.
+The built `razar.exe` runs from any shell — but **PowerShell needs the `.\`
+prefix** (`.\razar dash`), because it does not run commands from the current
+directory without it. In bash `./razar` works as usual.
 
 `make -C <dir>` rather than `cd`, because the MSYS2 login shell starts in
 `/home/Nico`. The built `razar.exe` is a native binary and runs from any shell.
@@ -141,19 +148,39 @@ because it does not run commands from the current directory without it. In bash
 ## Layout
 
 ```
+src/        The organism: razar.h (the whole API), razar.c, main.c (the CLI)
+tests/      test_razar.c and the harness it runs on
+tools/      live.py — serves docs/live.html and drives the real binary
+docs/       design/ (what each piece is and what it measured),
+            live.html (the live panel), vitals.html (a pasteable snapshot)
+feed/       Intake (P13). `razar feed` devours what is dropped here.
+            Contents are gitignored — some of it carries third-party copyright.
+nido/       The living organism: mind.dat and modules/. Gitignored, regenerable.
+autopsies/  The study record (P12), written by `razar autopsy`.
 .atl/       Skill registry (indexes user-level skills; no project skills yet)
-.claude/    Claude Code project settings
-docs/       Design documents — see docs/design/
-feed/       Intake folder (P13). Drop material here to be devoured.
-            Contents are gitignored. Nothing consumes it yet.
-autopsies/  The study record (P12). One directory per session, kept forever.
-            Nothing writes here yet.
+.claude/    Claude Code project settings and launch.json for the live panel
 ```
 
 ## Conventions
 
-Not yet established — there is no source code to derive them from. Record them
-here as they are decided, not as they are guessed.
+Derived from the code as it stands, not guessed.
+
+- **Public API is `rz_`-prefixed** and declared in `src/razar.h`, each block
+  opened by a comment saying what the piece is and *why* it is shaped that way.
+- **Comments explain why, not what**, and they keep the reason a thing was
+  changed — including what was tried first and failed. That history is the
+  record of which measurements lied.
+- **A field added to `rz_mind` is written to `rz_save`/`rz_load` in the same
+  movement, and checked by the round-trip test.** Forgotten five times; the
+  symptom is always an instrument reporting a zero that looks like a result.
+  When the file *format* changes, bump `RZ_MIND_VER` by hand.
+- **A sense glances; it never digs.** Senses read only what is already resident
+  (`*_at_hand` in `razar.c`) — waking modules from disk on every look cost seven
+  disk loads per reading. Note the asymmetry: the dump and the external bar *do*
+  page modules in, and paging applies owed decay, so they are not perfectly
+  side-effect free.
+- **The binary speaks English; the live panel translates.** The user reads the
+  panel in Spanish, and the translation lives in `docs/live.html`, not in C.
 
 Language for generated artifacts: **English** for code, comments, identifiers,
 UI copy, documentation, and commit messages, unless the user explicitly requests
