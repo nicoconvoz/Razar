@@ -211,6 +211,16 @@ typedef struct {
 uint32_t rz_concepts_find(rz_lexicon *x, int32_t relation,
                           const int32_t *later, uint32_t nlater,
                           rz_concept *out, uint32_t cap);
+/* The same, asked with every relation in the set at once. */
+uint32_t rz_concepts_find_any(rz_lexicon *x, const int32_t *relations, uint32_t nrel,
+                              const int32_t *later, uint32_t nlater,
+                              rz_concept *out, uint32_t cap);
+
+/* The silhouette of a question: the words that keep the company a word keeps
+   ("es" -> será, era, sea, está), most alike first. Where it ends is read off
+   the similarities themselves, the way words were found: the split of all of
+   them into two, then the widest gap inside the tall side. Read-only. */
+uint32_t rz_lexicon_silhouette(rz_lexicon *x, int32_t word, int32_t *out, uint32_t cap);
 
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);

@@ -3278,7 +3278,8 @@ static size_t concept_world(char *out, size_t cap, int clauses)
         int w;
         if ((r >> 60) % 3 == 0) {
             int who = (int)((r >> 33) % 5);
-            w = snprintf(out + n, cap - n, "%s is %s %s %s ", name[who], d, kind_of[who], j);
+            w = snprintf(out + n, cap - n, "%s %s %s %s %s ", name[who],
+                         (r >> 50) % 2 ? "is" : "was", d, kind_of[who], j);
         } else {
             int a = (int)((r >> 40) % 5);
             w = snprintf(out + n, cap - n, "%s %s %s %s ", d, noun[a], sound[a], j);
@@ -3354,6 +3355,42 @@ TEST(a_concept_is_adopted_because_it_pays)
         CHECK(dog->transfer > 0.5);
         CHECK(dog->adopted);
     }
+}
+
+TEST(the_question_has_a_silhouette)
+{
+    /* "was" sits where "is" sits; "the" and "dog" do not. Nobody says that
+       "was" is a form of "is" -- they keep the same company. */
+    little_life *l = live_with_concepts();
+    int32_t s[16];
+    uint32_t k = rz_lexicon_silhouette(&l->x, lego_of(&l->x, "is"), s, 16);
+    int was = 0, wrong = 0;
+    for (uint32_t i = 0; i < k; i++) {
+        if (s[i] == lego_of(&l->x, "was")) was = 1;
+        if (s[i] == lego_of(&l->x, "the") || s[i] == lego_of(&l->x, "dog")
+            || s[i] == lego_of(&l->x, "is")) wrong = 1;
+    }
+    CHECK(was);
+    CHECK(!wrong);
+}
+
+TEST(asking_with_the_silhouette_gathers_more_cases)
+{
+    /* half the facts say "was": asked with "is" alone a concept sees half its
+       cases; asked with the silhouette it sees them all */
+    little_life *l = live_with_concepts();
+    int32_t rel[2] = { lego_of(&l->x, "is"), lego_of(&l->x, "was") };
+    rz_concept a[16], b[16];
+    uint32_t na = rz_concepts_find(&l->x, rel[0], l->later, l->nlater, a, 16);
+    uint32_t nb = rz_concepts_find_any(&l->x, rel, 2, l->later, l->nlater, b, 16);
+    const rz_concept *dog = concept_headed(b, nb, lego_of(&l->x, "dog"));
+    CHECK(dog != NULL);
+    if (dog) {
+        CHECK(has_member(dog, lego_of(&l->x, "rex")));
+        CHECK(has_member(dog, lego_of(&l->x, "fido")));
+        CHECK(dog->adopted);
+    }
+    CHECK(nb >= na);
 }
 
 TEST(finding_concepts_learns_nothing)
@@ -3495,6 +3532,8 @@ int main(void)
     RUN(it_repeats_what_pays_and_lets_go_of_what_does_not);
     RUN(a_concept_is_what_many_different_cases_answer_alike);
     RUN(a_concept_is_adopted_because_it_pays);
+    RUN(the_question_has_a_silhouette);
+    RUN(asking_with_the_silhouette_gathers_more_cases);
     RUN(finding_concepts_learns_nothing);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

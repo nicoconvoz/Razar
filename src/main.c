@@ -1456,13 +1456,39 @@ static int cmd_concepts(int argc, char **argv)
 
     int32_t relation = lego_for_word(&x, rel);
     rz_concept *c = malloc(512 * sizeof *c);
+
+    /* the question's silhouette: the words that keep the company it keeps */
+    int32_t rels[64];
+    uint32_t nrel = 0;
+    if (relation >= 0) {
+        rels[nrel++] = relation;
+        nrel += rz_lexicon_silhouette(&x, relation, rels + 1, 63);
+    }
+    printf("the silhouette of \"X %s ?\":", rel);
+    for (uint32_t i = 0; i < nrel; i++) {
+        char w[80];
+        say_lego(&x, rels[i], w, sizeof w);
+        printf(" %s", w);
+    }
+    printf("\n");
+
+    /* the same question asked with the word alone, as the bar for the silhouette */
     uint32_t k = (relation >= 0 && c) ? rz_concepts_find(&x, relation, later, nlater, c, 512) : 0;
+    {
+        uint32_t adopted = 0;
+        double th = 0, tt = 0;
+        for (uint32_t i = 0; i < k; i++) { adopted += c[i].adopted; th += c[i].harmony; tt += c[i].transfer; }
+        printf("  asked with [%s] alone:      %3u concepts, %3u adopted, mean harmony %+.4f, transfer %+.4f\n",
+               rel, k, adopted, k ? th / k : 0.0, k ? tt / k : 0.0);
+    }
+    k = (nrel && c) ? rz_concepts_find_any(&x, rels, nrel, later, nlater, c, 512) : 0;
 
     uint32_t adopted = 0;
     double th = 0, tt = 0;
     for (uint32_t i = 0; i < k; i++) { adopted += c[i].adopted; th += c[i].harmony; tt += c[i].transfer; }
-    printf("asked \"X %s ?\" of everything it lived (%zu bytes): %u concepts of two or more, %u pay for themselves\n\n",
-           rel, split, k, adopted);
+    printf("  asked with the silhouette: %3u concepts, %3u adopted, mean harmony %+.4f, transfer %+.4f\n\n",
+           k, adopted, k ? th / k : 0.0, k ? tt / k : 0.0);
+    printf("of everything it lived (%zu bytes), asked with the silhouette:\n\n", split);
     for (int pass = 1; pass >= 0; pass--) {
         printf("  %s\n", pass ? "adopted:" : "not adopted:");
         uint32_t shown = 0;

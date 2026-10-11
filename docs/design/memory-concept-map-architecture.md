@@ -402,7 +402,7 @@ they still hold; a status changed because code now answers it says so.
 | D62–D68 | [the-legos.md](the-legos.md) |
 | D69–D72 | [curiosity.md](curiosity.md) |
 | D73–D77 | [behaviours.md](behaviours.md) |
-| D78–D81 | [concepts.md](concepts.md) |
+| D78–D82 | [concepts.md](concepts.md) |
 
 ### Pieces built after this document
 

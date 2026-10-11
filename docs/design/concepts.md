@@ -75,6 +75,46 @@ answer is the article of a varying noun gathers under the article.
 there; transfer is zero. The concepts are tiny (two to six members) and judged on
 a handful of steps each.
 
+## The silhouette of the question (2026-10-11)
+
+The author chose to stay with the New Testament ("we have it") instead of new
+food. So the question was widened instead: not "X **es** ?" alone, but the
+question's **silhouette** — the words that keep the company "es" keeps.
+
+`rz_lexicon_silhouette`: cosine of company against every word seen twice, split
+into two (the words that keep anything like its company), then the widest gap
+inside the tall side. The same two-step reading that found words. On the NT,
+without being told:
+
+> **es → será, era, sea, está**
+
+Three different cuts (the widest gap and the optimal split over the top 32 and
+the top 64 neighbours) agree on exactly these four; after "está" (0.59) comes a
+gap to "en" (0.54). In the little world, the silhouette of "is" is exactly
+"was". A test holds both: "was" is in, "the", "dog" and "is" itself are not.
+
+Asking with the silhouette:
+
+| | Concepts | Adopted | Harmony | Transfer |
+| --- | --- | --- | --- | --- |
+| "es" alone | 27 | 16 | +0.071 | −0.009 |
+| the silhouette | **41** | 16 | +0.039 | −0.042 |
+
+More cases gather, and some read as real concepts that "es" alone missed:
+
+| Concept | Members | Harmony | Transfer |
+| --- | --- | --- | --- |
+| hijo | David, Zorobabel, José, Sem | +0.234 | −0.250 |
+| padre | Abraham, … | −0.090 | −0.088 |
+| sabiduría | anunciamos, riqueza | +0.148 | +0.025 |
+| luz | Palabra, manifiesto | +0.069 | −0.146 |
+
+**But they do not pay more.** "hijo" is the clearest new concept and the most
+rejected: David, José and Sem are all sons in the genealogies, and in the text
+still to come they do entirely different things. Transfer as *the next word* is
+the wrong test for a concept of people: being a son says nothing about what word
+follows your name. This is D70 seen from the other side.
+
 ## Why: the New Testament is thin food for concepts
 
 "Dios es amor" is said twice in the whole book. A concept needs many cases that
@@ -96,6 +136,11 @@ be declaring the answer, and enters only as the bar that grades.
   answer (P33) are the two candidates.
 - **D80** — concepts of concepts: dog and cat into "animal", the floor rising
   again. Not built.
+- **D82** — transfer of a concept should be judged on what the concept is
+  about, not on the next word: "hijo" {David, José, Sem} is a concept about
+  lineage, and the next word after a name does not test it. Candidate: a member
+  should answer the *other questions* its siblings answer (P34), not follow the
+  same words.
 - **D81** — curiosity toward the concept's frontier (riddle 1): a member missing
   a fact its siblings have is what to ask about next. The mechanism now exists
   to point at it; not wired to the player yet.

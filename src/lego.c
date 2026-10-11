@@ -1126,7 +1126,7 @@ int rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
    it or one further, ranked by how much more it stands there for this subject
    than for any (D50), said twice before said once -- the same reading as
    rz_lexicon_ask, done for every subject in one pass */
-static void answers_of_all(const rz_lexicon *x, int32_t relation, int32_t *answer)
+static void answers_of_all(const rz_lexicon *x, const uint8_t *isrel, int32_t *answer)
 {
     for (uint32_t i = 0; i < x->n; i++) answer[i] = -1;
     uint32_t nocc = 0;
@@ -1134,7 +1134,7 @@ static void answers_of_all(const rz_lexicon *x, int32_t relation, int32_t *answe
     uint32_t *nsub = calloc(x->n, sizeof *nsub);
     if (!base || !nsub) { free(base); free(nsub); return; }
     for (uint32_t i = 1; i + 1 < x->nseq; i++) {
-        if (x->seq[i] != relation) continue;
+        if (x->seq[i] < 0 || !isrel[x->seq[i]]) continue;
         nocc++;
         for (int d = 1; d <= 2; d++) {
             int32_t y = at(x, i, d);
@@ -1151,18 +1151,18 @@ static void answers_of_all(const rz_lexicon *x, int32_t relation, int32_t *answe
     uint32_t *fill = calloc(x->n, sizeof *fill);
     if (!fill) { free(base); free(nsub); free(start); free(occ); return; }
     for (uint32_t i = 1; i + 1 < x->nseq; i++)
-        if (x->seq[i] == relation && x->seq[i - 1] >= 0) {
+        if (x->seq[i] >= 0 && isrel[x->seq[i]] && x->seq[i - 1] >= 0) {
             uint32_t s = (uint32_t)x->seq[i - 1];
             occ[start[s] + fill[s]++] = i;
         }
 
     for (uint32_t s = 0; s < x->n; s++) {
-        if (nsub[s] == 0 || (int32_t)s == relation) continue;
+        if (nsub[s] == 0 || isrel[s]) continue;
         double best = 0;
         for (uint32_t a = start[s]; a < start[s + 1]; a++)
             for (int d = 1; d <= 2; d++) {
                 int32_t y = at(x, occ[a], d);
-                if (y < 0 || y == (int32_t)s || y == relation) continue;
+                if (y < 0 || y == (int32_t)s || isrel[y]) continue;
                 uint32_t w = 0;
                 for (uint32_t b = start[s]; b < start[s + 1]; b++) w += at(x, occ[b], d) == y;
                 double lift = ((double)w / nsub[s]) / ((double)base[(size_t)y * 2 + (uint32_t)(d - 1)] / nocc);
@@ -1235,17 +1235,29 @@ uint32_t rz_concepts_find(rz_lexicon *x, int32_t relation,
                           const int32_t *later, uint32_t nlater,
                           rz_concept *out, uint32_t cap)
 {
-    if (relation < 0 || !x->n || !x->nseq || cap == 0) return 0;
+    return rz_concepts_find_any(x, &relation, 1, later, nlater, out, cap);
+}
+
+uint32_t rz_concepts_find_any(rz_lexicon *x, const int32_t *relations, uint32_t nrel,
+                              const int32_t *later, uint32_t nlater,
+                              rz_concept *out, uint32_t cap)
+{
+    if (nrel == 0 || relations[0] < 0 || !x->n || !x->nseq || cap == 0) return 0;
+    int32_t relation = relations[0];
+    uint8_t *isrel = calloc(x->n, 1);
+    if (!isrel) return 0;
+    for (uint32_t r = 0; r < nrel; r++)
+        if (relations[r] >= 0 && (uint32_t)relations[r] < x->n) isrel[relations[r]] = 1;
     ensure_index(x);
     int32_t *answer = malloc((size_t)x->n * sizeof *answer);
     double *pool = calloc(x->n, sizeof *pool);
     int32_t *order = malloc((size_t)x->n * sizeof *order);
     uint32_t *rank = malloc((size_t)x->n * sizeof *rank);
     if (!x->out_start || !answer || !pool || !order || !rank) {
-        free(answer); free(pool); free(order); free(rank);
+        free(answer); free(pool); free(order); free(rank); free(isrel);
         return 0;
     }
-    answers_of_all(x, relation, answer);
+    answers_of_all(x, isrel, answer);
 
     /* words by frequency, for the blind groups: a word's blind twin j is the
        j-th neighbour in that order */
@@ -1315,6 +1327,86 @@ uint32_t rz_concepts_find(rz_lexicon *x, int32_t relation,
         while (j > 0 && out[j - 1].nmember < v.nmember) { out[j] = out[j - 1]; j--; }
         out[j] = v;
     }
-    free(answer); free(pool); free(order); free(rank);
+    free(answer); free(pool); free(order); free(rank); free(isrel);
     return n;
+}
+
+
+/* the split of a list of values into two that best separates them, one vote
+   per value; -HUGE_VAL when they are all equal */
+static double otsu_list(const double *v0, uint32_t n)
+{
+    if (n < 2) return -HUGE_VAL;
+    double *v = malloc(n * sizeof *v);
+    if (!v) return -HUGE_VAL;
+    memcpy(v, v0, n * sizeof *v);
+    for (uint32_t gap = n / 2; gap > 0; gap /= 2)
+        for (uint32_t i = gap; i < n; i++) {
+            double t = v[i];
+            uint32_t j = i;
+            while (j >= gap && v[j - gap] > t) { v[j] = v[j - gap]; j -= gap; }
+            v[j] = t;
+        }
+    double S = 0, s0 = 0, best = 0, mid = -HUGE_VAL;
+    for (uint32_t i = 0; i < n; i++) S += v[i];
+    for (uint32_t i = 0; i + 1 < n; i++) {
+        s0 += v[i];
+        if (v[i + 1] <= v[i]) continue;
+        double w0 = i + 1, w1 = n - w0;
+        double d = s0 / w0 - (S - s0) / w1;
+        double between = w0 * w1 * d * d;
+        if (between > best) { best = between; mid = (v[i] + v[i + 1]) / 2.0; }
+    }
+    free(v);
+    return mid;
+}
+
+uint32_t rz_lexicon_silhouette(rz_lexicon *x, int32_t word, int32_t *out, uint32_t cap)
+{
+    if (word < 0 || (uint32_t)word >= x->n || cap == 0) return 0;
+    company c;
+    memset(&c, 0, sizeof c);
+    if (!company_build(x, &c)) { company_free(&c); return 0; }
+    uint32_t W = 2 * c.F;
+    double *row = calloc(W, sizeof *row);
+    double *score = malloc((size_t)x->n * sizeof *score);
+    double *vals = malloc((size_t)x->n * sizeof *vals);
+    int32_t *who = malloc((size_t)x->n * sizeof *who);
+    uint32_t k = 0, nv = 0;
+    if (!row || !score || !vals || !who) goto out;
+
+    company_add(x, &c, (uint32_t)word, row);
+    unit(row, W);
+    company_dots(x, &c, row, 1, score);
+
+    for (uint32_t i = 0; i < x->n; i++)
+        if ((int32_t)i != word && x->lego[i].count >= 2 && score[i] > 0) {
+            vals[nv] = score[i];
+            who[nv++] = (int32_t)i;
+        }
+    /* first split: the words that keep anything like its company */
+    double first = otsu_list(vals, nv);
+    if (first == -HUGE_VAL) goto out;
+    uint32_t nt = 0;
+    for (uint32_t i = 0; i < nv; i++)
+        if (vals[i] > first) { vals[nt] = vals[i]; who[nt++] = who[i]; }
+    /* most alike first */
+    for (uint32_t i = 1; i < nt; i++) {
+        double v = vals[i];
+        int32_t w = who[i];
+        uint32_t j = i;
+        while (j > 0 && vals[j - 1] < v) { vals[j] = vals[j - 1]; who[j] = who[j - 1]; j--; }
+        vals[j] = v;
+        who[j] = w;
+    }
+    /* second: the widest gap inside the tall side is where its own kind ends */
+    uint32_t keep = nt;
+    double widest = 0;
+    for (uint32_t i = 0; i + 1 < nt; i++)
+        if (vals[i] - vals[i + 1] > widest) { widest = vals[i] - vals[i + 1]; keep = i + 1; }
+    for (uint32_t i = 0; i < keep && k < cap; i++) out[k++] = who[i];
+out:
+    free(row); free(score); free(vals); free(who);
+    company_free(&c);
+    return k;
 }
