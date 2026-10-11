@@ -182,6 +182,36 @@ void rz_player_imitate(rz_player *p, int32_t relation);
 int  rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
                    uint32_t nlater, rz_act *out);
 
+/* --- concepts (P36) --------------------------------------------------------
+ *
+ * Rex, Fido and the neighbour's dog are not alike, yet all of them bark and all
+ * of them "are dogs". A concept is what repeats across many different cases: a
+ * group of subjects that give the same answer to the same question ("X es ?"),
+ * together with that answer.
+ *
+ * It is the floor rising once more -- bytes into legos, legos into kinds, facts
+ * into concepts -- and it is adopted on the same terms as everything else: only
+ * if it pays for itself, in what Razar wants (D73). HARMONY: what follows each
+ * member is already described by what follows the rest of the concept. TRANSFER:
+ * in text it has not read, a member does something it was never seen doing,
+ * but the rest of the concept was. Both against a blind group of words of the
+ * same frequencies. A group of one is an anecdote and never forms. */
+#define RZ_CONCEPT_MEMBERS 64
+
+typedef struct {
+    int32_t  head;                   /* the shared answer: "perro" */
+    int32_t  relation;               /* the question it answers: "es" */
+    uint32_t nmember;
+    int32_t  member[RZ_CONCEPT_MEMBERS];
+    double   harmony, transfer;      /* gains over the blind group */
+    uint8_t  adopted;                /* it paid for itself */
+} rz_concept;
+
+/* Every concept the relation gives, most members first. Read-only. */
+uint32_t rz_concepts_find(rz_lexicon *x, int32_t relation,
+                          const int32_t *later, uint32_t nlater,
+                          rz_concept *out, uint32_t cap);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

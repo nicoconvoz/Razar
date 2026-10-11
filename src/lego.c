@@ -1118,3 +1118,203 @@ int rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
     p->sumsq += out->pay * out->pay;
     return 1;
 }
+
+
+/* ===================== concepts (P36) ==================================== */
+
+/* the answer each subject gives across the relation: what stands just after
+   it or one further, ranked by how much more it stands there for this subject
+   than for any (D50), said twice before said once -- the same reading as
+   rz_lexicon_ask, done for every subject in one pass */
+static void answers_of_all(const rz_lexicon *x, int32_t relation, int32_t *answer)
+{
+    for (uint32_t i = 0; i < x->n; i++) answer[i] = -1;
+    uint32_t nocc = 0;
+    uint32_t *base = calloc((size_t)x->n * 2, sizeof *base);
+    uint32_t *nsub = calloc(x->n, sizeof *nsub);
+    if (!base || !nsub) { free(base); free(nsub); return; }
+    for (uint32_t i = 1; i + 1 < x->nseq; i++) {
+        if (x->seq[i] != relation) continue;
+        nocc++;
+        for (int d = 1; d <= 2; d++) {
+            int32_t y = at(x, i, d);
+            if (y >= 0) base[(size_t)y * 2 + (uint32_t)(d - 1)]++;
+        }
+        if (x->seq[i - 1] >= 0) nsub[x->seq[i - 1]]++;
+    }
+
+    /* the frames, grouped by subject */
+    uint32_t *start = calloc((size_t)x->n + 1, sizeof *start);
+    uint32_t *occ = malloc(((size_t)nocc + 1) * sizeof *occ);
+    if (!start || !occ) { free(base); free(nsub); free(start); free(occ); return; }
+    for (uint32_t s = 0; s < x->n; s++) start[s + 1] = start[s] + nsub[s];
+    uint32_t *fill = calloc(x->n, sizeof *fill);
+    if (!fill) { free(base); free(nsub); free(start); free(occ); return; }
+    for (uint32_t i = 1; i + 1 < x->nseq; i++)
+        if (x->seq[i] == relation && x->seq[i - 1] >= 0) {
+            uint32_t s = (uint32_t)x->seq[i - 1];
+            occ[start[s] + fill[s]++] = i;
+        }
+
+    for (uint32_t s = 0; s < x->n; s++) {
+        if (nsub[s] == 0 || (int32_t)s == relation) continue;
+        double best = 0;
+        for (uint32_t a = start[s]; a < start[s + 1]; a++)
+            for (int d = 1; d <= 2; d++) {
+                int32_t y = at(x, occ[a], d);
+                if (y < 0 || y == (int32_t)s || y == relation) continue;
+                uint32_t w = 0;
+                for (uint32_t b = start[s]; b < start[s + 1]; b++) w += at(x, occ[b], d) == y;
+                double lift = ((double)w / nsub[s]) / ((double)base[(size_t)y * 2 + (uint32_t)(d - 1)] / nocc);
+                if (lift <= 1.0) continue;
+                double v = log(lift) + (w >= 2 ? 1e6 : 0.0);
+                if (v > best) { best = v; answer[s] = y; }
+            }
+    }
+    free(base); free(nsub); free(start); free(occ); free(fill);
+}
+
+/* add what follows w, as a distribution, into pool */
+static void pool_add(const rz_lexicon *x, double *pool, int32_t w, double sign)
+{
+    double tot = 0;
+    for (uint32_t o = x->out_start[w]; o < x->out_start[w + 1]; o++) tot += x->pair[x->out_pair[o]].count;
+    if (tot <= 0) return;
+    for (uint32_t o = x->out_start[w]; o < x->out_start[w + 1]; o++) {
+        const rz_lego_pair *q = &x->pair[x->out_pair[o]];
+        pool[q->b] += sign * q->count / tot;
+    }
+}
+
+/* Judge a group against a member: the member left out of the pool (it may not
+   describe itself). Harmony is the shared mass of what follows the member and
+   what follows the rest; transfer counts, in the text still to come, the steps
+   after the member it never saw that the rest had been seen taking. */
+static void judge_group(const rz_lexicon *x, double *pool, const int32_t *group,
+                        uint32_t ng, const int32_t *members, uint32_t nm,
+                        const int32_t *later, uint32_t nlater,
+                        double *harmony, uint32_t *steps, uint32_t *hits)
+{
+    *harmony = 0;
+    *steps = *hits = 0;
+    for (uint32_t k = 0; k < nm; k++) {
+        int32_t m = members[k];
+        uint32_t others = 0;
+        for (uint32_t g = 0; g < ng; g++) if (group[g] != m) { pool_add(x, pool, group[g], 1.0); others++; }
+        if (others) {
+            double tm = 0, s = 0;
+            for (uint32_t o = x->out_start[m]; o < x->out_start[m + 1]; o++) tm += x->pair[x->out_pair[o]].count;
+            for (uint32_t o = x->out_start[m]; o < x->out_start[m + 1] && tm > 0; o++) {
+                const rz_lego_pair *q = &x->pair[x->out_pair[o]];
+                double pm = q->count / tm, pp = pool[q->b] / others;
+                s += pm < pp ? pm : pp;
+            }
+            *harmony += s;
+            for (uint32_t i = 0; i + 1 < nlater; i++) {
+                if (later[i] != m || later[i + 1] < 0) continue;
+                if (find_pair(x, (uint32_t)m, (uint32_t)later[i + 1]) >= 0) continue;
+                (*steps)++;
+                if (pool[later[i + 1]] > 0) (*hits)++;
+            }
+        }
+        for (uint32_t g = 0; g < ng; g++) if (group[g] != m) pool_add(x, pool, group[g], -1.0);
+        for (uint32_t g = 0; g < ng; g++) if (group[g] != m)          /* clear rounding */
+            for (uint32_t o = x->out_start[group[g]]; o < x->out_start[group[g] + 1]; o++)
+                pool[x->pair[x->out_pair[o]].b] = 0;
+    }
+    if (nm) *harmony /= nm;
+}
+
+static int by_count_desc(const void *a, const void *b, const rz_lexicon *x)
+{
+    uint32_t ca = x->lego[*(const int32_t *)a].count, cb = x->lego[*(const int32_t *)b].count;
+    return ca < cb ? 1 : ca > cb ? -1 : 0;
+}
+
+uint32_t rz_concepts_find(rz_lexicon *x, int32_t relation,
+                          const int32_t *later, uint32_t nlater,
+                          rz_concept *out, uint32_t cap)
+{
+    if (relation < 0 || !x->n || !x->nseq || cap == 0) return 0;
+    ensure_index(x);
+    int32_t *answer = malloc((size_t)x->n * sizeof *answer);
+    double *pool = calloc(x->n, sizeof *pool);
+    int32_t *order = malloc((size_t)x->n * sizeof *order);
+    uint32_t *rank = malloc((size_t)x->n * sizeof *rank);
+    if (!x->out_start || !answer || !pool || !order || !rank) {
+        free(answer); free(pool); free(order); free(rank);
+        return 0;
+    }
+    answers_of_all(x, relation, answer);
+
+    /* words by frequency, for the blind groups: a word's blind twin j is the
+       j-th neighbour in that order */
+    for (uint32_t i = 0; i < x->n; i++) order[i] = (int32_t)i;
+    for (uint32_t gap = x->n / 2; gap > 0; gap /= 2)
+        for (uint32_t i = gap; i < x->n; i++) {
+            int32_t v = order[i];
+            uint32_t j = i;
+            while (j >= gap && by_count_desc(&order[j - gap], &v, x) > 0) { order[j] = order[j - gap]; j -= gap; }
+            order[j] = v;
+        }
+    for (uint32_t i = 0; i < x->n; i++) rank[order[i]] = i;
+
+    uint32_t n = 0;
+    for (uint32_t h = 0; h < x->n && n < cap; h++) {
+        rz_concept c;
+        memset(&c, 0, sizeof c);
+        c.head = (int32_t)h;
+        c.relation = relation;
+        for (uint32_t s = 0; s < x->n && c.nmember < RZ_CONCEPT_MEMBERS; s++)
+            if (answer[s] == (int32_t)h) c.member[c.nmember++] = (int32_t)s;
+        if (c.nmember < 2) continue;            /* one case is an anecdote */
+
+        int32_t group[RZ_CONCEPT_MEMBERS + 1];
+        uint32_t ng = 0;
+        group[ng++] = c.head;
+        for (uint32_t k = 0; k < c.nmember; k++) group[ng++] = c.member[k];
+        double h0;
+        uint32_t st0, hit0;
+        judge_group(x, pool, group, ng, c.member, c.nmember, later, nlater, &h0, &st0, &hit0);
+
+        /* the blind groups: every word of the group swapped for a word of about
+           the same frequency, judged against the same real members */
+        double hb = 0, tb = 0;
+        int blinds = 0;
+        for (int j = 1; j <= 8; j++) {
+            int32_t blind[RZ_CONCEPT_MEMBERS + 1];
+            for (uint32_t g = 0; g < ng; g++) {
+                int64_t at_rank = (int64_t)rank[group[g]] + ((j & 1) ? (j + 1) / 2 : -(j / 2));
+                if (at_rank < 0) at_rank += j;
+                if (at_rank >= (int64_t)x->n) at_rank = (int64_t)x->n - 1 - j;
+                if (at_rank < 0) at_rank = 0;
+                blind[g] = order[at_rank];
+            }
+            double hj;
+            uint32_t stj, hitj;
+            /* the blind group holds no real member, so nothing is left out of
+               it: its pool has one word more than the real one, which makes
+               the bar harder to clear, never easier */
+            judge_group(x, pool, blind, ng, c.member, c.nmember, later, nlater, &hj, &stj, &hitj);
+            hb += hj;
+            tb += stj ? (double)hitj / stj : 0.0;
+            blinds++;
+        }
+        hb /= blinds;
+        tb /= blinds;
+        c.harmony = h0 - hb;
+        c.transfer = (st0 ? (double)hit0 / st0 : 0.0) - tb;
+        c.adopted = c.harmony + c.transfer > 0;
+        out[n++] = c;
+    }
+
+    /* most members first */
+    for (uint32_t i = 1; i < n; i++) {
+        rz_concept v = out[i];
+        uint32_t j = i;
+        while (j > 0 && out[j - 1].nmember < v.nmember) { out[j] = out[j - 1]; j--; }
+        out[j] = v;
+    }
+    free(answer); free(pool); free(order); free(rank);
+    return n;
+}

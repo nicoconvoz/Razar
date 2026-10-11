@@ -1423,6 +1423,73 @@ static int cmd_play(int argc, char **argv)
     return 0;
 }
 
+/* --- concepts (P36) ------------------------------------------------------- */
+
+static int cmd_concepts(int argc, char **argv)
+{
+    const char *rel = (argc > 0) ? argv[0] : "es";
+    const char *path = (argc > 1) ? argv[1] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    /* four fifths lived; the last fifth is what comes later, not read */
+    size_t split = n / 5 * 4;
+    while (split < n && t[split] != ' ') split++;
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, split);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, split);
+    int32_t *later = malloc((n - split) * sizeof *later);
+    uint32_t nlater = later ? rz_lexicon_words_of(&x, m, t + split, n - split,
+                                                  later, (uint32_t)(n - split)) : 0;
+
+    int32_t relation = lego_for_word(&x, rel);
+    rz_concept *c = malloc(512 * sizeof *c);
+    uint32_t k = (relation >= 0 && c) ? rz_concepts_find(&x, relation, later, nlater, c, 512) : 0;
+
+    uint32_t adopted = 0;
+    double th = 0, tt = 0;
+    for (uint32_t i = 0; i < k; i++) { adopted += c[i].adopted; th += c[i].harmony; tt += c[i].transfer; }
+    printf("asked \"X %s ?\" of everything it lived (%zu bytes): %u concepts of two or more, %u pay for themselves\n\n",
+           rel, split, k, adopted);
+    for (int pass = 1; pass >= 0; pass--) {
+        printf("  %s\n", pass ? "adopted:" : "not adopted:");
+        uint32_t shown = 0;
+        for (uint32_t i = 0; i < k && shown < 15; i++) {
+            if (c[i].adopted != pass) continue;
+            char h[80], w[80];
+            say_lego(&x, c[i].head, h, sizeof h);
+            printf("    %-16s harmony %+.3f  transfer %+.3f   ", h, c[i].harmony, c[i].transfer);
+            for (uint32_t j = 0; j < c[i].nmember && j < 6; j++) {
+                say_lego(&x, c[i].member[j], w, sizeof w);
+                printf(" %s", w);
+            }
+            printf("%s\n", c[i].nmember > 6 ? " ..." : "");
+            shown++;
+        }
+    }
+    if (k) printf("\n  mean gain over the blind groups: harmony %+.4f, transfer %+.4f\n", th / k, tt / k);
+
+    free(c);
+    free(later);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1455,6 +1522,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "legos"))        return cmd_legos(argc - 2, argv + 2);
     if (!strcmp(argv[1], "ask"))          return cmd_ask(argc - 2, argv + 2);
     if (!strcmp(argv[1], "play"))         return cmd_play(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "concepts"))     return cmd_concepts(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

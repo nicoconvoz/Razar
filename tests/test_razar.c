@@ -3258,6 +3258,115 @@ TEST(it_repeats_what_pays_and_lets_go_of_what_does_not)
     rz_player_free(&p);
 }
 
+/* --- concepts (P36) ------------------------------------------------------- */
+
+/* Rex and Fido are dogs, Tom and Kit are cats, Lou alone is a cow. Each animal
+   has its sound. Later, in text it has not read, Rex and Fido bark and Tom and
+   Kit meow -- things none of them was ever seen doing by name. */
+static size_t concept_world(char *out, size_t cap, int clauses)
+{
+    static const char *det[] = { "the", "a", "my", "one", "his" };
+    static const char *name[] = { "rex", "fido", "tom", "kit", "lou" };
+    static const char *kind_of[] = { "dog", "dog", "cat", "cat", "cow" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen", "fox" };
+    static const char *sound[] = { "barked", "meowed", "mooed", "clucked", "yelped" };
+    size_t n = 0;
+    uint64_t r = 11;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *d = det[(r >> 26) % 5];
+        int w;
+        if ((r >> 60) % 3 == 0) {
+            int who = (int)((r >> 33) % 5);
+            w = snprintf(out + n, cap - n, "%s is %s %s %s ", name[who], d, kind_of[who], j);
+        } else {
+            int a = (int)((r >> 40) % 5);
+            w = snprintf(out + n, cap - n, "%s %s %s %s ", d, noun[a], sound[a], j);
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static little_life *live_with_concepts(void)
+{
+    static char before[100000], after[8000];
+    static const char *later[] = { "rex barked", "tom meowed", "fido barked", "kit meowed" };
+    size_t nb = concept_world(before, sizeof before, 4000);
+    size_t na = 0;
+    for (int k = 0; k < 200; k++)
+        na += (size_t)snprintf(after + na, sizeof after - na, "%s %s ",
+                               later[k % 4], wb_join[k % 6]);
+    little_life *l = malloc(sizeof *l);
+    l->m = world_mind(before, nb);
+    rz_lexicon_init(&l->x);
+    rz_lexicon_read_words(&l->x, l->m, (const unsigned char *)before, nb);
+    l->nlater = rz_lexicon_words_of(&l->x, l->m, (const unsigned char *)after, na,
+                                    l->later, 4000);
+    return l;
+}
+
+static const rz_concept *concept_headed(const rz_concept *c, uint32_t n, int32_t head)
+{
+    for (uint32_t i = 0; i < n; i++) if (c[i].head == head) return &c[i];
+    return NULL;
+}
+
+static int has_member(const rz_concept *c, int32_t who)
+{
+    for (uint32_t i = 0; i < c->nmember; i++) if (c->member[i] == who) return 1;
+    return 0;
+}
+
+TEST(a_concept_is_what_many_different_cases_answer_alike)
+{
+    little_life *l = live_with_concepts();
+    rz_concept c[16];
+    uint32_t n = rz_concepts_find(&l->x, lego_of(&l->x, "is"), l->later, l->nlater, c, 16);
+    const rz_concept *dog = concept_headed(c, n, lego_of(&l->x, "dog"));
+    const rz_concept *cat = concept_headed(c, n, lego_of(&l->x, "cat"));
+    CHECK(dog != NULL);
+    CHECK(cat != NULL);
+    if (dog) {
+        CHECK_EQ_U(dog->nmember, 2u);
+        CHECK(has_member(dog, lego_of(&l->x, "rex")));
+        CHECK(has_member(dog, lego_of(&l->x, "fido")));
+    }
+    if (cat) {
+        CHECK(has_member(cat, lego_of(&l->x, "tom")));
+        CHECK(has_member(cat, lego_of(&l->x, "kit")));
+    }
+    /* Lou alone is a cow: one case is an anecdote, not a concept */
+    CHECK(concept_headed(c, n, lego_of(&l->x, "cow")) == NULL);
+}
+
+TEST(a_concept_is_adopted_because_it_pays)
+{
+    /* Rex was never seen barking; the dogs were. In the text it has not read,
+       Rex barks -- the concept carried it. */
+    little_life *l = live_with_concepts();
+    rz_concept c[16];
+    uint32_t n = rz_concepts_find(&l->x, lego_of(&l->x, "is"), l->later, l->nlater, c, 16);
+    const rz_concept *dog = concept_headed(c, n, lego_of(&l->x, "dog"));
+    CHECK(dog != NULL);
+    if (dog) {
+        CHECK(dog->transfer > 0.5);
+        CHECK(dog->adopted);
+    }
+}
+
+TEST(finding_concepts_learns_nothing)
+{
+    little_life *l = live_with_concepts();
+    uint32_t n = l->x.n, pairs = l->x.npair, seq = l->x.nseq;
+    rz_concept c[16];
+    rz_concepts_find(&l->x, lego_of(&l->x, "is"), l->later, l->nlater, c, 16);
+    CHECK_EQ_U(l->x.n, n);
+    CHECK_EQ_U(l->x.npair, pairs);
+    CHECK_EQ_U(l->x.nseq, seq);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3384,6 +3493,9 @@ int main(void)
     RUN(it_imitates_first_and_never_asks_the_same_thing_twice);
     RUN(rex_is_the_dog_is_worth_asking);
     RUN(it_repeats_what_pays_and_lets_go_of_what_does_not);
+    RUN(a_concept_is_what_many_different_cases_answer_alike);
+    RUN(a_concept_is_adopted_because_it_pays);
+    RUN(finding_concepts_learns_nothing);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);
