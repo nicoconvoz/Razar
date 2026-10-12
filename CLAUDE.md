@@ -123,6 +123,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Ask it, and let it ask why | `./razar ask <word> [relation] [path]` |
 | Let it explore, imitate, repeat what pays | `./razar play [acts] [relation]` |
 | Its concepts, and whether they pay | `./razar concepts [relation] [path]` |
+| Types that ask for an owner, and the owners | `./razar roles [type] [path]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

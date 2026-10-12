@@ -3404,6 +3404,60 @@ TEST(finding_concepts_learns_nothing)
     CHECK_EQ_U(l->x.nseq, seq);
 }
 
+/* --- types and identities (P37) ------------------------------------------ */
+
+/* sons, fathers, friends and kings belong to someone; rex, tom and lou are the
+   someones. "the" fills the slot too ("the son of the dog"), and lives
+   everywhere. */
+static size_t family_world(char *out, size_t cap, int clauses)
+{
+    static const char *type[] = { "son", "father", "friend", "king" };
+    static const char *name[] = { "rex", "tom", "lou" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen" };
+    static const char *verb[] = { "ran", "sat", "ate", "slept", "sang" };
+    size_t n = 0;
+    uint64_t r = 23;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 5];
+        const char *ty = type[(r >> 33) % 4], *nm = name[(r >> 37) % 3], *no = noun[(r >> 41) % 4];
+        int w;
+        switch ((r >> 60) % 5) {
+        case 0: case 1: w = snprintf(out + n, cap - n, "the %s of %s %s %s ", ty, nm, v, j); break;
+        case 2:  w = snprintf(out + n, cap - n, "the %s of the %s %s %s ", ty, no, v, j); break;
+        case 3:  w = snprintf(out + n, cap - n, "the %s %s %s ", no, v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s %s ", nm, v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(a_type_asks_for_an_owner_and_an_identity_fills_the_slot)
+{
+    static char t[120000];
+    size_t n = family_world(t, sizeof t, 5000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    uint8_t *ty = calloc(x.n, 1), *id = calloc(x.n, 1);
+    int32_t bind = -1;
+    uint32_t k = rz_lexicon_roles(&x, lego_of(&x, "son"), &bind, ty, id);
+
+    CHECK_EQ_U(bind, lego_of(&x, "of"));          /* found, not named */
+    CHECK(ty[lego_of(&x, "son")] && ty[lego_of(&x, "father")]);
+    CHECK(ty[lego_of(&x, "friend")] && ty[lego_of(&x, "king")]);
+    CHECK(!ty[lego_of(&x, "dog")] && !ty[lego_of(&x, "the")] && !ty[lego_of(&x, "ran")]);
+    CHECK(id[lego_of(&x, "rex")] && id[lego_of(&x, "tom")] && id[lego_of(&x, "lou")]);
+    CHECK(!id[lego_of(&x, "the")]);              /* it fills slots, and lives everywhere */
+    CHECK(!id[lego_of(&x, "son")]);
+    CHECK(k >= 3);
+    free(ty); free(id);
+    rz_lexicon_free(&x);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3535,6 +3589,7 @@ int main(void)
     RUN(the_question_has_a_silhouette);
     RUN(asking_with_the_silhouette_gathers_more_cases);
     RUN(finding_concepts_learns_nothing);
+    RUN(a_type_asks_for_an_owner_and_an_identity_fills_the_slot);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

@@ -403,6 +403,7 @@ they still hold; a status changed because code now answers it says so.
 | D69–D72 | [curiosity.md](curiosity.md) |
 | D73–D77 | [behaviours.md](behaviours.md) |
 | D78–D82 | [concepts.md](concepts.md) |
+| D83–D85 | [types-and-identities.md](types-and-identities.md) |
 
 ### Pieces built after this document
 
@@ -419,6 +420,7 @@ they still hold; a status changed because code now answers it says so.
 | P34 curiosity: words, marks, asking, why | [curiosity.md](curiosity.md) |
 | P35 behaviours — exploration, imitation, repeat-or-let-go built | [behaviours.md](behaviours.md) |
 | P36 concepts | [concepts.md](concepts.md) |
+| P37 types and identities | [types-and-identities.md](types-and-identities.md) |
 
 ---
 

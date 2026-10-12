@@ -1410,3 +1410,101 @@ out:
     company_free(&c);
     return k;
 }
+
+
+/* ===================== types and identities (P37) ======================== */
+
+typedef struct { int32_t filler, type; } slot_fill;
+
+static int by_fill(const void *a, const void *b)
+{
+    const slot_fill *p = a, *q = b;
+    if (p->filler != q->filler) return p->filler < q->filler ? -1 : 1;
+    return p->type < q->type ? -1 : p->type > q->type;
+}
+
+uint32_t rz_lexicon_roles(rz_lexicon *x, int32_t seed, int32_t *binding,
+                          uint8_t *is_type, uint8_t *is_identity)
+{
+    *binding = -1;
+    if (seed < 0 || (uint32_t)seed >= x->n || !x->nseq) return 0;
+    memset(is_type, 0, x->n);
+    memset(is_identity, 0, x->n);
+
+    uint32_t *tot = calloc(x->n, sizeof *tot), *after = calloc(x->n, sizeof *after);
+    uint32_t *bound = calloc(x->n, sizeof *bound), *inslot = calloc(x->n, sizeof *inslot);
+    double *vals = malloc((size_t)x->n * sizeof *vals);
+    int32_t *who = malloc((size_t)x->n * sizeof *who);
+    slot_fill *fill = NULL;
+    uint32_t ids = 0;
+    if (!tot || !after || !bound || !inslot || !vals || !who) goto out;
+
+    /* the binding: what follows the seed far more than it follows anything,
+       said at least twice */
+    double nseed = 0, nall = 0;
+    for (uint32_t i = 0; i + 1 < x->nseq; i++) {
+        if (x->seq[i] < 0 || x->seq[i + 1] < 0) continue;
+        tot[x->seq[i]]++;
+        nall++;
+        if (x->seq[i] == seed) { after[x->seq[i + 1]]++; nseed++; }
+    }
+    double best = 0;
+    for (uint32_t w = 0; w < x->n; w++) {
+        if (after[w] < 2) continue;
+        double lift = ((double)after[w] / nseed) / ((double)tot[w] / nall);
+        double v = log(lift) * log((double)after[w]);
+        if (lift > 1.0 && v > best) { best = v; *binding = (int32_t)w; }
+    }
+    if (*binding < 0) goto out;
+    int32_t bind = *binding;
+
+    /* types: followed by the binding on the tall side of the split */
+    for (uint32_t i = 0; i + 1 < x->nseq; i++)
+        if (x->seq[i] >= 0 && x->seq[i + 1] == bind) bound[x->seq[i]]++;
+    uint32_t nv = 0;
+    for (uint32_t w = 0; w < x->n; w++)
+        if (tot[w] >= 2 && (int32_t)w != bind) { vals[nv] = (double)bound[w] / tot[w]; who[nv++] = (int32_t)w; }
+    double cut = otsu_list(vals, nv);
+    if (cut == -HUGE_VAL) goto out;
+    for (uint32_t i = 0; i < nv; i++)
+        if (vals[i] > cut && bound[who[i]] >= 2) is_type[who[i]] = 1;
+
+    /* who fills "type binding ___", and for how many different types */
+    uint32_t nf = 0;
+    for (uint32_t i = 0; i + 2 < x->nseq; i++)
+        if (x->seq[i] >= 0 && is_type[x->seq[i]] && x->seq[i + 1] == bind && x->seq[i + 2] >= 0) nf++;
+    fill = malloc(((size_t)nf + 1) * sizeof *fill);
+    if (!fill) goto out;
+    nf = 0;
+    for (uint32_t i = 0; i + 2 < x->nseq; i++)
+        if (x->seq[i] >= 0 && is_type[x->seq[i]] && x->seq[i + 1] == bind && x->seq[i + 2] >= 0) {
+            fill[nf++] = (slot_fill){ x->seq[i + 2], x->seq[i] };
+            inslot[x->seq[i + 2]]++;
+        }
+    qsort(fill, nf, sizeof *fill, by_fill);
+
+    /* identities: two or more different types, and the tall side of how much
+       of their life they spend in those slots -- "la" fills them and lives
+       everywhere */
+    nv = 0;
+    for (uint32_t i = 0; i < nf; ) {
+        uint32_t j = i, distinct = 0;
+        int32_t prev = -1;
+        while (j < nf && fill[j].filler == fill[i].filler) {
+            if (fill[j].type != prev) { distinct++; prev = fill[j].type; }
+            j++;
+        }
+        int32_t f = fill[i].filler;
+        if (distinct >= 2 && !is_type[f] && tot[f] > 0) {
+            vals[nv] = (double)inslot[f] / tot[f];
+            who[nv++] = f;
+        }
+        i = j;
+    }
+    cut = otsu_list(vals, nv);
+    for (uint32_t i = 0; i < nv; i++)
+        if (cut == -HUGE_VAL || vals[i] > cut) { is_identity[who[i]] = 1; ids++; }
+out:
+    free(tot); free(after); free(bound); free(inslot); free(vals); free(who); free(fill);
+    return ids;
+}

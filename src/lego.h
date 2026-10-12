@@ -222,6 +222,24 @@ uint32_t rz_concepts_find_any(rz_lexicon *x, const int32_t *relations, uint32_t 
    them into two, then the widest gap inside the tall side. Read-only. */
 uint32_t rz_lexicon_silhouette(rz_lexicon *x, int32_t word, int32_t *out, uint32_t cap);
 
+/* --- types and identities (P37) --------------------------------------------
+ *
+ * "hijo" is a type and "David" is an identity (the author, 2026-10-11). The
+ * difference is an asymmetry, and nothing has to name either side:
+ *
+ *   the binding  what follows the seed type far more than it follows anything
+ *                ("hijo" -> "de"), found from one type the question brings
+ *   a type       a word followed by the binding word on the tall side of the
+ *                split: it asks for an owner ("rey de", "padre de", "amigo de")
+ *   an identity  a word that fills the slot of two or more different types and
+ *                spends the tall side of its life in those slots: "la" fills
+ *                them too, but lives everywhere
+ *
+ * Capitals are only the bar. Returns the number of identities; is_type and
+ * is_identity are x->n flags the caller owns. */
+uint32_t rz_lexicon_roles(rz_lexicon *x, int32_t seed, int32_t *binding,
+                          uint8_t *is_type, uint8_t *is_identity);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

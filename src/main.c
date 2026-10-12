@@ -1516,6 +1516,83 @@ static int cmd_concepts(int argc, char **argv)
     return 0;
 }
 
+/* --- types and identities (P37) ------------------------------------------- */
+
+/* the bar only: a word that starts with a capital, ASCII or the Latin-1 range
+   as UTF-8 writes it */
+static int capital(const rz_lego *g)
+{
+    unsigned char c = g->s[0];
+    if (c >= 'A' && c <= 'Z') return 1;
+    return c == 0xC3 && g->len > 1 && g->s[1] >= 0x80 && g->s[1] <= 0x9E;
+}
+
+static int cmd_roles(int argc, char **argv)
+{
+    const char *seed_word = (argc > 0) ? argv[0] : "hijo";
+    const char *path = (argc > 1) ? argv[1] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);
+
+    int32_t seed = lego_for_word(&x, seed_word), bind = -1;
+    uint8_t *ty = calloc(x.n, 1), *id = calloc(x.n, 1);
+    uint32_t ids = (seed >= 0 && ty && id) ? rz_lexicon_roles(&x, seed, &bind, ty, id) : 0;
+    char w[80];
+    if (bind < 0) { printf("[%s] binds to nothing it can find\n", seed_word); goto done; }
+    say_lego(&x, bind, w, sizeof w);
+    printf("[%s] asks for an owner through %s\n\n", seed_word, w);
+
+    for (int pass = 0; pass < 2; pass++) {
+        uint8_t *flag = pass ? id : ty;
+        uint32_t total = 0, caps = 0, shown = 0;
+        for (uint32_t i = 0; i < x.n; i++) if (flag[i]) { total++; caps += capital(&x.lego[i]); }
+        printf("  %s: %u, %.0f%% with a capital\n    ", pass ? "identities" : "types", total,
+               100.0 * caps / (total ? total : 1));
+        uint8_t *done = calloc(x.n, 1);
+        while (shown < 40) {
+            int32_t b = -1;
+            for (uint32_t i = 0; i < x.n; i++)
+                if (flag[i] && !done[i] && (b < 0 || x.lego[i].count > x.lego[b].count)) b = (int32_t)i;
+            if (b < 0) break;
+            done[b] = 1;
+            say_lego(&x, b, w, sizeof w);
+            printf(" %s", w);
+            shown++;
+        }
+        free(done);
+        printf("\n\n");
+    }
+    {
+        uint32_t base = 0, nb = 0;
+        for (uint32_t i = 0; i < x.n; i++) if (x.lego[i].count >= 2) { nb++; base += capital(&x.lego[i]); }
+        printf("  bar: of all words seen twice or more, %.0f%% start with a capital\n", 100.0 * base / (nb ? nb : 1));
+    }
+    (void)ids;
+done:
+    free(ty); free(id);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1549,6 +1626,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "ask"))          return cmd_ask(argc - 2, argv + 2);
     if (!strcmp(argv[1], "play"))         return cmd_play(argc - 2, argv + 2);
     if (!strcmp(argv[1], "concepts"))     return cmd_concepts(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "roles"))        return cmd_roles(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
