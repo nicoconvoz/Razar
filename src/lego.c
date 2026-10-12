@@ -2570,3 +2570,117 @@ out:
     if (rc != RZ_OK) rz_keys_free(k);
     return rc;
 }
+
+
+/* ===================== PENZAR: thinking in real time (P45) =============== */
+
+void rz_penzar_init(rz_penzar *p)
+{
+    memset(p, 0, sizeof *p);
+    p->mind = malloc(sizeof *p->mind);
+    if (p->mind) rz_init(p->mind);
+    rz_lexicon_init(&p->lex);
+}
+
+void rz_penzar_free(rz_penzar *p)
+{
+    if (p->have_keys) rz_keys_free(&p->keys);
+    rz_lexicon_free(&p->lex);
+    if (p->mind) { rz_free(p->mind); free(p->mind); }
+    memset(p, 0, sizeof *p);
+}
+
+int rz_hunch_holds(const rz_hunch *h)
+{
+    /* won once is an anecdote, the same rule everywhere: "1 of 1" was being
+       confirmed and lent sideways */
+    if (h->tried < 2 || h->base_tried == 0) return 0;
+    return (double)h->right / h->tried > (double)h->base_right / h->base_tried;
+}
+
+static int32_t hunch_of(const rz_penzar *p, int32_t word)
+{
+    for (uint32_t i = 0; i < p->nhunch; i++) if (p->hunch[i].word == word) return (int32_t)i;
+    return -1;
+}
+
+void rz_penzar_bite(rz_penzar *p, const unsigned char *t, size_t n, rz_thought *out)
+{
+    memset(out, 0, sizeof *out);
+    if (!p->mind || n == 0) return;
+
+    /* 1. bet, before reading: words looked up in what it already knows */
+    if (p->have_keys && p->nhunch && p->lex.n) {
+        int32_t *ids = malloc((n + 1) * sizeof *ids);
+        int32_t *hof = malloc((size_t)p->lex.n * sizeof *hof);
+        if (ids && hof) {
+            uint32_t nid = rz_lexicon_words_of(&p->lex, p->mind, t, n, ids, (uint32_t)n);
+            for (uint32_t w = 0; w < p->lex.n; w++) hof[w] = -1;
+            for (uint32_t i = 0; i < p->nhunch; i++) hof[p->hunch[i].word] = (int32_t)i;
+            /* the base rate of each side in this very bite */
+            uint32_t twins = 0, on[2] = { 0, 0 };
+            for (uint32_t i = 0; i + 1 < nid; i++) {
+                int32_t nx = ids[i + 1];
+                if (nx < 0 || (uint32_t)nx >= p->lex.n || p->keys.side[nx] < 0) continue;
+                twins++;
+                on[p->keys.side[nx]]++;
+            }
+            double expect = 0;
+            for (uint32_t i = 0; i + 1 < nid; i++) {
+                int32_t m = ids[i], nx = ids[i + 1];
+                if (m < 0 || nx < 0 || (uint32_t)nx >= p->lex.n || p->keys.side[nx] < 0) continue;
+                int32_t hi = hof[m];
+                if (hi < 0) continue;
+                rz_hunch *hu = &p->hunch[hi];
+                hu->tried++;
+                int won = p->keys.side[nx] == hu->side;
+                hu->right += (uint32_t)won;
+                out->bets++;
+                out->won += (uint32_t)won;
+                expect += twins ? (double)on[hu->side] / twins : 0;
+            }
+            for (uint32_t i = 0; i < p->nhunch; i++) {
+                p->hunch[i].base_tried += twins;
+                p->hunch[i].base_right += on[p->hunch[i].side];
+            }
+            out->base_won = (uint32_t)(expect + 0.5);
+        }
+        free(ids);
+        free(hof);
+    }
+
+    /* 2. read */
+    rz_ingest(p->mind, t, n);
+    rz_lexicon_read_words(&p->lex, p->mind, t, n);
+    p->bites++;
+
+    /* 3. think. The key it now hears is read again; then it thinks sideways
+       before it looks at the markers -- a word the silhouette of a standing
+       hunch points at is thought of before enough of its own uses have been
+       seen for it to count as a marker */
+    if (p->have_keys) rz_keys_free(&p->keys);
+    p->have_keys = rz_lexicon_keys(&p->lex, &p->keys) == RZ_OK;
+    if (!p->have_keys) return;
+    /* lateral: a hunch that holds lends itself to its silhouette */
+    uint32_t standing = p->nhunch;
+    for (uint32_t i = 0; i < standing && p->nhunch < RZ_HUNCHES; i++) {
+        rz_hunch *hu = &p->hunch[i];
+        if (hu->lent || !rz_hunch_holds(hu)) continue;
+        hu->lent = 1;
+        int32_t sil[16];
+        uint32_t k = rz_lexicon_silhouette(&p->lex, hu->word, sil, 16);
+        for (uint32_t j = 0; j < k && p->nhunch < RZ_HUNCHES; j++) {
+            if (hunch_of(p, sil[j]) >= 0) continue;
+            p->hunch[p->nhunch++] = (rz_hunch){ sil[j], hu->side, (int32_t)i, p->bites, 0, 0, 0, 0, 0 };
+            out->born++;
+            out->lateral++;
+        }
+    }
+    /* then the markers of the key become hunches */
+    for (uint32_t m = 0; m < p->lex.n && p->nhunch < RZ_HUNCHES; m++) {
+        if (p->keys.marks[m] != 0 && p->keys.marks[m] != 1) continue;
+        if (hunch_of(p, (int32_t)m) >= 0) continue;
+        p->hunch[p->nhunch++] = (rz_hunch){ (int32_t)m, p->keys.marks[m], -1, p->bites, 0, 0, 0, 0, 0 };
+        out->born++;
+    }
+}

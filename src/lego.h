@@ -400,6 +400,56 @@ void rz_keys_free(rz_keys *k);
 /* the same note: equal, twins, or markers that are each other's key */
 int  rz_keys_same(const rz_keys *k, int32_t a, int32_t b);
 
+/* --- PENZAR: thinking in real time (P45) ----------------------------------
+ *
+ * The author's word: not a study run once over a finished book, but thinking
+ * while reading. Bite after bite:
+ *
+ *   1. before the bite is read, every hunch bets on it -- "after `la` comes a
+ *      word on the a side" -- and is judged against the base rate of that same
+ *      bite: the bar is always text it had not yet seen
+ *   2. the bite is read
+ *   3. it thinks: the markers of the key it now hears become hunches
+ *   4. lateral thinking: a hunch that holds lends itself to the words of its
+ *      silhouette, which become hunches of their own, to be judged on the
+ *      next bite like any other
+ *
+ * Nothing is deleted; a hunch that fails stays, and simply is not trusted. */
+typedef struct {
+    int32_t  word;                   /* the marker it bets on */
+    int8_t   side;                   /* the side of the key it bets follows */
+    int32_t  from;                   /* the hunch it was borrowed from, or -1 */
+    uint32_t born;                   /* the bite it was born in */
+    uint32_t tried, right;           /* its bets, and the ones it won */
+    uint32_t base_tried, base_right; /* the same bites: how often that side follows anything */
+    uint8_t  lent;                   /* it has already lent itself sideways */
+} rz_hunch;
+
+#define RZ_HUNCHES 1024
+
+typedef struct {
+    rz_mind   *mind;
+    rz_lexicon lex;
+    rz_keys    keys;
+    int        have_keys;
+    rz_hunch   hunch[RZ_HUNCHES];
+    uint32_t   nhunch;
+    uint32_t   bites;
+} rz_penzar;
+
+typedef struct {
+    uint32_t born, lateral;          /* hunches born in this bite, and how many sideways */
+    uint32_t bets, won, base_won;    /* this bite's bets */
+} rz_thought;
+
+void rz_penzar_init(rz_penzar *p);
+void rz_penzar_free(rz_penzar *p);
+/* one bite: bet, read, think */
+void rz_penzar_bite(rz_penzar *p, const unsigned char *t, size_t n, rz_thought *out);
+/* a hunch holds when it has bet at least twice and won more often than its
+   side follows anything */
+int  rz_hunch_holds(const rz_hunch *h);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

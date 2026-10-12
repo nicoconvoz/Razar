@@ -3977,6 +3977,114 @@ TEST(the_same_song_is_heard_in_another_key)
     CHECK_EQ_U(rz_word_instruments(x, lego_of(x, "es"), in, RZ_INSTRUMENTS, NULL, 0), 1u);
 }
 
+/* --- PENZAR: thinking in real time (P45) --------------------------------- */
+
+/* the key world with "esta", which goes mostly with nouns that have no twin
+   (esta casa, esta mesa) -- a world with more to think about sideways */
+static size_t lateral_world(char *out, size_t cap, int clauses)
+{
+    static const char *mo[] = { "niño", "gato", "perro", "hermano", "amigo" };
+    static const char *fe[] = { "niña", "gata", "perra", "hermana", "amiga" };
+    static const char *lone[] = { "casa", "mesa", "puerta", "tierra" };
+    static const char *verb[] = { "corre", "duerme", "canta", "come" };
+    static const char *who[] = { "rex", "tom", "lou" };
+    size_t n = 0;
+    uint64_t r = 61;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 4];
+        int i = (int)((r >> 33) % 5), w;
+        switch ((r >> 57) % 18) {
+        case 0: case 1: w = snprintf(out + n, cap - n, "el %s %s %s ", mo[i], v, j); break;
+        case 2: case 3: w = snprintf(out + n, cap - n, "la %s %s %s ", fe[i], v, j); break;
+        case 4: case 5: w = snprintf(out + n, cap - n, "un %s %s %s ", mo[i], v, j); break;
+        case 6: case 7: w = snprintf(out + n, cap - n, "una %s %s %s ", fe[i], v, j); break;
+        case 8: case 9: w = snprintf(out + n, cap - n, "su %s %s %s ", (r >> 40) % 2 ? mo[i] : fe[i], v, j); break;
+        case 10: case 11: w = snprintf(out + n, cap - n, "%s es el %s %s ", who[(r >> 44) % 3], mo[i], j); break;
+        case 12: case 13: w = snprintf(out + n, cap - n, "%s es la %s %s ", who[(r >> 44) % 3], fe[i], j); break;
+        case 14: w = snprintf(out + n, cap - n, "la %s %s %s ", lone[i % 4], v, j); break;
+        case 15: case 16: w = snprintf(out + n, cap - n, "esta %s %s %s ", lone[i % 4], v, j); break;
+        default: w = snprintf(out + n, cap - n, "esta %s %s %s ", (r >> 45) % 4 ? lone[i % 4] : fe[i], v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int32_t hunch_on(const rz_penzar *p, const char *w)
+{
+    int32_t id = rz_lexicon_find(&p->lex, (const unsigned char *)w, strlen(w));
+    for (uint32_t i = 0; i < p->nhunch; i++) if (p->hunch[i].word == id) return (int32_t)i;
+    return -1;
+}
+
+TEST(it_thinks_while_it_reads)
+{
+    static char t[140000];
+    size_t n = key_world(t, sizeof t, 6000);
+    rz_penzar *p = malloc(sizeof *p);
+    rz_penzar_init(p);
+    rz_thought th;
+    size_t bite = n / 10, at2 = 0;
+    uint32_t bets = 0, won = 0, base = 0, born = 0;
+    while (at2 < n) {
+        size_t len = n - at2 < bite ? n - at2 : bite;
+        while (at2 + len < n && t[at2 + len] != ' ') len++;
+        rz_penzar_bite(p, (const unsigned char *)t + at2, len, &th);
+        bets += th.bets; won += th.won; base += th.base_won; born += th.born;
+        at2 += len;
+    }
+    CHECK(born > 0);
+    CHECK(bets > 0);
+    CHECK(won > base);                      /* its hunches beat the base rate, on text it had not read */
+
+    /* "la" marks a side, and it held; "su" goes with both and is no hunch */
+    int32_t la = hunch_on(p, "la");
+    CHECK(la >= 0);
+    if (la >= 0) CHECK(rz_hunch_holds(&p->hunch[la]));
+    CHECK(hunch_on(p, "su") < 0);
+    rz_penzar_free(p);
+    free(p);
+}
+
+TEST(a_hunch_that_holds_lends_itself_sideways)
+{
+    /* lateral thinking: some hunch was born from another one's silhouette, and
+       was then judged like any other */
+    static char t[200000];
+    size_t n = lateral_world(t, sizeof t, 6000);
+    rz_penzar *p = malloc(sizeof *p);
+    rz_penzar_init(p);
+    rz_thought th;
+    size_t bite = n / 10, at2 = 0;
+    uint32_t lateral = 0;
+    while (at2 < n) {
+        size_t len = n - at2 < bite ? n - at2 : bite;
+        while (at2 + len < n && t[at2 + len] != ' ') len++;
+        rz_penzar_bite(p, (const unsigned char *)t + at2, len, &th);
+        lateral += th.lateral;
+        at2 += len;
+    }
+    CHECK(lateral > 0);
+    int judged = 0;
+    for (uint32_t i = 0; i < p->nhunch; i++)
+        if (p->hunch[i].from >= 0 && p->hunch[i].tried > 0) judged = 1;
+    CHECK(judged);
+    /* what it thinks sideways is tried, not trusted: "su" sits in the
+       silhouette of the markers but goes with both sides -- thought of
+       sideways, bet on, and it does not hold */
+    int32_t su = hunch_on(p, "su");
+    CHECK(su >= 0);
+    if (su >= 0) {
+        CHECK(p->hunch[su].from >= 0);
+        CHECK(p->hunch[su].tried > 0);
+        CHECK(!rz_hunch_holds(&p->hunch[su]));
+    }
+    rz_penzar_free(p);
+    free(p);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -4118,6 +4226,8 @@ int main(void)
     RUN(a_word_can_play_more_than_one_instrument);
     RUN(a_word_that_plays_one_instrument_is_not_split);
     RUN(the_same_song_is_heard_in_another_key);
+    RUN(it_thinks_while_it_reads);
+    RUN(a_hunch_that_holds_lends_itself_sideways);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

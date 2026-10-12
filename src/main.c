@@ -1983,6 +1983,85 @@ static int cmd_instruments(int argc, char **argv)
     return 0;
 }
 
+/* --- PENZAR: thinking in real time (P45) ---------------------------------- */
+
+static int cmd_penzar(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    size_t bite = (argc > 1) ? (size_t)strtoul(argv[1], NULL, 10) : 40000;
+    if (bite < 1000) bite = 1000;
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_penzar *p = malloc(sizeof *p);
+    if (!p || !t) { fprintf(stderr, "out of memory\n"); free(p); free(t); return 1; }
+    rz_penzar_init(p);
+    printf("thinking while reading %s, %zu bytes a bite\n\n", path, bite);
+    fflush(stdout);
+
+    static uint8_t was_lent[RZ_HUNCHES];
+    uint64_t bets = 0, won = 0, base = 0;
+    size_t at2 = 0;
+    char w[80], v[80];
+    while (at2 < n) {
+        size_t len = n - at2 < bite ? n - at2 : bite;
+        while (at2 + len < n && t[at2 + len] != ' ') len++;
+        uint32_t before = p->nhunch;
+        for (uint32_t i = 0; i < p->nhunch; i++) was_lent[i] = p->hunch[i].lent;
+        rz_thought th;
+        rz_penzar_bite(p, t + at2, len, &th);
+        at2 += len;
+        bets += th.bets; won += th.won; base += th.base_won;
+
+        printf("bite %u", p->bites);
+        if (th.bets)
+            printf(": bet %u times, won %u (chance would win %u)", th.bets, th.won, th.base_won);
+        printf("\n");
+        for (uint32_t i = 0; i < before; i++)
+            if (!was_lent[i] && p->hunch[i].lent) {
+                say_lego(&p->lex, p->hunch[i].word, w, sizeof w);
+                printf("  holds: after %s comes side %d (%u of %u)\n", w, p->hunch[i].side,
+                       p->hunch[i].right, p->hunch[i].tried);
+            }
+        for (uint32_t i = before; i < p->nhunch; i++) {
+            say_lego(&p->lex, p->hunch[i].word, w, sizeof w);
+            if (p->hunch[i].from >= 0) {
+                say_lego(&p->lex, p->hunch[p->hunch[i].from].word, v, sizeof v);
+                printf("  sideways: %s sits where %s sits -- maybe it marks side %d too\n", w, v, p->hunch[i].side);
+            } else {
+                printf("  a hunch: after %s comes side %d\n", w, p->hunch[i].side);
+            }
+        }
+        fflush(stdout);
+    }
+
+    uint32_t held = 0, side_held = 0, side_tried = 0;
+    for (uint32_t i = 0; i < p->nhunch; i++) {
+        int h = rz_hunch_holds(&p->hunch[i]);
+        held += h;
+        if (p->hunch[i].from >= 0 && p->hunch[i].tried) { side_tried++; side_held += h; }
+    }
+    printf("\n%u hunches, %u hold; thought sideways and tried: %u, of which %u hold\n",
+           p->nhunch, held, side_tried, side_held);
+    if (p->have_keys)
+        printf("the key it heard: letter %d from the end, '%c' against '%c', %u twins\n",
+               p->keys.property.from_end, p->keys.property.a, p->keys.property.b, p->keys.property.twins);
+    printf("on text it had not read yet: bet %llu times, won %llu, chance would win %llu\n",
+           (unsigned long long)bets, (unsigned long long)won, (unsigned long long)base);
+    rz_penzar_free(p);
+    free(p);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2020,6 +2099,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "weave"))        return cmd_weave(argc - 2, argv + 2);
     if (!strcmp(argv[1], "melody"))       return cmd_melody(argc - 2, argv + 2);
     if (!strcmp(argv[1], "instruments"))  return cmd_instruments(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "penzar"))       return cmd_penzar(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
