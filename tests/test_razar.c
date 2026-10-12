@@ -3844,6 +3844,69 @@ TEST(the_question_it_was_shown_is_put_where_it_applies)
     rz_player_free(&p);
 }
 
+/* --- the instruments of a word (P43) ------------------------------------- */
+
+/* "is" plays two instruments: "rex is a dog" says what rex is; "what is rex"
+   asks it. "ran" plays one. */
+static size_t band_world(char *out, size_t cap, int clauses)
+{
+    static const char *det[] = { "a", "the", "one" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen", "fox" };
+    static const char *who[] = { "rex", "tom", "lou", "kit" };
+    static const char *verb[] = { "ran", "sat", "ate" };
+    size_t n = 0;
+    uint64_t r = 53;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *nm = who[(r >> 33) % 4];
+        int w;
+        switch ((r >> 60) % 3) {
+        case 0:  w = snprintf(out + n, cap - n, "%s is %s %s %s ", nm, det[(r >> 26) % 3], noun[(r >> 40) % 5], j); break;
+        case 1:  w = snprintf(out + n, cap - n, "what is %s %s ", nm, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s %s ", nm, verb[(r >> 44) % 3], j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(a_word_can_play_more_than_one_instrument)
+{
+    rz_lexicon *x = read_book(band_world);
+    rz_instrument in[RZ_INSTRUMENTS];
+    static uint8_t which[20000];
+    uint32_t k = rz_word_instruments(x, lego_of(x, "is"), in, RZ_INSTRUMENTS, which, 20000);
+    CHECK_EQ_U(k, 2u);
+
+    /* the two tracks, studied apart: one is preceded by "what", the other is
+       followed by an article */
+    int asks = -1, says = -1;
+    for (uint32_t i = 0; i < k; i++) {
+        for (int b = 0; b < 6; b++) if (in[i].before[b] == lego_of(x, "what")) asks = (int)i;
+        for (int a = 0; a < 6; a++) if (in[i].after[a] == lego_of(x, "a") || in[i].after[a] == lego_of(x, "the")) says = (int)i;
+    }
+    CHECK(asks >= 0 && says >= 0 && asks != says);
+
+    /* every "what is" resonates with the instrument that asks */
+    uint32_t occ = 0, right = 0;
+    for (uint32_t i = 1; i < x->nseq; i++) {
+        if (x->seq[i] != lego_of(x, "is")) continue;
+        if (x->seq[i - 1] == lego_of(x, "what")) right += which[occ] == (uint8_t)asks;
+        occ++;
+    }
+    uint32_t whats = 0;
+    for (uint32_t i = 1; i < x->nseq; i++) whats += x->seq[i] == lego_of(x, "is") && x->seq[i - 1] == lego_of(x, "what");
+    CHECK(whats > 0 && right == whats);
+}
+
+TEST(a_word_that_plays_one_instrument_is_not_split)
+{
+    rz_lexicon *x = read_book(band_world);
+    rz_instrument in[RZ_INSTRUMENTS];
+    CHECK_EQ_U(rz_word_instruments(x, lego_of(x, "ran"), in, RZ_INSTRUMENTS, NULL, 0), 1u);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3982,6 +4045,8 @@ int main(void)
     RUN(fresh_eyes_find_the_key_the_melody_did_not_have);
     RUN(a_question_is_put_to_whom_the_text_puts_it);
     RUN(the_question_it_was_shown_is_put_where_it_applies);
+    RUN(a_word_can_play_more_than_one_instrument);
+    RUN(a_word_that_plays_one_instrument_is_not_split);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

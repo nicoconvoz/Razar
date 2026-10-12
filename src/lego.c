@@ -2002,3 +2002,310 @@ out:
     company_free(&c);
     return k;
 }
+
+
+/* ===================== the instruments of a word (P43) =================== */
+
+typedef struct {
+    const rz_lexicon *x;
+    const uint32_t   *pos;           /* where the word sounds */
+    uint32_t          nocc;
+    const float      *timbre;        /* nocc x dim: the company before and after */
+    uint32_t          dim;
+    uint32_t          half;          /* seq positions below it are the half it splits on */
+    uint8_t          *label;         /* nocc: the instrument, while splitting */
+    uint32_t          nlabel;
+    uint64_t          rng;
+} band;
+
+static double dotf(const float *a, const double *b, uint32_t n)
+{
+    double s = 0;
+    for (uint32_t i = 0; i < n; i++) s += a[i] * b[i];
+    return s;
+}
+
+static uint64_t band_rand(band *bd)
+{
+    bd->rng ^= bd->rng << 13; bd->rng ^= bd->rng >> 7; bd->rng ^= bd->rng << 17;
+    return bd->rng;
+}
+
+/* split `set` in two where the timbres part, and again inside each half,
+   only while the held half says the split tells more than chance */
+/* the commonest neighbour at offset d among the occurrences of one side of a
+   split, over the half it splits on */
+static int32_t commonest_beside(band *bd, const uint32_t *set, uint32_t n,
+                                const uint8_t *side, uint8_t which, int d, uint32_t *count)
+{
+    int32_t best = -1;
+    uint32_t bestc = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        if (side[k] != which || bd->pos[set[k]] >= bd->half) continue;
+        int32_t nb = at(bd->x, bd->pos[set[k]], d);
+        if (nb < 0) continue;
+        uint32_t c = 0;
+        for (uint32_t j = 0; j < n; j++)
+            if (side[j] == which && bd->pos[set[j]] < bd->half && at(bd->x, bd->pos[set[j]], d) == nb) c++;
+        if (c > bestc) { bestc = c; best = nb; }
+    }
+    *count = bestc;
+    return best;
+}
+
+static int alike(band *bd, int32_t a, int32_t b)
+{
+    if (a < 0 || b < 0) return a == b;
+    if (a == b) return 1;
+    int32_t sil[64];
+    uint32_t k = rz_lexicon_silhouette((rz_lexicon *)bd->x, a, sil, 64);
+    for (uint32_t i = 0; i < k; i++) if (sil[i] == b) return 1;
+    k = rz_lexicon_silhouette((rz_lexicon *)bd->x, b, sil, 64);
+    for (uint32_t i = 0; i < k; i++) if (sil[i] == a) return 1;
+    return 0;
+}
+
+static int same_instrument(band *bd, const uint32_t *set, uint32_t n, const uint8_t *side)
+{
+    for (int d = -1; d <= 1; d += 2) {
+        uint32_t ca, cb;
+        int32_t a = commonest_beside(bd, set, n, side, 0, d, &ca);
+        int32_t b = commonest_beside(bd, set, n, side, 1, d, &cb);
+        if (!alike(bd, a, b)) return 0;
+    }
+    return 1;
+}
+
+static void split_band(band *bd, uint32_t *set, uint32_t n, uint32_t cap)
+{
+    uint32_t nl = 0, nh = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        if (bd->pos[set[k]] < bd->half) nl++;
+        else nh++;
+    }
+    uint8_t mine = bd->label[set[0]];
+    if (nl < 4 || nh < 4 || bd->nlabel >= cap) return;
+
+    uint32_t D = bd->dim;
+    double *mean = calloc(D, sizeof *mean), *ca = calloc(D, sizeof *ca), *cb = calloc(D, sizeof *cb);
+    uint8_t *side = malloc(n), *shuffled = malloc(n);
+    uint32_t *held = malloc(n * sizeof *held);
+    uint8_t *hside = malloc(n);
+    if (!mean || !ca || !cb || !side || !shuffled || !held || !hside) goto done;
+
+    /* two-means on the half it splits on: start at the occurrence farthest
+       from the mean, and the one farthest from that */
+    for (uint32_t k = 0; k < n; k++) if (bd->pos[set[k]] < bd->half)
+        for (uint32_t i = 0; i < D; i++) mean[i] += bd->timbre[(size_t)set[k] * D + i];
+    uint32_t fa = set[0], fb = set[0];
+    double lo = HUGE_VAL;
+    for (uint32_t k = 0; k < n; k++) if (bd->pos[set[k]] < bd->half) {
+        double v = dotf(bd->timbre + (size_t)set[k] * D, mean, D);
+        if (v < lo) { lo = v; fa = set[k]; }
+    }
+    for (uint32_t i = 0; i < D; i++) ca[i] = bd->timbre[(size_t)fa * D + i];
+    lo = HUGE_VAL;
+    for (uint32_t k = 0; k < n; k++) if (bd->pos[set[k]] < bd->half) {
+        double v = dotf(bd->timbre + (size_t)set[k] * D, ca, D);
+        if (v < lo) { lo = v; fb = set[k]; }
+    }
+    for (uint32_t i = 0; i < D; i++) cb[i] = bd->timbre[(size_t)fb * D + i];
+    for (int it = 0; it < 30; it++) {
+        int moved = 0;
+        for (uint32_t k = 0; k < n; k++) {
+            const float *v = bd->timbre + (size_t)set[k] * D;
+            uint8_t sd = dotf(v, cb, D) > dotf(v, ca, D);
+            if (it == 0 || sd != side[k]) moved = 1;
+            side[k] = sd;
+        }
+        if (!moved) break;
+        memset(ca, 0, D * sizeof *ca);
+        memset(cb, 0, D * sizeof *cb);
+        for (uint32_t k = 0; k < n; k++) if (bd->pos[set[k]] < bd->half) {
+            double *cc = side[k] ? cb : ca;
+            for (uint32_t i = 0; i < D; i++) cc[i] += bd->timbre[(size_t)set[k] * D + i];
+        }
+        /* unit centres: a raw sum is longer for the larger group, and every
+           occurrence then fell to it -- the first run split nothing at all */
+        unit(ca, D);
+        unit(cb, D);
+    }
+
+    /* The judge, on the half it did not split on. An instrument is a timbre,
+       not a neighbour: the first judge asked whether the split told which
+       exact word stood alongside, and went on splitting "rex is" from "tom
+       is" -- two players, one instrument. Now: do the two centres explain the
+       held timbres better than the single centre, by more than eight splits of
+       the same half drawn at random and judged the same way? Rex and Tom keep
+       almost the same company, so splitting them explains no more than chance. */
+    uint32_t ones = 0;
+    nh = 0;
+    for (uint32_t k = 0; k < n; k++)
+        if (bd->pos[set[k]] >= bd->half) { held[nh] = set[k]; hside[nh] = side[k]; ones += side[k]; nh++; }
+    if (ones < 2 || nh - ones < 2) goto done;
+
+    /* Another instrument, or the same one with another player? Explained
+       timbre could not tell: every "rex" keeps exactly the same company, so a
+       group of rexes is perfectly tight and always "explains" something chance
+       does not. The silhouette can (P36): on each side of the word, the
+       commonest neighbour of one group either is, or is in the silhouette of,
+       the commonest neighbour of the other -- rex and tom, "a" and "the" --
+       or it is not ("what" beside "rex"). Only a change of kind on some side
+       is a new instrument. */
+    if (same_instrument(bd, set, n, side)) goto done;
+    {
+        double *parent = calloc(D, sizeof *parent), *ra = calloc(D, sizeof *ra), *rb = calloc(D, sizeof *rb);
+        uint32_t *learn = malloc(n * sizeof *learn);
+        uint8_t *rside = malloc(n);
+        int beats = parent && ra && rb && learn && rside;
+        uint32_t nl2 = 0;
+        if (beats) {
+            for (uint32_t k = 0; k < n; k++) if (bd->pos[set[k]] < bd->half) {
+                learn[nl2++] = set[k];
+                for (uint32_t i = 0; i < D; i++) parent[i] += bd->timbre[(size_t)set[k] * D + i];
+            }
+            unit(parent, D);
+        }
+        double real = 0;
+        for (uint32_t k = 0; beats && k < nh; k++) {
+            const float *v = bd->timbre + (size_t)held[k] * D;
+            double best = dotf(v, ca, D), other = dotf(v, cb, D);
+            if (other > best) best = other;
+            real += best - dotf(v, parent, D);
+        }
+        for (int r = 0; r < 8 && beats; r++) {
+            uint32_t on = 0;
+            for (uint32_t k = 0; k < nl2; k++) { rside[k] = (uint8_t)(band_rand(bd) & 1u); on += rside[k]; }
+            if (on == 0 || on == nl2) { r--; continue; }
+            memset(ra, 0, D * sizeof *ra);
+            memset(rb, 0, D * sizeof *rb);
+            for (uint32_t k = 0; k < nl2; k++) {
+                double *cc = rside[k] ? rb : ra;
+                for (uint32_t i = 0; i < D; i++) cc[i] += bd->timbre[(size_t)learn[k] * D + i];
+            }
+            unit(ra, D);
+            unit(rb, D);
+            double rnd = 0;
+            for (uint32_t k = 0; k < nh; k++) {
+                const float *v = bd->timbre + (size_t)held[k] * D;
+                double best = dotf(v, ra, D), other = dotf(v, rb, D);
+                if (other > best) best = other;
+                rnd += best - dotf(v, parent, D);
+            }
+            if (rnd >= real) beats = 0;
+        }
+        free(parent); free(ra); free(rb); free(learn); free(rside);
+        if (!beats) goto done;
+    }
+
+    /* it pays: the second side becomes an instrument of its own, and each side
+       is listened to again */
+    uint8_t other = (uint8_t)bd->nlabel++;
+    uint32_t na = 0, nb2 = 0;
+    for (uint32_t k = 0; k < n; k++) {
+        if (side[k]) bd->label[set[k]] = other;
+        else bd->label[set[k]] = mine;
+    }
+    for (uint32_t k = 0; k < n; k++) if (!side[k]) set[na++] = set[k];
+    uint32_t *rest = held;                     /* reuse: the other side's members */
+    for (uint32_t k = 0; k < bd->nocc && nb2 < n; k++) if (bd->label[k] == other) rest[nb2++] = k;
+    free(mean); free(ca); free(cb); free(side); free(shuffled); free(hside);
+    split_band(bd, set, na, cap);
+    split_band(bd, rest, nb2, cap);
+    free(rest);
+    return;
+done:
+    free(mean); free(ca); free(cb); free(side); free(shuffled); free(held); free(hside);
+}
+
+uint32_t rz_word_instruments(rz_lexicon *x, int32_t word, rz_instrument *out, uint32_t cap,
+                             uint8_t *which, uint32_t which_cap)
+{
+    if (word < 0 || (uint32_t)word >= x->n || cap == 0 || !x->nseq) return 0;
+    uint32_t nocc = 0, k = 0;
+    for (uint32_t i = 0; i < x->nseq; i++) nocc += x->seq[i] == word;
+    if (nocc == 0) return 0;
+
+    company c;
+    memset(&c, 0, sizeof c);
+    if (!company_build(x, &c)) { company_free(&c); return 0; }
+    uint32_t W = 2 * c.F, D = 2 * W;
+    uint32_t *pos = malloc(nocc * sizeof *pos), *set = malloc(nocc * sizeof *set);
+    float *timbre = calloc((size_t)nocc * D, sizeof *timbre);
+    int32_t *slot = malloc((size_t)x->n * sizeof *slot);
+    double *row = malloc(W * sizeof *row);
+    double **cache = calloc(x->n, sizeof *cache);
+    uint8_t *label = calloc(nocc, 1);
+    uint32_t *cnt0 = calloc(x->n, sizeof *cnt0), *cnt1 = calloc(x->n, sizeof *cnt1), *cnt2 = calloc(x->n, sizeof *cnt2);
+    if (!pos || !set || !timbre || !slot || !row || !cache || !label || !cnt0 || !cnt1 || !cnt2) goto out;
+
+    nocc = 0;
+    for (uint32_t i = 0; i < x->nseq; i++) if (x->seq[i] == word) pos[nocc++] = i;
+
+    /* the timbre of every occurrence: the company of the word before it and
+       of the word after it, each as a unit vector */
+    for (uint32_t o = 0; o < nocc; o++) {
+        for (int d = 0; d < 2; d++) {
+            int32_t nb = at(x, pos[o], d ? 1 : -1);
+            if (nb < 0) continue;
+            if (!cache[nb]) {
+                cache[nb] = calloc(W, sizeof *cache[nb]);
+                if (!cache[nb]) continue;
+                company_add(x, &c, (uint32_t)nb, cache[nb]);
+                unit(cache[nb], W);
+            }
+            for (uint32_t i = 0; i < W; i++) timbre[(size_t)o * D + (uint32_t)d * W + i] = (float)cache[nb][i];
+        }
+        set[o] = o;
+    }
+
+    band bd = { x, pos, nocc, timbre, D, x->nseq / 2, label, 1, 0x9E3779B97F4A7C15ull };
+    split_band(&bd, set, nocc, cap < 256 ? cap : 256);
+
+    /* study each track apart: what sounds before and after it, more than
+       around the word as a whole */
+    for (uint32_t g = 0; g < bd.nlabel && k < cap; g++) {
+        rz_instrument *in = &out[k++];
+        memset(in, 0, sizeof *in);
+        for (int b = 0; b < 6; b++) in->before[b] = in->after[b] = -1;
+        uint32_t first = UINT32_MAX;
+        for (uint32_t o = 0; o < nocc; o++) if (label[o] == g) { in->uses++; if (first == UINT32_MAX) first = o; }
+        in->example = first == UINT32_MAX ? 0 : pos[first];
+        for (int d = 0; d < 2; d++) {
+            int dir = d ? 1 : -1;
+            for (uint32_t o = 0; o < nocc; o++) {
+                int32_t nb = at(x, pos[o], dir);
+                if (nb < 0) continue;
+                cnt2[nb]++;
+                if (label[o] == g) cnt0[nb]++;
+            }
+            int32_t *list = d ? in->after : in->before;
+            for (int r = 0; r < 6; r++) {
+                int32_t best = -1;
+                double bv = 0;
+                for (uint32_t o = 0; o < nocc; o++) {
+                    int32_t nb = at(x, pos[o], dir);
+                    if (nb < 0 || cnt0[nb] < 2) continue;
+                    double lift = ((double)cnt0[nb] / in->uses) / ((double)cnt2[nb] / nocc);
+                    double v = log(lift + 1.0) * log((double)cnt0[nb]);
+                    if (v > bv) { bv = v; best = nb; }
+                }
+                if (best < 0) break;
+                list[r] = best;
+                cnt0[best] = 0;
+            }
+            for (uint32_t o = 0; o < nocc; o++) {
+                int32_t nb = at(x, pos[o], dir);
+                if (nb >= 0) cnt0[nb] = cnt2[nb] = 0;
+            }
+        }
+    }
+    if (which)
+        for (uint32_t o = 0; o < nocc && o < which_cap; o++) which[o] = label[o];
+out:
+    if (cache) for (uint32_t i = 0; i < x->n; i++) free(cache[i]);
+    free(cache); free(pos); free(set); free(timbre); free(slot); free(row); free(label);
+    free(cnt0); free(cnt1); free(cnt2);
+    company_free(&c);
+    return k;
+}

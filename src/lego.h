@@ -345,6 +345,29 @@ uint32_t rz_melody_compare(const rz_binding *fresh, uint32_t nf,
 int      rz_melody_save(const rz_note *notes, uint32_t n, const char *path);
 int      rz_melody_load(rz_note *notes, uint32_t cap, uint32_t *n, const char *path);
 
+/* --- the instruments of a word (P43) --------------------------------------
+ *
+ * "es" is not one instrument: it defines ("Jesús es el…"), points ("Este es
+ * mi…"), restates (", es decir"), compares ("que es más…"). The song is one --
+ * the whole text -- and the instruments are heard in the mix: every time the
+ * word sounds, what sounds just before and just after it is its timbre (the
+ * company of those neighbours). The mix is split in two where the timbres part,
+ * and split again, only while it pays: on the half of the text it did not split
+ * on, knowing the instrument must tell more about the neighbours than a split
+ * of the same sizes drawn at random -- every one of eight. A new occurrence
+ * goes to the instrument it resonates with most. Read-only. */
+#define RZ_INSTRUMENTS 16
+
+typedef struct {
+    uint32_t uses;                   /* occurrences that resonate with it */
+    int32_t  before[6], after[6];    /* what sounds around it more than around the word */
+    uint32_t example;                /* a position in x->seq where it plays */
+} rz_instrument;
+
+/* *which, when given, gets the instrument of every occurrence, in order */
+uint32_t rz_word_instruments(rz_lexicon *x, int32_t word, rz_instrument *out, uint32_t cap,
+                             uint8_t *which, uint32_t which_cap);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

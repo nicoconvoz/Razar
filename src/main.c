@@ -1929,6 +1929,60 @@ static int cmd_melody(int argc, char **argv)
     return 0;
 }
 
+/* --- the instruments of a word (P43) -------------------------------------- */
+
+static int cmd_instruments(int argc, char **argv)
+{
+    if (argc < 1) { fprintf(stderr, "usage: razar instruments <word> [path]\n"); return 1; }
+    const char *word = argv[0];
+    const char *path = (argc > 1) ? argv[1] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);
+
+    int32_t w = lego_for_word(&x, word);
+    rz_instrument in[RZ_INSTRUMENTS];
+    uint32_t k = w >= 0 ? rz_word_instruments(&x, w, in, RZ_INSTRUMENTS, NULL, 0) : 0;
+    char s1[80];
+    say_lego(&x, w, s1, sizeof s1);
+    printf("%s sounds %u times in %s; it plays %u instrument%s\n\n", s1, w >= 0 ? x.lego[w].count : 0,
+           path, k, k == 1 ? "" : "s");
+    for (uint32_t i = 0; i < k; i++) {
+        printf("  instrument %u: %u uses\n    before:", i + 1, in[i].uses);
+        for (int b = 0; b < 6 && in[i].before[b] >= 0; b++) { say_lego(&x, in[i].before[b], s1, sizeof s1); printf(" %s", s1); }
+        printf("\n    after: ");
+        for (int b = 0; b < 6 && in[i].after[b] >= 0; b++) { say_lego(&x, in[i].after[b], s1, sizeof s1); printf(" %s", s1); }
+        printf("\n    e.g.  ");
+        for (int d = -3; d <= 3; d++) {
+            int64_t j = (int64_t)in[i].example + d;
+            if (j < 0 || (uint64_t)j >= x.nseq || x.seq[j] < 0) continue;
+            const rz_lego *g = &x.lego[x.seq[j]];
+            printf("%s%.*s%s ", d == 0 ? "[" : "", g->len, g->s, d == 0 ? "]" : "");
+        }
+        printf("\n\n");
+    }
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1965,6 +2019,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "roles"))        return cmd_roles(argc - 2, argv + 2);
     if (!strcmp(argv[1], "weave"))        return cmd_weave(argc - 2, argv + 2);
     if (!strcmp(argv[1], "melody"))       return cmd_melody(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "instruments"))  return cmd_instruments(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
