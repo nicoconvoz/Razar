@@ -70,6 +70,30 @@ From "hijo", 64 bindings in five rounds:
 Types: **hija, padre, madre, hermano, hermana, esposa, marido, amigo, rey** are
 in; **perro, Jesús, dijo, y** are out. 955 types in all.
 
+## The melody carried to another text (2026-10-11)
+
+> Take another text and try it with the learned melody. — the author
+
+The other Spanish text on board: the technical documentation of the chess
+organism (`feed/DOCUMENTACION_TECNICA.md`, 6,820 words; another subject, another
+register). The melody woven on the NT from "hijo" was carried by spelling —
+**no seed, no weaving again** — and read by a mind that had read only the new
+text. Probe: `melody.c` (scratchpad).
+
+- 22 of the 64 bindings occur in the new text.
+- Types it hears there: **rey, dama, piezas, valores, función, pesos, motor,
+  evaluación, derechos** — the nouns that take an owner in a text about chess
+  ("valores de pieza", "función de valor"), with nothing about chess taught.
+- **The bar.** Types found in the first half; in the second half, not yet read,
+  they take an owner 48% of the time against 6% for every other word: **8.25×**.
+  Eight blind melodies — every binding swapped for an NT word of the nearest
+  frequency, same side — reach **5.26×** on average.
+
+The learned melody beats the blind ones by 1.6×, on only 25 occurrences in the
+second half. It carries; the text is too short to say by how much. A blind
+melody scores high too because any word predicts its own company from one half
+to the other — the bar is not zero, and the margin over it is what counts.
+
 ## Lessons that came from getting it wrong
 
 1. **A word after the type always "replaces" "de"** — it is standing in de's own
@@ -90,6 +114,8 @@ in; **perro, Jesús, dijo, y** are out. 955 types in all.
 - **D87** — the cap of 64 is reached in round 5 and "hermanos" stays out: "sus"
   arrives in the last round. Whether the loop should stop by itself (nothing new
   pays) rather than at a cap.
+- **D89** — the melody carries to a new text at 1.6× the blind bar, on 25 cases.
+  A longer second text in Spanish is needed to say how much; the author's choice.
 - **D88** — this weaves one structure (type + owner). The same loop, started from
   any seed and any binding, is how any other structure would be woven; nothing in
   it is about kinship. Not yet run on other seeds.

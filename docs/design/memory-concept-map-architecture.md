@@ -404,7 +404,7 @@ they still hold; a status changed because code now answers it says so.
 | D73–D77 | [behaviours.md](behaviours.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
-| D86–D88 | [weaving.md](weaving.md) |
+| D86–D89 | [weaving.md](weaving.md) |
 
 ### Pieces built after this document
 
