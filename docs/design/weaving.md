@@ -94,6 +94,26 @@ second half. It carries; the text is too short to say by how much. A blind
 melody scores high too because any word predicts its own company from one half
 to the other — the bar is not zero, and the margin over it is what counts.
 
+### And to a novel
+
+The author then put a longer text on board: Horacio Quiroga, *Historia de un amor
+turbio* (`descargas/`, 23,658 words) — a Buenos Aires novel, nothing like the NT.
+The same melody, carried the same way:
+
+| | Cases (second half) | Types bound | Other words | Lift |
+| --- | --- | --- | --- | --- |
+| melody woven on the NT | 711 | 31% | 8% | **4.14×** |
+| eight blind melodies | | | | 1.96× |
+
+**2.1× the blind bar, on 711 cases.** 44 of the 64 bindings occur in the novel.
+The types it hears there are the owned things of a love story: amor, boca, casa,
+novia, cara, hermana, mirada, brazo, hija, padre, hijo, corazón, cuello, beso,
+amigo — "su boca", "su hermana", "su padre". The structure learned on scripture
+recognises the owned things of a novel it never read.
+
+Noise that came along: `.` and `—dijo` (the dash of dialogue is not yet found as
+a mark, D71), and "después", "dejar".
+
 ## Lessons that came from getting it wrong
 
 1. **A word after the type always "replaces" "de"** — it is standing in de's own
@@ -114,8 +134,10 @@ to the other — the bar is not zero, and the margin over it is what counts.
 - **D87** — the cap of 64 is reached in round 5 and "hermanos" stays out: "sus"
   arrives in the last round. Whether the loop should stop by itself (nothing new
   pays) rather than at a cap.
-- **D89** — the melody carries to a new text at 1.6× the blind bar, on 25 cases.
-  A longer second text in Spanish is needed to say how much; the author's choice.
+- **D89** — *measured:* the melody carries — 1.6× the blind bar on the chess
+  documentation (25 cases), **2.1× on Quiroga's novel (711 cases)**. Still open:
+  whether weaving again on the new text, starting from the carried melody, adds
+  the bindings that text has and the NT does not.
 - **D88** — this weaves one structure (type + owner). The same loop, started from
   any seed and any binding, is how any other structure would be woven; nothing in
   it is about kinship. Not yet run on other seeds.
