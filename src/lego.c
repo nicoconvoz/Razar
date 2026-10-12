@@ -1508,3 +1508,127 @@ out:
     free(tot); free(after); free(bound); free(inslot); free(vals); free(who); free(fill);
     return ids;
 }
+
+
+/* ===================== weaving (P38) ===================================== */
+
+static int is_bound(const rz_lexicon *x, uint32_t i, const rz_binding *b, uint32_t nb, int side)
+{
+    for (uint32_t k = 0; k < nb; k++)
+        if (b[k].side == side && at(x, i, b[k].side) == b[k].word) return 1;
+    return 0;
+}
+
+uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t cap,
+                          uint8_t *is_type)
+{
+    if (cap == 0) return 0;
+    memset(is_type, 0, x->n);
+    uint8_t *ident = calloc(x->n, 1);
+    int32_t first = -1;
+    if (!ident) return 0;
+    rz_lexicon_roles(x, seed, &first, is_type, ident);
+    free(ident);
+    if (first < 0) return 0;
+
+    uint32_t nb = 0;
+    out[nb++] = (rz_binding){ 1, first, 0.0, 0 };
+
+    uint32_t *tot = calloc(x->n, sizeof *tot), *c = calloc(x->n, sizeof *c);
+    double *vals = malloc((size_t)x->n * 2 * sizeof *vals);
+    double *str = malloc((size_t)x->n * 2 * sizeof *str);
+    int32_t *who = malloc((size_t)x->n * 2 * sizeof *who);
+    int8_t *sd = malloc((size_t)x->n * 2);
+    double *with = calloc((size_t)x->n * 2, sizeof *with), *all = calloc((size_t)x->n * 2, sizeof *all);
+    double *kept = calloc((size_t)x->n * 2, sizeof *kept);
+    if (!tot || !c || !vals || !str || !who || !sd || !with || !all || !kept) goto out;
+    for (uint32_t i = 0; i < x->nseq; i++) if (x->seq[i] >= 0) tot[x->seq[i]]++;
+
+    for (uint8_t round = 1; round < 255; round++) {
+        /* types: for every binding, the tall side of the share of a word's
+           life it spends bound that way, seen bound twice at least */
+        memset(is_type, 0, x->n);
+        for (uint32_t b = 0; b < nb; b++) {
+            memset(c, 0, (size_t)x->n * sizeof *c);
+            for (uint32_t i = 0; i < x->nseq; i++)
+                if (x->seq[i] >= 0 && at(x, i, out[b].side) == out[b].word) c[x->seq[i]]++;
+            uint32_t nv = 0;
+            for (uint32_t w = 0; w < x->n; w++)
+                if (tot[w] >= 2 && (int32_t)w != out[b].word) { vals[nv] = (double)c[w] / tot[w]; who[nv++] = (int32_t)w; }
+            double cut = otsu_list(vals, nv);
+            if (cut == -HUGE_VAL) continue;
+            for (uint32_t i = 0; i < nv; i++)
+                if (vals[i] > cut && c[who[i]] >= 2) is_type[who[i]] = 1;
+        }
+        if (nb == cap) break;
+
+        /* candidates on each side of a type, and how often the binding on the
+           OTHER side survives them: a word after the type always pushes "de"
+           out of its own place, which proves nothing */
+        memset(with, 0, (size_t)x->n * 2 * sizeof *with);
+        memset(all, 0, (size_t)x->n * 2 * sizeof *all);
+        memset(kept, 0, (size_t)x->n * 2 * sizeof *kept);
+        double nw = 0, na = 0, side_n[2] = {0, 0}, side_b[2] = {0, 0};
+        int has[2] = {0, 0};
+        for (uint32_t k = 0; k < nb; k++) has[out[k].side > 0] = 1;
+        for (uint32_t i = 0; i < x->nseq; i++) {
+            int32_t a = x->seq[i];
+            if (a < 0) continue;
+            na++;
+            for (int s2 = 0; s2 < 2; s2++) {
+                int32_t p = at(x, i, s2 ? 1 : -1);
+                if (p >= 0) all[(size_t)p * 2 + (uint32_t)s2]++;
+            }
+            if (!is_type[a]) continue;
+            nw++;
+            int bnd[2] = { is_bound(x, i, out, nb, -1), is_bound(x, i, out, nb, 1) };
+            for (int s2 = 0; s2 < 2; s2++) if (has[s2]) { side_n[s2]++; side_b[s2] += bnd[s2]; }
+            for (int s2 = 0; s2 < 2; s2++) {
+                int32_t p = at(x, i, s2 ? 1 : -1);
+                if (p < 0 || !has[!s2]) continue;
+                with[(size_t)p * 2 + (uint32_t)s2]++;
+                kept[(size_t)p * 2 + (uint32_t)s2] += bnd[!s2];
+            }
+        }
+
+        uint32_t nc = 0;
+        for (uint32_t w = 0; w < x->n; w++)
+            for (int s2 = 0; s2 < 2; s2++) {
+                double cnt = with[(size_t)w * 2 + (uint32_t)s2];
+                if (cnt < 2 || !side_n[!s2] || side_b[!s2] <= 0) continue;
+                double lift = (cnt / nw) / (all[(size_t)w * 2 + (uint32_t)s2] / na);
+                if (lift <= 1.0) continue;
+                int known = 0;
+                for (uint32_t k = 0; k < nb; k++) known |= out[k].word == (int32_t)w && out[k].side == (s2 ? 1 : -1);
+                if (known) continue;
+                /* one imagined case at the base rate: three cases cannot say 0% */
+                double base = side_b[!s2] / side_n[!s2];
+                double r = (kept[(size_t)w * 2 + (uint32_t)s2] + base) / (cnt + 1.0) / base;
+                if (r >= 1.0) continue;          /* replacing means making it rarer */
+                vals[nc] = r;
+                str[nc] = log(lift) * log(cnt);
+                who[nc] = (int32_t)w;
+                sd[nc++] = (int8_t)(s2 ? 1 : -1);
+            }
+        /* the low side of replacement, and among those the tall side of strength */
+        double rcut = otsu_list(vals, nc);
+        if (rcut == -HUGE_VAL) rcut = 1.0;
+        uint32_t ns = 0;
+        double *sv = malloc((nc + 1) * sizeof *sv);
+        if (!sv) break;
+        for (uint32_t i = 0; i < nc; i++) if (vals[i] < rcut) sv[ns++] = str[i];
+        double scut = otsu_list(sv, ns);
+        free(sv);
+        uint32_t added = 0;
+        for (uint32_t i = 0; i < nc && nb < cap; i++)
+            if (vals[i] < rcut && (scut == -HUGE_VAL || str[i] > scut)) {
+                out[nb++] = (rz_binding){ sd[i], who[i], vals[i], round };
+                added++;
+            }
+        if (!added) break;
+    }
+out:
+    free(tot); free(c); free(vals); free(str); free(who); free(sd);
+    free(with); free(all); free(kept);
+    return nb;
+}

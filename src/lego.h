@@ -240,6 +240,26 @@ uint32_t rz_lexicon_silhouette(rz_lexicon *x, int32_t word, int32_t *out, uint32
 uint32_t rz_lexicon_roles(rz_lexicon *x, int32_t seed, int32_t *binding,
                           uint8_t *is_type, uint8_t *is_identity);
 
+/* Weaving (P38). A concept is music: a structure that forms, deforms, and turns
+ * up again somewhere else (the author). "su madre" is "la madre de X" deformed:
+ * the owner moved in front, and so "de" is gone. A new binding is a word, on
+ * the other side of the type, that takes the owner's place -- with it there,
+ * the known bindings vanish ("su": 3% "de" after; "la": 59%, it replaces
+ * nothing). Bindings bring types, types bring bindings, round after round,
+ * until nothing new comes. Nothing names a possessive. */
+typedef struct {
+    int8_t  side;                    /* -1 before the type, +1 after it */
+    int32_t word;
+    double  replaces;                /* the other side's binding, relative to base: < 1 */
+    uint8_t round;                   /* when it was woven in */
+} rz_binding;
+
+#define RZ_BINDINGS 64
+
+/* Returns the number of bindings; is_type is x->n flags the caller owns. */
+uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t cap,
+                          uint8_t *is_type);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

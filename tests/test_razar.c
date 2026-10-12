@@ -3458,6 +3458,72 @@ TEST(a_type_asks_for_an_owner_and_an_identity_fills_the_slot)
     rz_lexicon_free(&x);
 }
 
+/* --- weaving (P38) -------------------------------------------------------- */
+
+/* sons and kings are said "of" someone, and sometimes "his"; mothers and
+   sisters are only ever "his" or "her" -- the owner in front. Dogs belong
+   to nobody. */
+static size_t woven_world(char *out, size_t cap, int clauses)
+{
+    static const char *of_type[] = { "son", "king", "friend" };
+    static const char *pos_type[] = { "mother", "sister", "wife" };
+    static const char *pos[] = { "his", "her", "my" };
+    static const char *name[] = { "rex", "tom", "lou" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen" };
+    static const char *verb[] = { "ran", "sat", "ate", "slept", "sang" };
+    size_t n = 0;
+    uint64_t r = 31;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 5];
+        const char *nm = name[(r >> 37) % 3], *no = noun[(r >> 41) % 4];
+        int w;
+        switch ((r >> 59) % 8) {
+        case 0: case 1: w = snprintf(out + n, cap - n, "the %s of %s %s %s ", of_type[(r >> 33) % 3], nm, v, j); break;
+        case 2:  w = snprintf(out + n, cap - n, "the %s of the %s %s %s ", of_type[(r >> 33) % 3], no, v, j); break;
+        case 3: w = snprintf(out + n, cap - n, "%s %s %s %s ", pos[(r >> 45) % 3], pos_type[(r >> 33) % 3], v, j); break;
+        /* the bridge: a son is sometimes "his son" too -- without it nothing
+           could show that "his mother" is the same music as "the son of" */
+        case 4: w = snprintf(out + n, cap - n, "%s %s %s %s ", pos[(r >> 45) % 3], of_type[(r >> 33) % 3], v, j); break;
+        case 5:  w = snprintf(out + n, cap - n, "the %s %s %s ", no, v, j); break;
+        case 6:  w = snprintf(out + n, cap - n, "a %s %s %s ", no, v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s %s ", nm, v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(the_owner_moved_in_front_is_the_same_music)
+{
+    static char t[140000];
+    size_t n = woven_world(t, sizeof t, 6000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    uint8_t *ty = calloc(x.n, 1);
+    rz_binding b[RZ_BINDINGS];
+    uint32_t nb = rz_lexicon_weave(&x, lego_of(&x, "son"), b, RZ_BINDINGS, ty);
+
+    int of = 0, his = 0, her = 0, the = 0;
+    for (uint32_t i = 0; i < nb; i++) {
+        if (b[i].word == lego_of(&x, "of") && b[i].side == 1) of = 1;
+        if (b[i].word == lego_of(&x, "his") && b[i].side == -1) his = 1;
+        if (b[i].word == lego_of(&x, "her") && b[i].side == -1) her = 1;
+        if (b[i].word == lego_of(&x, "the") || b[i].word == lego_of(&x, "a")) the = 1;
+    }
+    CHECK(of);                 /* the binding it started from */
+    CHECK(his && her);         /* woven in: they take the owner's place */
+    CHECK(!the);               /* an article replaces nothing */
+    CHECK(ty[lego_of(&x, "son")] && ty[lego_of(&x, "king")]);
+    CHECK(ty[lego_of(&x, "mother")] && ty[lego_of(&x, "sister")] && ty[lego_of(&x, "wife")]);
+    CHECK(!ty[lego_of(&x, "dog")] && !ty[lego_of(&x, "rex")] && !ty[lego_of(&x, "ran")]);
+    free(ty);
+    rz_lexicon_free(&x);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3590,6 +3656,7 @@ int main(void)
     RUN(asking_with_the_silhouette_gathers_more_cases);
     RUN(finding_concepts_learns_nothing);
     RUN(a_type_asks_for_an_owner_and_an_identity_fills_the_slot);
+    RUN(the_owner_moved_in_front_is_the_same_music);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

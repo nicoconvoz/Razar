@@ -404,6 +404,7 @@ they still hold; a status changed because code now answers it says so.
 | D73–D77 | [behaviours.md](behaviours.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
+| D86–D88 | [weaving.md](weaving.md) |
 
 ### Pieces built after this document
 
@@ -421,6 +422,7 @@ they still hold; a status changed because code now answers it says so.
 | P35 behaviours — exploration, imitation, repeat-or-let-go built | [behaviours.md](behaviours.md) |
 | P36 concepts | [concepts.md](concepts.md) |
 | P37 types and identities | [types-and-identities.md](types-and-identities.md) |
+| P38 weaving | [weaving.md](weaving.md) |
 
 ---
 

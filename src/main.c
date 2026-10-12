@@ -1593,6 +1593,64 @@ done:
     return 0;
 }
 
+/* --- weaving (P38) -------------------------------------------------------- */
+
+static int cmd_weave(int argc, char **argv)
+{
+    const char *seed_word = (argc > 0) ? argv[0] : "hijo";
+    const char *path = (argc > 1) ? argv[1] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);
+
+    int32_t seed = lego_for_word(&x, seed_word);
+    uint8_t *ty = calloc(x.n, 1);
+    rz_binding b[RZ_BINDINGS];
+    uint32_t nb = (seed >= 0 && ty) ? rz_lexicon_weave(&x, seed, b, RZ_BINDINGS, ty) : 0;
+    char w[80];
+    printf("woven from [%s]: %u bindings\n", seed_word, nb);
+    uint8_t last = 255;
+    for (uint32_t i = 0; i < nb; i++) {
+        if (b[i].round != last) { printf("\n  round %u:", b[i].round); last = b[i].round; }
+        say_lego(&x, b[i].word, w, sizeof w);
+        printf("  %s%s%s", b[i].side < 0 ? "" : "___ ", w, b[i].side < 0 ? " ___" : "");
+    }
+    uint32_t nt = 0;
+    for (uint32_t i = 0; i < x.n; i++) nt += ty[i];
+    printf("\n\n  types: %u\n  ", nt);
+    {
+        static const char *look[] = { "hijo", "hija", "padre", "madre", "hermano", "hermana",
+                                      "hermanos", "esposa", "marido", "amigo", "rey",
+                                      "perro", "Jesús", "dijo", "y", 0 };
+        for (int i = 0; look[i]; i++) {
+            int32_t k = lego_for_word(&x, look[i]);
+            if (k >= 0) printf(" %s%s", look[i], ty[k] ? "+" : "-");
+        }
+        printf("\n");
+    }
+    free(ty);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1627,6 +1685,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "play"))         return cmd_play(argc - 2, argv + 2);
     if (!strcmp(argv[1], "concepts"))     return cmd_concepts(argc - 2, argv + 2);
     if (!strcmp(argv[1], "roles"))        return cmd_roles(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "weave"))        return cmd_weave(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
