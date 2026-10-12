@@ -401,7 +401,7 @@ they still hold; a status changed because code now answers it says so.
 | D59–D61 | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
 | D62–D68 | [the-legos.md](the-legos.md) |
 | D69–D72 | [curiosity.md](curiosity.md) |
-| D73–D77 | [behaviours.md](behaviours.md) |
+| D73–D77, D95 | [behaviours.md](behaviours.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
 | D86–D94 | [weaving.md](weaving.md) |
@@ -419,7 +419,7 @@ they still hold; a status changed because code now answers it says so.
 | P31 rules, P32 the inner conversation | [rules-and-the-inner-voice.md](rules-and-the-inner-voice.md) |
 | P33 the legos: clean cuts, kinds, play | [the-legos.md](the-legos.md) |
 | P34 curiosity: words, marks, asking, why | [curiosity.md](curiosity.md) |
-| P35 behaviours — exploration, imitation, repeat-or-let-go built | [behaviours.md](behaviours.md) |
+| P35 behaviours, P42 where a question applies | [behaviours.md](behaviours.md) |
 | P36 concepts | [concepts.md](concepts.md) |
 | P37 types and identities | [types-and-identities.md](types-and-identities.md) |
 | P38 weaving, P39 the melody, P40 why it worked, P41 the specialised key | [weaving.md](weaving.md) |

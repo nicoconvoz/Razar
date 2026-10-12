@@ -160,6 +160,8 @@ typedef struct {
     uint32_t asked_n;                /* lexicon size it was sized for */
     uint64_t acts;
     double   sum, sumsq;             /* every pay seen, for the spread */
+    int32_t *plan[RZ_HABITS];        /* per way of asking: whom to ask, studied first */
+    uint32_t nplan[RZ_HABITS];
     uint64_t blind;                  /* nonzero: the bar -- chooses its way of
                                         asking at random, from this seed */
 } rz_player;
@@ -169,6 +171,17 @@ typedef struct {
     double   harmony, transfer, pay;
     uint8_t  new_form;               /* it tried a way of asking for the first time */
 } rz_act;
+
+/* Where a question applies (P42). Not chance, and not trying for ever: the
+ * question's own structure is studied first. The text already says to whom it
+ * can be put -- "is" stands after "rex" and "tom", never after "the" or "a".
+ * Those are the subjects it applies to, ranked by how much more they stand
+ * there than anywhere (D50). Then the melody is tried on something new: words
+ * that never stood before the question but keep the company those subjects
+ * keep (the silhouette, P36). Read-only. */
+uint32_t rz_form_subjects(rz_lexicon *x, int32_t relation, int32_t *out, uint32_t cap);
+uint32_t rz_form_reaches(rz_lexicon *x, const int32_t *studied, uint32_t ns,
+                         int32_t *out, uint32_t cap);
 
 void rz_player_init(rz_player *p);
 void rz_player_free(rz_player *p);

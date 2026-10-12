@@ -3234,26 +3234,29 @@ TEST(rex_is_the_dog_is_worth_asking)
 
 TEST(it_repeats_what_pays_and_lets_go_of_what_does_not)
 {
-    /* With a budget, not to exhaustion: a way of asking that pays gets asked
-       again, one that does not is tried less. Exhausting every question makes
-       every way end with the same count, and says nothing. */
+    /* With a budget: a way of asking that pays gets through more of its plan
+       than one that does not. Since P42 a way of asking has a plan -- whom the
+       text puts it to -- and is spent when the plan is; "repeating" is going
+       on with the plan first, not asking for ever. */
     little_life *l = live_a_little();
     rz_player p;
     rz_player_init(&p);
     rz_player_imitate(&p, lego_of(&l->x, "is"));
     rz_act a;
-    for (int i = 0; i < 200 && rz_player_act(&p, &l->x, l->later, l->nlater, &a); i++) {}
+    for (int i = 0; i < 60 && rz_player_act(&p, &l->x, l->later, l->nlater, &a); i++) {}
 
     const rz_habit *best = NULL, *worst = NULL;
+    uint32_t bi = 0, wi = 0;
     for (uint32_t i = 0; i < p.nhabit; i++) {
         const rz_habit *h = &p.habit[i];
-        if (h->tries < 2) continue;
+        if (h->tries < 1 || p.nplan[i] < 2) continue;
         double mean = h->paid / h->tries;
-        if (!best || mean > best->paid / best->tries) best = h;
-        if (!worst || mean < worst->paid / worst->tries) worst = h;
+        if (!best || mean > best->paid / best->tries) { best = h; bi = i; }
+        if (!worst || mean < worst->paid / worst->tries) { worst = h; wi = i; }
     }
     CHECK(best && worst && best != worst);
-    if (best && worst) CHECK(best->tries > worst->tries);
+    if (best && worst)
+        CHECK((double)best->tries / p.nplan[bi] > (double)worst->tries / p.nplan[wi]);
     CHECK(p.nhabit >= 3);
     rz_player_free(&p);
 }
@@ -3769,6 +3772,78 @@ TEST(fresh_eyes_find_the_key_the_melody_did_not_have)
     free(ty1); free(ty2);
 }
 
+/* --- where a question applies (P42) --------------------------------------- */
+
+/* rex and tom are said to be things; zed never is, but does what they do */
+static size_t naming_world(char *out, size_t cap, int clauses)
+{
+    static const char *det[] = { "the", "a", "my", "one", "his" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen", "fox" };
+    static const char *verb[] = { "ran", "sat", "ate", "slept", "sang" };
+    static const char *who[] = { "rex", "tom", "zed" };
+    size_t n = 0;
+    uint64_t r = 41;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *d = det[(r >> 26) % 5], *v = verb[(r >> 30) % 5];
+        const char *no = noun[(r >> 40) % 5];
+        int w;
+        switch ((r >> 60) % 4) {
+        case 0:  w = snprintf(out + n, cap - n, "%s is %s %s %s ", who[(r >> 33) % 2], d, no, j); break;
+        case 1:  w = snprintf(out + n, cap - n, "%s %s %s ", who[(r >> 35) % 3], v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s %s %s ", d, no, v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(a_question_is_put_to_whom_the_text_puts_it)
+{
+    rz_lexicon *x = read_book(naming_world);
+    int32_t st[32], re[32];
+    uint32_t ns = rz_form_subjects(x, lego_of(x, "is"), st, 32);
+    int rex = 0, tom = 0, art = 0;
+    for (uint32_t i = 0; i < ns; i++) {
+        rex |= st[i] == lego_of(x, "rex");
+        tom |= st[i] == lego_of(x, "tom");
+        art |= st[i] == lego_of(x, "the") || st[i] == lego_of(x, "a");
+    }
+    CHECK(rex && tom);
+    CHECK(!art);
+
+    /* and then tried on something new: zed never stood before "is" */
+    uint32_t nr = rz_form_reaches(x, st, ns, re, 32);
+    int zed = 0, wrong = 0;
+    for (uint32_t i = 0; i < nr; i++) {
+        zed |= re[i] == lego_of(x, "zed");
+        wrong |= re[i] == lego_of(x, "the") || re[i] == lego_of(x, "dog") || re[i] == lego_of(x, "rex");
+    }
+    CHECK(zed);
+    CHECK(!wrong);
+}
+
+TEST(the_question_it_was_shown_is_put_where_it_applies)
+{
+    /* P35's player let "is" go after asking "the" and "a". Studying the form
+       first, it asks rex and tom -- and keeps the question */
+    little_life *l = live_a_little();
+    rz_player p;
+    rz_player_init(&p);
+    rz_player_imitate(&p, lego_of(&l->x, "is"));
+    rz_act a;
+    CHECK(rz_player_act(&p, &l->x, l->later, l->nlater, &a));
+    CHECK(a.subject == lego_of(&l->x, "rex") || a.subject == lego_of(&l->x, "tom"));
+    CHECK(a.pay > 0);
+    for (int i = 0; i < 40 && rz_player_act(&p, &l->x, l->later, l->nlater, &a); i++) {}
+    const rz_habit *is = &p.habit[0];
+    CHECK_EQ_U(is->relation, lego_of(&l->x, "is"));
+    CHECK(is->tries >= 2);
+    CHECK(is->paid / is->tries > 0);
+    rz_player_free(&p);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3905,6 +3980,8 @@ int main(void)
     RUN(the_melody_travels_and_weaves_what_is_new);
     RUN(it_asks_why_a_note_held_in_one_book_and_not_in_another);
     RUN(fresh_eyes_find_the_key_the_melody_did_not_have);
+    RUN(a_question_is_put_to_whom_the_text_puts_it);
+    RUN(the_question_it_was_shown_is_put_where_it_applies);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

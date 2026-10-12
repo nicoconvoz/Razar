@@ -1015,6 +1015,7 @@ void rz_player_init(rz_player *p)
 void rz_player_free(rz_player *p)
 {
     free(p->asked);
+    for (uint32_t i = 0; i < RZ_HABITS; i++) free(p->plan[i]);
     memset(p, 0, sizeof *p);
 }
 
@@ -1030,16 +1031,26 @@ void rz_player_imitate(rz_player *p, int32_t relation)
     p->habit[p->nhabit++] = (rz_habit){ relation, 0, 0.0, 1 };
 }
 
-/* the commonest word, seen at least twice, not yet asked this way */
-static int32_t next_subject(const rz_player *p, const rz_lexicon *x, uint32_t h)
+/* Whom to ask next this way: the plan, studied first. By frequency it put
+   "is" to "the" and "a", got nothing, and let the question go before it ever
+   reached "rex" (P35). The plan is the question's own structure: the subjects
+   the text puts it to, then the words that keep their company. When the plan
+   is spent, this way of asking is spent -- it does not try for ever. */
+static int32_t next_subject(rz_player *p, rz_lexicon *x, uint32_t h)
 {
-    int32_t best = -1;
-    for (uint32_t i = 0; i < x->n; i++) {
-        if (p->asked[(size_t)h * x->n + i] || x->lego[i].count < 2) continue;
-        if ((int32_t)i == p->habit[h].relation) continue;
-        if (best < 0 || x->lego[i].count > x->lego[best].count) best = (int32_t)i;
+    if (!p->plan[h]) {
+        int32_t *plan = malloc(2 * 256 * sizeof *plan);
+        if (!plan) return -1;
+        uint32_t ns = rz_form_subjects(x, p->habit[h].relation, plan, 256);
+        uint32_t nr = rz_form_reaches(x, plan, ns, plan + ns, 256);
+        p->plan[h] = plan;
+        p->nplan[h] = ns + nr;
     }
-    return best;
+    for (uint32_t k = 0; k < p->nplan[h]; k++) {
+        int32_t s = p->plan[h][k];
+        if (s >= 0 && !p->asked[(size_t)h * x->n + (uint32_t)s] && s != p->habit[h].relation) return s;
+    }
+    return -1;
 }
 
 int rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
@@ -1049,6 +1060,7 @@ int rz_player_act(rz_player *p, rz_lexicon *x, const int32_t *later,
     if (x->n == 0) return 0;
     if (!p->asked || p->asked_n != x->n) {
         free(p->asked);
+        for (uint32_t i = 0; i < RZ_HABITS; i++) { free(p->plan[i]); p->plan[i] = NULL; p->nplan[i] = 0; }
         p->asked = calloc((size_t)RZ_HABITS * x->n, 1);
         p->asked_n = x->n;
         if (!p->asked) return 0;
@@ -1898,4 +1910,95 @@ uint32_t rz_melody_compare(const rz_binding *fresh, uint32_t nf,
         else if (nd < cap) diff[nd++] = fresh[i];
     }
     return nd;
+}
+
+
+/* ===================== where a question applies (P42) ==================== */
+
+uint32_t rz_form_subjects(rz_lexicon *x, int32_t relation, int32_t *out, uint32_t cap)
+{
+    if (relation < 0 || (uint32_t)relation >= x->n || !x->nseq) return 0;
+    uint32_t *before = calloc(x->n, sizeof *before), *tot = calloc(x->n, sizeof *tot);
+    double *score = malloc((size_t)x->n * sizeof *score);
+    uint32_t k = 0;
+    if (!before || !tot || !score) goto out;
+    double nrel = 0, all = 0;
+    for (uint32_t i = 0; i < x->nseq; i++) {
+        if (x->seq[i] < 0) continue;
+        tot[x->seq[i]]++;
+        all++;
+        if (x->seq[i] == relation && i > 0 && x->seq[i - 1] >= 0) { before[x->seq[i - 1]]++; nrel++; }
+    }
+    /* who stands in the subject's place far more than they stand anywhere,
+       said twice at least */
+    for (uint32_t w = 0; w < x->n; w++) {
+        score[w] = -1;
+        if (before[w] < 2 || (int32_t)w == relation) continue;
+        double lift = ((double)before[w] / nrel) / ((double)tot[w] / all);
+        if (lift <= 1.0) continue;
+        score[w] = log(lift) * log((double)before[w]);
+    }
+    while (k < cap) {
+        int32_t best = -1;
+        for (uint32_t w = 0; w < x->n; w++)
+            if (score[w] > 0 && (best < 0 || score[w] > score[best])) best = (int32_t)w;
+        if (best < 0) break;
+        out[k++] = best;
+        score[best] = -1;
+    }
+out:
+    free(before); free(tot); free(score);
+    return k;
+}
+
+uint32_t rz_form_reaches(rz_lexicon *x, const int32_t *studied, uint32_t ns,
+                         int32_t *out, uint32_t cap)
+{
+    if (ns == 0 || cap == 0) return 0;
+    company c;
+    memset(&c, 0, sizeof c);
+    if (!company_build(x, &c)) { company_free(&c); return 0; }
+    uint32_t W = 2 * c.F, k = 0, nv = 0;
+    double *row = calloc(W, sizeof *row);
+    double *score = malloc((size_t)x->n * sizeof *score);
+    double *vals = malloc((size_t)x->n * sizeof *vals);
+    int32_t *who = malloc((size_t)x->n * sizeof *who);
+    uint8_t *is_studied = calloc(x->n, 1);
+    if (!row || !score || !vals || !who || !is_studied) goto out;
+
+    /* the company the studied subjects keep, together */
+    for (uint32_t i = 0; i < ns; i++) {
+        if (studied[i] < 0 || (uint32_t)studied[i] >= x->n) continue;
+        is_studied[studied[i]] = 1;
+        company_add(x, &c, (uint32_t)studied[i], row);
+    }
+    unit(row, W);
+    company_dots(x, &c, row, 1, score);
+    for (uint32_t i = 0; i < x->n; i++)
+        if (!is_studied[i] && x->lego[i].count >= 2 && score[i] > 0) { vals[nv] = score[i]; who[nv++] = (int32_t)i; }
+
+    /* the same two cuts the silhouette uses: the split of all of them, then
+       the widest gap inside the tall side */
+    double first = otsu_list(vals, nv);
+    if (first == -HUGE_VAL) goto out;
+    uint32_t nt = 0;
+    for (uint32_t i = 0; i < nv; i++)
+        if (vals[i] > first) { vals[nt] = vals[i]; who[nt++] = who[i]; }
+    for (uint32_t i = 1; i < nt; i++) {
+        double v = vals[i];
+        int32_t w = who[i];
+        uint32_t j = i;
+        while (j > 0 && vals[j - 1] < v) { vals[j] = vals[j - 1]; who[j] = who[j - 1]; j--; }
+        vals[j] = v;
+        who[j] = w;
+    }
+    uint32_t keep = nt;
+    double widest = 0;
+    for (uint32_t i = 0; i + 1 < nt; i++)
+        if (vals[i] - vals[i + 1] > widest) { widest = vals[i] - vals[i + 1]; keep = i + 1; }
+    for (uint32_t i = 0; i < keep && k < cap; i++) out[k++] = who[i];
+out:
+    free(row); free(score); free(vals); free(who); free(is_studied);
+    company_free(&c);
+    return k;
 }

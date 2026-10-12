@@ -123,6 +123,53 @@ inside the noise.
   assumes the separator is the most uncertain atom** — true on the NT, not on a
   poor vocabulary.
 
+## P42 — Where a question applies (2026-10-11)
+
+> We cannot guess at random, nor try forever. We have to find the structure
+> and see when to apply it and when not — what separates "is" not going with
+> "the" or "a" but with "rex". That is the part of understanding. Sometimes, to
+> understand a structure, you have to study a little what you do not
+> understand; it may stay there a while until it finds the melody, and then
+> try the melody on something new. — the author, answering riddle 2 (D77)
+
+`rz_form_subjects`, `rz_form_reaches`; the player's plan.
+
+- **Study first.** The text already says to whom a question can be put: the
+  words that stand in its subject's place far more than anywhere (D50). "is"
+  stands after "rex" and "tom", never after "the" or "a".
+- **Then something new.** Words that never stood before the question but keep
+  the company those subjects keep — the silhouette's two cuts. "zed" never stood
+  before "is" and is reached; "the", "dog" and "rex" (already studied) are not.
+- **Not forever.** A way of asking has a plan — the studied, then the reached —
+  and is spent when the plan is. No falling back on frequency.
+
+In the little world the question it was shown is now put to rex first, pays,
+and is kept; P35's player had let it go after "the" and "a".
+
+### On the New Testament
+
+300 acts, shown "es", against the same player choosing its way of asking at
+random (the bar):
+
+| | Before (subjects by frequency) | After (subjects by plan) |
+| --- | --- | --- |
+| choosing | +0.0021 | **+0.0156** |
+| blind | +0.0037 | **+0.0248** |
+
+**Studying whom to ask multiplied the pay by about seven**, for the choosing
+player and the blind one alike — the questions now read: "cree en ?" → aquel,
+"vivirá por ?" → fe, "dice la ?" → Escritura.
+
+What did not change: **choosing a way of asking still does not beat choosing it
+at random.** The plan fixed *whom* to ask, not *how*. And "es" itself pays
+−0.028 on the NT: the words that stand before "es" in this text are "que",
+"lo" — what it studies for "es" here is not names.
+
+The old behaviour test ("a way that pays is asked more times") had to be
+rewritten: with plans, every way of asking is spent when its plan is, so the
+count of tries measures the plan, not a preference. What a preference shows is
+the order: the way that pays gets through more of its plan first.
+
 ## Proposed order, from the most basic
 
 1. **The act loop** with one act (ask) and the curiosity of P34 as the first
@@ -146,7 +193,10 @@ material.
 - **D76** — what to ask about. By frequency it asks about function words and
   learns nothing; the frontier of interest (P16) or its own surprises (P32)
   would point it at what it does not understand.
-- **D77** — a way of asking is judged on its first subjects. The shown form
+- **D77** — *answered by P42:* a way of asking is put first to whom the text
+  puts it. Still open, as **D95**: choosing *which* way to ask does not yet beat
+  chance; and what is studied for "es" on the NT is not names.
+- **D77 (as first written)** — a way of asking is judged on its first subjects. The shown form
   should keep a longer trust before being let go, or be judged per kind of
   subject (the silhouette, behaviour 4).
 - **D74** — what counts as an act, and whether reading a stretch it chose is an
