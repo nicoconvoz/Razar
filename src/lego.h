@@ -272,6 +272,7 @@ typedef struct {
     uint16_t      heard;             /* texts it sounded in */
     uint16_t      held;              /* texts where it held against the blind */
     float         role;              /* where it held: share of its uses next to a type */
+    char          where[24];         /* empty: general; else the text it is special to */
 } rz_note;
 
 #define RZ_MELODY 512
@@ -314,9 +315,20 @@ void   rz_melody_remember(rz_note *note, const rz_note_verdict *v);
 /* whether the note is trusted to weave with: it has held at least as often as
    it failed (a note with no history is trusted) */
 int    rz_melody_trusted(const rz_note *note);
-/* bindings of x -> notes, appended when new; returns the new count */
+/* bindings of x -> notes, appended when new; returns the new count. `where`
+   marks them as special to one text (NULL: general). */
 uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
-                         rz_note *notes, uint32_t n, uint32_t cap);
+                         rz_note *notes, uint32_t n, uint32_t cap, const char *where);
+
+/* A specialised key (P41). The text is first read with fresh eyes -- woven
+   from a seed, alone, with no melody -- and then compared with what the melody
+   carried in says of it. Where they coincide, the melody already knew; what the
+   fresh reading found and the melody did not is the difference, and it becomes
+   a key special to this text. Returns the number of fresh bindings that are new
+   (written to diff); *agree gets how many coincide. */
+uint32_t rz_melody_compare(const rz_binding *fresh, uint32_t nf,
+                           const rz_binding *carried, uint32_t nc,
+                           rz_binding *diff, uint32_t cap, uint32_t *agree);
 int      rz_melody_save(const rz_note *notes, uint32_t n, const char *path);
 int      rz_melody_load(rz_note *notes, uint32_t cap, uint32_t *n, const char *path);
 

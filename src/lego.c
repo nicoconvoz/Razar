@@ -1707,7 +1707,7 @@ uint32_t rz_melody_carry(const rz_lexicon *x, const rz_note *notes, uint32_t n,
 }
 
 uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
-                         rz_note *notes, uint32_t n, uint32_t cap)
+                         rz_note *notes, uint32_t n, uint32_t cap, const char *where)
 {
     for (uint32_t i = 0; i < nb && n < cap; i++) {
         if (b[i].word < 0 || (uint32_t)b[i].word >= x->n) continue;
@@ -1722,6 +1722,10 @@ uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
         note.side = b[i].side;
         note.len = g->len;
         memcpy(note.s, g->s, g->len);
+        if (where) {
+            strncpy(note.where, where, sizeof note.where - 1);
+            note.where[sizeof note.where - 1] = 0;
+        }
         notes[n++] = note;
     }
     return n;
@@ -1875,4 +1879,23 @@ void rz_melody_remember(rz_note *note, const rz_note_verdict *v)
 int rz_melody_trusted(const rz_note *note)
 {
     return note->heard == 0 || 2u * note->held >= note->heard;
+}
+
+
+/* ===================== the specialised key (P41) ========================= */
+
+uint32_t rz_melody_compare(const rz_binding *fresh, uint32_t nf,
+                           const rz_binding *carried, uint32_t nc,
+                           rz_binding *diff, uint32_t cap, uint32_t *agree)
+{
+    uint32_t nd = 0;
+    *agree = 0;
+    for (uint32_t i = 0; i < nf; i++) {
+        int known = 0;
+        for (uint32_t k = 0; k < nc && !known; k++)
+            known = carried[k].word == fresh[i].word && carried[k].side == fresh[i].side;
+        if (known) (*agree)++;
+        else if (nd < cap) diff[nd++] = fresh[i];
+    }
+    return nd;
 }

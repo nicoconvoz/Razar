@@ -228,6 +228,46 @@ Reading Quiroga a second time gave 10.78× against 3.20× — and **that number 
 not count**: the lessons of the first reading came from the same held half it was
 then measured on. It is recorded here only so that it is never quoted.
 
+## P41 — The specialised key (2026-10-11)
+
+> First let it go through the book without the melodies it already has; then
+> use the other melodies and see where they coincide and where the difference
+> is — and add that to the melody as a specialised key, a specialised melody.
+> — the author, answering riddle 8 (the key that opens one house and not
+> another)
+
+`rz_melody_compare`, the `where` of a note; wired into `razar melody`.
+
+1. **Fresh eyes:** the text is woven alone from the seed, with no melody.
+2. **The comparison:** the fresh bindings against the general melody carried in.
+   What coincides, the melody already knew.
+3. **The difference** is kept as notes **special to that text** (`where` = its
+   name). The general melody carries only notes that belong to no one text.
+
+### Two melodies, kept apart
+
+On Quiroga, after the New Testament:
+
+| | Lift | Blind | Margin |
+| --- | --- | --- | --- |
+| the general melody, carried in | 3.14× | 2.86× | 1.10× |
+| **its own melody, fresh eyes** | **5.22×** | 3.38× | **1.54×** |
+
+Read fresh from "hijo", Quiroga does **not** weave the same music: none of its 9
+bindings coincides with the melody. In this novel "hijo" is said *to* someone
+("hijo, …"), not "hijo **de**"; its first binding is the comma after it. That
+music of its own predicts better in the half not read than the music carried in.
+
+**Lesson from getting it wrong:** the first wiring pooled the two into one set
+of types, and the pool did worse than either (2.68× against 3.14× and 5.22×).
+They are different music; mixed, their types blur. A specialised melody is kept
+**apart** from the general one, as the author said — not patched into it.
+
+The keys special to Quiroga are noisy: `, . un el se con usted había después` —
+the structure around a word said to someone, read with punctuation and articles.
+
+The chess documentation has no "hijo": there was nothing to read it fresh from.
+
 ## Lessons that came from getting it wrong
 
 1. **A word after the type always "replaces" "de"** — it is standing in de's own
@@ -260,6 +300,12 @@ then measured on. It is recorded here only so that it is never quoted.
 - **D92** — "other work" is read as one number (share next to a type). What the
   other work *is* — "ha" before a participle in one text, before a noun in
   another — is the next question to ask, and the answer would be a new melody.
+- **D93** — fresh eyes need a seed, and the seed is still the person's word.
+  Where it is absent (the chess text) nothing can be read fresh. The general
+  melody could point at where to look — its strongest type in this text — and
+  the weaving from there be fresh.
+- **D94** — which special melody applies to a text never read: the one whose
+  notes hold there (P40's judge), so a new novel could borrow Quiroga's.
 - **D88** — this weaves one structure (type + owner). The same loop, started from
   any seed and any binding, is how any other structure would be woven; nothing in
   it is about kinship. Not yet run on other seeds.

@@ -1681,6 +1681,40 @@ static double melody_lift(rz_lexicon *x, const rz_binding *b, uint32_t nb,
     return r0 > 0 ? r1 / r0 : 0;
 }
 
+/* the same, for blind melodies: every binding swapped for the word of the
+   nearest frequency in this text, on the same side; the average of eight */
+static double blind_lift(rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                         const int32_t *later, uint32_t nlater)
+{
+    uint32_t *ord = malloc(x->n * sizeof *ord), *rank = malloc(x->n * sizeof *rank);
+    rz_binding *blind = malloc((nb + 1) * sizeof *blind);
+    double sum = 0;
+    int runs = 0;
+    if (ord && rank && blind && nb) {
+        for (uint32_t i = 0; i < x->n; i++) ord[i] = i;
+        for (uint32_t gap = x->n / 2; gap > 0; gap /= 2)
+            for (uint32_t i = gap; i < x->n; i++) {
+                uint32_t v = ord[i], j = i;
+                while (j >= gap && x->lego[ord[j - gap]].count < x->lego[v].count) { ord[j] = ord[j - gap]; j -= gap; }
+                ord[j] = v;
+            }
+        for (uint32_t i = 0; i < x->n; i++) rank[ord[i]] = i;
+        for (int j = 1; j <= 8; j++) {
+            for (uint32_t k = 0; k < nb; k++) {
+                int64_t r = (int64_t)rank[b[k].word] + ((j & 1) ? (j + 1) / 2 : -(j / 2));
+                if (r < 0) r = 0;
+                if (r >= (int64_t)x->n) r = (int64_t)x->n - 1;
+                blind[k] = (rz_binding){ b[k].side, (int32_t)ord[r], 0.0, 0 };
+            }
+            uint32_t bc;
+            sum += melody_lift(x, blind, nb, later, nlater, &bc);
+            runs++;
+        }
+    }
+    free(ord); free(rank); free(blind);
+    return runs ? sum / runs : 0.0;
+}
+
 static int cmd_melody(int argc, char **argv)
 {
     if (argc < 1) {
@@ -1719,7 +1753,17 @@ static int cmd_melody(int argc, char **argv)
 
     static rz_binding carried[RZ_MELODY], woven[RZ_MELODY];
     uint8_t *ty = calloc(x.n, 1);
-    uint32_t nc = 0, nw = 0;
+    uint32_t nc = 0, nw = 0, nf = 0;
+
+    /* the text's name: keys special to it carry it */
+    char where[24] = "";
+    {
+        const char *base = path;
+        for (const char *q = path; *q; q++) if (*q == '/' || *q == '\\') base = q + 1;
+        size_t bl = 0;
+        while (base[bl] && base[bl] != '.' && bl + 1 < sizeof where) { where[bl] = base[bl]; bl++; }
+        where[bl] = 0;
+    }
     if (nn == 0) {
         int32_t seed = lego_for_word(&x, seed_word);
         printf("no melody kept yet: weaving one from [%s]\n", seed_word);
@@ -1730,30 +1774,67 @@ static int cmd_melody(int argc, char **argv)
         static uint32_t from[RZ_MELODY];
         static rz_binding all_c[RZ_MELODY];
         uint32_t na = rz_melody_carry(&x, notes, nn, all_c, RZ_MELODY, from);
+        /* the general melody: trusted notes that belong to no one text */
         for (uint32_t k = 0; k < na; k++)
-            if (rz_melody_trusted(&notes[from[k]])) carried[nc++] = all_c[k];
+            if (rz_melody_trusted(&notes[from[k]]) && notes[from[k]].where[0] == 0) carried[nc++] = all_c[k];
         printf("the melody kept: %u notes, %u sound in this text, %u of those trusted\n", nn, na, nc);
-        nw = rz_lexicon_weave_from(&x, carried, nc, woven, RZ_MELODY, ty);
+
+        /* fresh eyes first: the text woven alone from the seed, with no melody;
+           then compared with what the melody says of it. What coincides the
+           melody already knew; what only the fresh reading found is the
+           difference -- a key special to this text (the author's answer to
+           riddle 8) */
+        int32_t seed = lego_for_word(&x, seed_word);
+        static rz_binding fresh[RZ_MELODY], diff[RZ_MELODY];
+        uint8_t *fty = calloc(x.n, 1);
+        nf = (seed >= 0 && fty) ? rz_lexicon_weave(&x, seed, fresh, RZ_MELODY, fty) : 0;
+        free(fty);
+        uint32_t agree = 0;
+        uint32_t nd = rz_melody_compare(fresh, nf, carried, nc, diff, RZ_MELODY, &agree);
+        printf("read with fresh eyes from [%s]: %u bindings; %u coincide with the melody, %u are new here\n",
+               seed_word, nf, agree, nd);
+        /* Two melodies, kept apart. Pooled into one set of types they were
+           worse than either (2.68x against 3.14x and 5.22x on Quiroga): they
+           are different music, and their types mixed. */
+        uint32_t cc, fc;
+        double lc = melody_lift(&x, carried, nc, later, nlater, &cc);
+        printf("  the general melody     %.2fx  (%u cases), blind %.2fx\n", lc, cc,
+               blind_lift(&x, carried, nc, later, nlater));
+        if (nf) {
+            double lf = melody_lift(&x, fresh, nf, later, nlater, &fc);
+            printf("  its own melody         %.2fx  (%u cases), blind %.2fx\n", lf, fc,
+                   blind_lift(&x, fresh, nf, later, nlater));
+        }
+        printf("  new keys, special to [%s]:", where);
+        char kw[80];
+        for (uint32_t k = 0; k < nd; k++) {
+            say_lego(&x, diff[k].word, kw, sizeof kw);
+            printf("  %s%s%s", diff[k].side < 0 ? "" : "___ ", kw, diff[k].side < 0 ? " ___" : "");
+        }
+        printf("%s\n", nd ? "" : " none");
+        for (uint32_t k = 0; k < nd && nw < RZ_MELODY; k++) woven[nw++] = diff[k];
     }
 
     char w[80];
-    printf("woven here: %u bindings, new:", nw);
+    if (!nn) printf("woven here: %u bindings, new:", nw);
     uint32_t fresh = 0;
-    for (uint32_t i = nc; i < nw; i++) {
+    for (uint32_t i = 0; i < nw && !nn; i++) {
         say_lego(&x, woven[i].word, w, sizeof w);
         printf("  %s%s%s", woven[i].side < 0 ? "" : "___ ", w, woven[i].side < 0 ? " ___" : "");
         fresh++;
     }
-    printf("%s\n\n", fresh ? "" : " none");
+    if (!nn) printf("%s\n\n", fresh ? "" : " none");
 
-    /* the bar: the second half, not read */
+    /* the bar: the second half, not read (a first melody only; the special
+       and general ones were measured above, each against its own blind) */
     uint32_t cs = 0;
+    if (!nn) {
     if (nc) {
         double lc = melody_lift(&x, carried, nc, later, nlater, &cs);
         printf("  carried melody alone   %.2fx  (%u cases)\n", lc, cs);
     }
     double lw = melody_lift(&x, woven, nw, later, nlater, &cs);
-    printf("  carried and woven on   %.2fx  (%u cases)\n", lw, cs);
+    printf("  %s %.2fx  (%u cases)\n", nn ? "melody + special keys " : "woven                 ", lw, cs);
     {
         /* blind melodies: every binding swapped for the word of the nearest
            frequency in this text, on the same side */
@@ -1786,8 +1867,11 @@ static int cmd_melody(int argc, char **argv)
         free(ord);
         free(rank);
     }
+    }
 
-    uint32_t grown = rz_melody_learn(&x, woven, nw, notes, nn, RZ_MELODY);
+    /* the keys found here are special to this text; the first melody is general */
+    uint32_t grown = rz_melody_learn(&x, woven, nw, notes, nn, RZ_MELODY, nn ? where : NULL);
+    (void)nf;
 
     /* Why: every note that sounds is judged here, against the rest of the
        melody and a blind word of its frequency. The verdicts are lessons for

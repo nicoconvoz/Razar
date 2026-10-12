@@ -3587,7 +3587,7 @@ TEST(the_melody_travels_and_weaves_what_is_new)
     rz_lexicon *one = read_book(woven_world);
     uint8_t *ty1 = calloc(one->n, 1);
     uint32_t nb = rz_lexicon_weave(one, lego_of(one, "son"), b, RZ_BINDINGS, ty1);
-    uint32_t nn = rz_melody_learn(one, b, nb, notes, 0, RZ_MELODY);
+    uint32_t nn = rz_melody_learn(one, b, nb, notes, 0, RZ_MELODY, NULL);
     CHECK(has_note(notes, nn, "his", -1) && has_note(notes, nn, "of", 1));
     CHECK(!has_note(notes, nn, "our", -1));
 
@@ -3598,7 +3598,7 @@ TEST(the_melody_travels_and_weaves_what_is_new)
     uint8_t *ty2 = calloc(two->n, 1);
     uint32_t nw = rz_lexicon_weave_from(two, c, nc, w, RZ_BINDINGS, ty2);
     CHECK(nw > nc);
-    uint32_t grown = rz_melody_learn(two, w, nw, notes, nn, RZ_MELODY);
+    uint32_t grown = rz_melody_learn(two, w, nw, notes, nn, RZ_MELODY, NULL);
     CHECK(grown > nn);
     CHECK(has_note(notes, grown, "our", -1));          /* the new note */
     CHECK(has_note(notes, grown, "his", -1));          /* nothing forgotten */
@@ -3684,7 +3684,7 @@ TEST(it_asks_why_a_note_held_in_one_book_and_not_in_another)
     read_halves(woven_world, &one, later, &nl);
     uint8_t *ty = calloc(one.n, 1);
     uint32_t nb = rz_lexicon_weave(&one, lego_of(&one, "son"), b, RZ_BINDINGS, ty);
-    uint32_t nn = rz_melody_learn(&one, b, nb, notes, 0, RZ_MELODY);
+    uint32_t nn = rz_melody_learn(&one, b, nb, notes, 0, RZ_MELODY, NULL);
     uint32_t nc = rz_melody_carry(&one, notes, nn, c, RZ_BINDINGS, note_of);
     rz_melody_judge(&one, c, nc, later, nl, v);
     uint32_t his = binding_of(c, nc, lego_of(&one, "his"), -1);
@@ -3722,6 +3722,51 @@ TEST(it_asks_why_a_note_held_in_one_book_and_not_in_another)
     ghost.heard = 1; ghost.held = 1; ghost.role = 0.5f;
     CHECK_EQ_U(rz_melody_why(&ghost, &quiet), RZ_WHY_SILENT);
     free(ty);
+}
+
+/* --- the specialised key (P41) ------------------------------------------- */
+
+TEST(fresh_eyes_find_the_key_the_melody_did_not_have)
+{
+    static rz_note notes[RZ_MELODY];
+    rz_binding b[RZ_BINDINGS], c[RZ_BINDINGS], f[RZ_BINDINGS], d[RZ_BINDINGS];
+
+    /* the melody, from the first book: of, his, her */
+    rz_lexicon *one = read_book(woven_world);
+    uint8_t *ty1 = calloc(one->n, 1);
+    uint32_t nb = rz_lexicon_weave(one, lego_of(one, "son"), b, RZ_BINDINGS, ty1);
+    uint32_t nn = rz_melody_learn(one, b, nb, notes, 0, RZ_MELODY, NULL);
+
+    /* the second book, read with fresh eyes: woven alone from its own seed */
+    rz_lexicon *two = read_book(second_book);
+    uint8_t *ty2 = calloc(two->n, 1);
+    uint32_t nf = rz_lexicon_weave(two, lego_of(two, "son"), f, RZ_BINDINGS, ty2);
+    uint32_t nc = rz_melody_carry(two, notes, nn, c, RZ_BINDINGS, NULL);
+
+    uint32_t agree = 0;
+    uint32_t nd = rz_melody_compare(f, nf, c, nc, d, RZ_BINDINGS, &agree);
+    CHECK(agree >= 2);                       /* of, his, her: the melody already knew */
+    int our = 0, his = 0;
+    for (uint32_t i = 0; i < nd; i++) {
+        if (d[i].word == lego_of(two, "our") && d[i].side == -1) our = 1;
+        if (d[i].word == lego_of(two, "his")) his = 1;
+    }
+    CHECK(our);                              /* the difference */
+    CHECK(!his);                             /* not a difference: it coincides */
+
+    /* the difference is kept as a key special to this book */
+    uint32_t grown = rz_melody_learn(two, d, nd, notes, nn, RZ_MELODY, "second book");
+    CHECK(grown > nn);
+    int special = 0, general_his = 0;
+    for (uint32_t i = 0; i < grown; i++) {
+        if (notes[i].len == 3 && memcmp(notes[i].s, "our", 3) == 0)
+            special = strcmp(notes[i].where, "second book") == 0;
+        if (notes[i].len == 3 && memcmp(notes[i].s, "his", 3) == 0)
+            general_his = notes[i].where[0] == 0;
+    }
+    CHECK(special);
+    CHECK(general_his);
+    free(ty1); free(ty2);
 }
 
 TEST(the_lexicon_survives_a_round_trip)
@@ -3859,6 +3904,7 @@ int main(void)
     RUN(the_owner_moved_in_front_is_the_same_music);
     RUN(the_melody_travels_and_weaves_what_is_new);
     RUN(it_asks_why_a_note_held_in_one_book_and_not_in_another);
+    RUN(fresh_eyes_find_the_key_the_melody_did_not_have);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);
