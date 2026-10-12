@@ -2494,20 +2494,47 @@ int rz_lexicon_keys(rz_lexicon *x, rz_keys *k)
     }
 
     /* 4. the markers: what stands before each side. Three groups by the exact
-       optimum: before side 0 only, before both, before side 1 only */
-    {
+       optimum: before side 0 only, before both, before side 1 only. Twice:
+       some twins are markers themselves (una/uno, esta/esto), and what stands
+       before a marker is not a marker -- "es una" made "es" one, and the map
+       of P47 lost its relation. The second time, only twins that are not
+       markers count. */
+    for (int pass = 0; pass < 2; pass++) {
+        int8_t *was = NULL;
+        if (pass) {
+            was = malloc(x->n);
+            if (!was) goto out;
+            memcpy(was, k->marks, x->n);
+            for (uint32_t i = 0; i < x->n; i++) k->marks[i] = -1;
+        }
         uint32_t *c0 = calloc(x->n, sizeof *c0), *c1 = calloc(x->n, sizeof *c1);
         double *f = malloc((size_t)x->n * sizeof *f);
         uint32_t *who = malloc((size_t)x->n * sizeof *who);
-        if (!c0 || !c1 || !f || !who) { free(c0); free(c1); free(f); free(who); goto out; }
+        if (!c0 || !c1 || !f || !who) { free(c0); free(c1); free(f); free(who); free(was); goto out; }
         for (uint32_t i = 0; i + 1 < x->nseq; i++) {
             int32_t m = x->seq[i], nx = x->seq[i + 1];
             if (m < 0 || nx < 0 || k->side[nx] < 0) continue;
+            if (was && was[nx] >= 0) continue;
             if (k->side[nx]) c1[m]++; else c0[m]++;
         }
+        /* A marker stands before twins more often than twins stand anywhere
+           (D50). Without this, every word that ever stood before a twin got a
+           side -- on the NT "Dios", "es", "porque", even "amor" -- and the map
+           of P47 found nothing to say, every word being glue. (Cut instead at
+           the tall side of the share, "el" and "de" fell out: few nouns have a
+           twin, so even "el" stands before one only now and then -- far more
+           than other words do, which is what counts.) */
+        uint32_t ntwin = 0, ntok = 0;
+        for (uint32_t i = 0; i < x->nseq; i++) {
+            if (x->seq[i] < 0) continue;
+            ntok++;
+            if (k->side[x->seq[i]] >= 0 && !(was && was[x->seq[i]] >= 0)) ntwin++;
+        }
+        double base = ntok ? (double)ntwin / ntok : 0;
         uint32_t nf = 0;
         for (uint32_t m = 0; m < x->n; m++)
-            if (c0[m] + c1[m] >= 2) { f[nf] = (double)c1[m] / (c0[m] + c1[m]); who[nf++] = m; }
+            if (c0[m] + c1[m] >= 2 && (double)(c0[m] + c1[m]) / x->lego[m].count > base) who[nf++] = m;
+        for (uint32_t i = 0; i < nf; i++) f[i] = (double)c1[who[i]] / (c0[who[i]] + c1[who[i]]);
         /* sort, then the two cuts that leave the least spread inside the groups */
         for (uint32_t i = 1; i < nf; i++) {
             double v = f[i];
@@ -2531,7 +2558,7 @@ int rz_lexicon_keys(rz_lexicon *x, rz_keys *k)
             for (uint32_t i = 0; i < nf; i++) k->marks[who[i]] = i < bi ? 0 : i < bj ? 2 : 1;
         }
         free(ps); free(pq);
-        free(c0); free(c1); free(f); free(who);
+        free(c0); free(c1); free(f); free(who); free(was);
     }
 
     /* 5. one note in two keys: a marker of one side and a marker of the other
@@ -2773,4 +2800,177 @@ void rz_lexicon_family(rz_lexicon *x, int32_t a, int32_t b,
     int same_key = 0;
     if (rz_lexicon_keys(x, &k) == RZ_OK) { same_key = rz_keys_same(&k, a, b); rz_keys_free(&k); }
     out->kin = same_key ? RZ_KIN_KEY : out->nfamily ? RZ_KIN_SIBLINGS : RZ_KIN_CHAIR;
+}
+
+
+/* ===================== the map of associations (P47) ===================== */
+
+static int is_marker(const rz_keys *k, int32_t w)
+{
+    return w >= 0 && k->marks && k->marks[w] >= 0;
+}
+
+static int by_link(const void *pa, const void *pb)
+{
+    const rz_link *a = pa, *b = pb;
+    if (a->a != b->a) return a->a < b->a ? -1 : 1;
+    if (a->r != b->r) return a->r < b->r ? -1 : 1;
+    return a->b < b->b ? -1 : a->b > b->b;
+}
+
+static void add_link(rz_assoc *m, int32_t a, int32_t r, int32_t b)
+{
+    if (m->n == m->cap) {
+        uint32_t cap = m->cap ? m->cap * 2 : 4096;
+        rz_link *l = realloc(m->link, cap * sizeof *l);
+        if (!l) return;
+        m->link = l;
+        m->cap = cap;
+    }
+    m->link[m->n++] = (rz_link){ a, r, b, 1 };
+}
+
+uint32_t rz_assoc_build(rz_lexicon *x, const rz_keys *k, rz_assoc *m)
+{
+    memset(m, 0, sizeof *m);
+    if (!k->marks || !x->nseq) return 0;
+
+    /* A thing is a word the text puts after a marker most of the times it
+       says it ("de Dios", "el perro"). The relation of a statement is never a
+       thing: reading greedily from "porque", "porque Dios es amor" became
+       porque --Dios--> es and ate the real statement. (Counted as a thing
+       after a marker just twice, "es" was one -- it follows "que" and "rex",
+       markers for both sides -- and no relation survived.) */
+    uint8_t *thing = calloc(x->n, 1);
+    uint32_t *after = calloc(x->n, sizeof *after);
+    if (!thing || !after) { free(thing); free(after); return 0; }
+    for (uint32_t i = 1; i < x->nseq; i++)
+        if (x->seq[i] >= 0 && is_marker(k, x->seq[i - 1])) after[x->seq[i]]++;
+    for (uint32_t w = 0; w < x->n; w++)
+        thing[w] = after[w] >= 2 && 2 * after[w] > x->lego[w].count && !is_marker(k, (int32_t)w);
+    free(after);
+
+    /* Read left to right, as a person reads: a statement uses its words, and
+       the next one starts after it. Read every position instead, "es un
+       animal so el gato" also gave animal --so--> gato. */
+    for (uint32_t i = 0; i + 1 < x->nseq; i++) {
+        int32_t a = x->seq[i], r = x->seq[i + 1];
+        if (a < 0 || r < 0) continue;
+        /* An article -- a marker with a partner in the other key, el/la,
+           un/una -- is neither what a statement is about nor its relation:
+           read so, "el perro ladra" became el --perro--> ladra. A marker
+           without a partner may relate: "es" stands before gendered words
+           ("es bueno", "es buena") and is still the relation of "Dios es
+           amor". */
+        if (k->key[a] >= 0 || k->key[r] >= 0) continue;
+        if (thing[r]) continue;
+        /* a statement: the thing, the word between, one or two markers, what
+           it says it is -- "perro es un animal", "mesa es de madera". The
+           thing may itself be a marker ("rex", when rex stands before both
+           sides of a key) */
+        int32_t m1 = at(x, i, 2), b = -1;
+        uint32_t used = i + 1;
+        if (is_marker(k, m1)) {
+            int32_t c = at(x, i, 3);
+            if (c >= 0 && !is_marker(k, c)) { b = c; used = i + 3; }
+            else if (is_marker(k, c)) {
+                int32_t d = at(x, i, 4);
+                if (d >= 0 && !is_marker(k, d)) { b = d; used = i + 4; }
+            }
+        }
+        /* or said bare, with no marker: "la madera es dura", "Dios es amor".
+           What follows the relation is what it is, unless that word opens
+           something new -- a marker stands after it ("vive so el perro": so
+           begins the next). (Names go without an article in the NT: asking
+           for a marker before the thing lost "Dios es amor".) */
+        if (b < 0 && m1 >= 0 && !is_marker(k, m1) && m1 != a && !is_marker(k, at(x, i, 3))) {
+            b = m1;
+            used = i + 2;
+        }
+        if (b >= 0 && b != a) { add_link(m, a, r, b); i = used; continue; }
+        /* an act: a thing -- not a marker, a marker before it -- and what it
+           does, with nothing it is said to be: "el animal vive" */
+        if (!is_marker(k, a) && i > 0 && is_marker(k, x->seq[i - 1]) && !is_marker(k, m1)) {
+            add_link(m, a, r, -1);
+            i += 1;
+        }
+    }
+    free(thing);
+    /* the same thing said again is one link said more times */
+    qsort(m->link, m->n, sizeof *m->link, by_link);
+    uint32_t w = 0;
+    for (uint32_t i = 0; i < m->n; i++) {
+        if (w && by_link(&m->link[w - 1], &m->link[i]) == 0) m->link[w - 1].said++;
+        else m->link[w++] = m->link[i];
+    }
+    m->n = w;
+    return m->n;
+}
+
+void rz_assoc_free(rz_assoc *m)
+{
+    free(m->link);
+    memset(m, 0, sizeof *m);
+}
+
+/* the links about a: they are sorted by a */
+static uint32_t links_of(const rz_assoc *m, int32_t a, uint32_t *end)
+{
+    uint32_t lo = 0, hi = m->n;
+    while (lo < hi) { uint32_t mid = (lo + hi) / 2; if (m->link[mid].a < a) lo = mid + 1; else hi = mid; }
+    uint32_t e = lo;
+    while (e < m->n && m->link[e].a == a) e++;
+    *end = e;
+    return lo;
+}
+
+static int one_of(const int32_t *rel, uint32_t nrel, int32_t r)
+{
+    for (uint32_t i = 0; i < nrel; i++) if (rel[i] == r) return 1;
+    return 0;
+}
+
+uint32_t rz_assoc_reach(const rz_assoc *m, int32_t start, const int32_t *rel, uint32_t nrel,
+                        int32_t *out, uint32_t cap)
+{
+    /* walk the links of the question, said twice at least, as far as they go;
+       what has been reached is not walked again */
+    uint32_t n = 0, at2 = 0;
+    int32_t queue[1024];
+    uint32_t nq = 0;
+    if (start < 0) return 0;
+    queue[nq++] = start;
+    while (at2 < nq) {
+        int32_t node = queue[at2++];
+        uint32_t end, i = links_of(m, node, &end);
+        for (; i < end; i++) {
+            const rz_link *l = &m->link[i];
+            if (l->b < 0 || l->said < 2 || !one_of(rel, nrel, l->r) || l->b == start) continue;
+            int seen = 0;
+            for (uint32_t q = 0; q < nq && !seen; q++) seen = queue[q] == l->b;
+            if (seen || nq == 1024) continue;
+            queue[nq++] = l->b;
+            if (n < cap) out[n++] = l->b;
+        }
+    }
+    return n;
+}
+
+uint32_t rz_assoc_traits(const rz_assoc *m, int32_t start, const int32_t *rel, uint32_t nrel,
+                         rz_trait *out, uint32_t cap)
+{
+    int32_t up[256];
+    uint32_t nu = rz_assoc_reach(m, start, rel, nrel, up, 256), n = 0;
+    for (uint32_t s2 = 0; s2 <= nu; s2++) {
+        int32_t node = s2 == 0 ? start : up[s2 - 1];
+        uint32_t end, i = links_of(m, node, &end);
+        for (; i < end && n < cap; i++) {
+            const rz_link *l = &m->link[i];
+            if (l->said < 2) continue;                    /* said once: an anecdote */
+            int dup = 0;
+            for (uint32_t q = 0; q < n && !dup; q++) dup = out[q].r == l->r && out[q].b == l->b;
+            if (!dup) out[n++] = (rz_trait){ l->r, l->b, node };
+        }
+    }
+    return n;
 }

@@ -81,7 +81,8 @@ other's silhouette because their company differs by gender (the same reason
 4. **One note in two keys:** a marker of one side and one of the other that
    stand **after** the same words, each the other's best.
 
-On the NT:
+On the NT (as first built; P47 corrected which words are markers — see
+[associations.md](associations.md)):
 
 | | Marks |
 | --- | --- |

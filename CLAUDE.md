@@ -128,6 +128,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Carry the melody to a text, weave the new, keep it | `./razar melody <path> [seed]` |
 | The different instruments one word plays | `./razar instruments <word> [path]` |
 | PENZAR: think while reading — bet, read, think, sideways | `./razar penzar [path] [bite] [relation]` |
+| Walk what was said: what a word is, what it inherits | `./razar map <word> [other] [relation] [path]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

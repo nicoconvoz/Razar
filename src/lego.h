@@ -487,6 +487,51 @@ typedef struct {
 void rz_lexicon_family(rz_lexicon *x, int32_t a, int32_t b,
                        const int32_t *relations, uint32_t nrel, rz_family *out);
 
+/* --- the map of associations (P47) ----------------------------------------
+ *
+ * Associative, not statistical (the author): understanding is chaining what
+ * the text says, not grouping what looks alike on average. Every statement
+ * becomes a named link:
+ *
+ *   "el perro es un animal"    perro --es--> animal
+ *   "la mesa es de madera"     mesa  --es--> madera   (de is a marker too)
+ *   "el animal vive"           animal --vive          (an act: no object)
+ *
+ * A thing is told by the markers Razar found itself (P44): a word that a
+ * marker stands before. Nothing is counted into a distribution and nothing is
+ * clustered: a link exists because the text said it.
+ *
+ * Thinking is walking. From "perro", follow the links of the question taught
+ * ("es", imitation) as far as they go: perro -> animal. Everything said of
+ * what it reaches is inherited -- the dog lives, because the animal lives. The
+ * family of two is what both reach. */
+typedef struct {
+    int32_t  a;                      /* the thing the statement is about */
+    int32_t  r;                      /* the relation: the word between */
+    int32_t  b;                      /* what it says it is, or -1 for an act */
+    uint32_t said;                   /* how many times the text said it */
+} rz_link;
+
+typedef struct {
+    rz_link *link;
+    uint32_t n, cap;
+} rz_assoc;
+
+typedef struct {
+    int32_t r, b;                    /* what is said: relation and object (-1: an act) */
+    int32_t via;                     /* whom it was said of: the word itself or an ancestor */
+} rz_trait;
+
+uint32_t rz_assoc_build(rz_lexicon *x, const rz_keys *k, rz_assoc *m);
+void     rz_assoc_free(rz_assoc *m);
+/* what it is, as far as the links go: every ancestor reached through the
+   relations given, at any depth (cycles are walked once) */
+uint32_t rz_assoc_reach(const rz_assoc *m, int32_t start, const int32_t *rel, uint32_t nrel,
+                        int32_t *out, uint32_t cap);
+/* everything said of it and of what it reaches -- inherited */
+uint32_t rz_assoc_traits(const rz_assoc *m, int32_t start, const int32_t *rel, uint32_t nrel,
+                         rz_trait *out, uint32_t cap);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

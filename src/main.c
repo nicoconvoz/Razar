@@ -2135,6 +2135,99 @@ static int cmd_penzar(int argc, char **argv)
     return 0;
 }
 
+/* --- the map of associations (P47) ---------------------------------------- */
+
+static void show_map(rz_lexicon *x, const rz_assoc *a, int32_t w, const int32_t *rels, uint32_t nr)
+{
+    char s1[80], s2[80], s3[80];
+    int32_t up[64];
+    uint32_t nu = rz_assoc_reach(a, w, rels, nr, up, 64);
+    say_lego(x, w, s1, sizeof s1);
+    printf("%s is, as far as the links go:", s1);
+    for (uint32_t i = 0; i < nu && i < 16; i++) { say_lego(x, up[i], s2, sizeof s2); printf(" %s", s2); }
+    printf("%s\n", nu ? "" : " nothing it was told");
+    static rz_trait tr[512];
+    uint32_t nt = rz_assoc_traits(a, w, rels, nr, tr, 512);
+    printf("  said of it, or of what it is:\n");
+    uint32_t shown = 0;
+    for (uint32_t i = 0; i < nt && shown < 24; i++) {
+        say_lego(x, tr[i].r, s2, sizeof s2);
+        if (tr[i].b >= 0) say_lego(x, tr[i].b, s3, sizeof s3); else s3[0] = 0;
+        if (tr[i].via == w) printf("    %s %s\n", s2, s3);
+        else { say_lego(x, tr[i].via, s1, sizeof s1); printf("    %s %s          (because it is %s)\n", s2, s3, s1); }
+        shown++;
+    }
+}
+
+static int cmd_map(int argc, char **argv)
+{
+    if (argc < 1) { fprintf(stderr, "usage: razar map <word> [other] [relation] [path]\n"); return 1; }
+    const char *word = argv[0];
+    const char *other = (argc > 1) ? argv[1] : NULL;
+    const char *rel = (argc > 2) ? argv[2] : "es";
+    const char *path = (argc > 3) ? argv[3] : FEED_DIR "/nuevo-testamento.txt";
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);
+    rz_keys k;
+    rz_assoc a;
+    memset(&a, 0, sizeof a);
+    if (rz_lexicon_keys(&x, &k) != RZ_OK) { fprintf(stderr, "no key heard: no markers to tell things by\n"); goto done; }
+    rz_assoc_build(&x, &k, &a);
+
+    /* the question taught, and its silhouette: es, será, era, sea... */
+    int32_t rels[16];
+    uint32_t nr = 0;
+    int32_t r0 = lego_for_word(&x, rel);
+    if (r0 >= 0) { rels[nr++] = r0; nr += rz_lexicon_silhouette(&x, r0, rels + 1, 15); }
+    printf("%u links read from what %s says; asked with:", a.n, path);
+    for (uint32_t i = 0; i < nr; i++) { char sr[80]; say_lego(&x, rels[i], sr, sizeof sr); printf(" %s", sr); }
+    printf("\n\n");
+
+    int32_t w1 = lego_for_word(&x, word);
+    if (w1 < 0) { printf("it never met %s\n", word); }
+    else show_map(&x, &a, w1, rels, nr);
+    if (other && w1 >= 0) {
+        int32_t w2 = lego_for_word(&x, other);
+        if (w2 < 0) printf("\nit never met %s\n", other);
+        else {
+            printf("\n");
+            show_map(&x, &a, w2, rels, nr);
+            int32_t u1[64], u2[64];
+            uint32_t n1 = rz_assoc_reach(&a, w1, rels, nr, u1, 64), n2 = rz_assoc_reach(&a, w2, rels, nr, u2, 64);
+            printf("\n  both reach (one family):");
+            uint32_t shared = 0;
+            for (uint32_t i = 0; i < n1; i++)
+                for (uint32_t j = 0; j < n2; j++)
+                    if (u1[i] == u2[j]) { char sf[80]; say_lego(&x, u1[i], sf, sizeof sf); printf(" %s", sf); shared++; }
+            printf("%s\n", shared ? "" : " nothing -- no family the text gives them");
+        }
+    }
+    rz_assoc_free(&a);
+    rz_keys_free(&k);
+done:
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2173,6 +2266,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "melody"))       return cmd_melody(argc - 2, argv + 2);
     if (!strcmp(argv[1], "instruments"))  return cmd_instruments(argc - 2, argv + 2);
     if (!strcmp(argv[1], "penzar"))       return cmd_penzar(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "map"))          return cmd_map(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

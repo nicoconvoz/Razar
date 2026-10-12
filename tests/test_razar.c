@@ -4144,6 +4144,104 @@ TEST(two_in_the_same_chair_are_asked_what_they_are)
     CHECK_EQ_U(f.nfamily, 0u);
 }
 
+/* --- the map of associations (P47) ---------------------------------------- */
+
+/* the key world (so the markers are found), plus what is said of things:
+   dogs and cats are animals, animals live and eat, tables are of wood, wood
+   is hard; rex is a dog; "de" stands before both dogs and bitches, so it is
+   found as a marker. Nothing says that a dog lives. */
+static size_t said_world(char *out, size_t cap, int clauses)
+{
+    static const char *said[] = {
+        "el perro es un animal", "el gato es un animal", "la perra es una animal",
+        "el animal vive", "el animal come", "la mesa es de madera", "la madera es dura",
+        "rex es un perro", "el perro ladra", "el gato maúlla",
+        "el olor de perro", "el olor de perra", "el olor de gato", "el olor de gata",
+    };
+    /* the key world without its toma/tomo clauses: there the names stand
+       before twins and are found as markers, and "es", after the names,
+       would read as a thing */
+    static const char *mo[] = { "niño", "gato", "perro", "hermano", "amigo" };
+    static const char *fe[] = { "niña", "gata", "perra", "hermana", "amiga" };
+    static const char *verb[] = { "corre", "duerme", "canta", "come" };
+    size_t n = 0;
+    uint64_t r = 97;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 4];
+        int i = (int)((r >> 33) % 5), w;
+        switch ((r >> 58) % 5) {
+        case 0: w = snprintf(out + n, cap - n, "el %s %s %s ", mo[i], v, j); break;
+        case 1: w = snprintf(out + n, cap - n, "la %s %s %s ", fe[i], v, j); break;
+        case 2: w = snprintf(out + n, cap - n, "un %s %s %s ", mo[i], v, j); break;
+        case 3: w = snprintf(out + n, cap - n, "una %s %s %s ", fe[i], v, j); break;
+        default: w = snprintf(out + n, cap - n, "su %s %s %s ", (r >> 40) % 2 ? mo[i] : fe[i], v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    for (int k = 0; k < clauses / 2; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w = snprintf(out + n, cap - n, "%s %s ", said[(r >> 33) % 14], wb_join[(r >> 20) % 6]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int reaches(const int32_t *l, uint32_t n, int32_t w)
+{
+    for (uint32_t i = 0; i < n; i++) if (l[i] == w) return 1;
+    return 0;
+}
+
+static int has_trait(const rz_trait *t, uint32_t n, int32_t r, int32_t b)
+{
+    for (uint32_t i = 0; i < n; i++) if (t[i].r == r && t[i].b == b) return 1;
+    return 0;
+}
+
+TEST(understanding_is_walking_what_was_said)
+{
+    static char t[260000];
+    size_t n = said_world(t, sizeof t, 6000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    rz_keys k;
+    CHECK_EQ_U(rz_lexicon_keys(&x, &k), RZ_OK);
+    rz_assoc a;
+    CHECK(rz_assoc_build(&x, &k, &a) > 0);
+
+    int32_t es = lego_of(&x, "es");
+    int32_t up[32];
+    /* the dog is an animal; rex is a dog, so rex is an animal too */
+    uint32_t nu = rz_assoc_reach(&a, lego_of(&x, "perro"), &es, 1, up, 32);
+    CHECK(reaches(up, nu, lego_of(&x, "animal")));
+    nu = rz_assoc_reach(&a, lego_of(&x, "rex"), &es, 1, up, 32);
+    CHECK(reaches(up, nu, lego_of(&x, "perro")));
+    CHECK(reaches(up, nu, lego_of(&x, "animal")));
+    /* the table is of wood, and never an animal */
+    nu = rz_assoc_reach(&a, lego_of(&x, "mesa"), &es, 1, up, 32);
+    CHECK(reaches(up, nu, lego_of(&x, "madera")));
+    CHECK(!reaches(up, nu, lego_of(&x, "animal")));
+
+    /* nothing says the dog lives: it is inherited, walking dog -> animal */
+    rz_trait tr[256];
+    uint32_t nt = rz_assoc_traits(&a, lego_of(&x, "perro"), &es, 1, tr, 256);
+    CHECK(has_trait(tr, nt, lego_of(&x, "vive"), -1));
+    CHECK(has_trait(tr, nt, lego_of(&x, "ladra"), -1));       /* its own */
+    nt = rz_assoc_traits(&a, lego_of(&x, "rex"), &es, 1, tr, 256);
+    CHECK(has_trait(tr, nt, lego_of(&x, "vive"), -1));        /* two steps up */
+    nt = rz_assoc_traits(&a, lego_of(&x, "mesa"), &es, 1, tr, 256);
+    CHECK(!has_trait(tr, nt, lego_of(&x, "vive"), -1));
+    CHECK(has_trait(tr, nt, es, lego_of(&x, "dura")));        /* hard, from the wood */
+    rz_assoc_free(&a);
+    rz_keys_free(&k);
+    rz_lexicon_free(&x);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -4288,6 +4386,7 @@ int main(void)
     RUN(it_thinks_while_it_reads);
     RUN(a_hunch_that_holds_lends_itself_sideways);
     RUN(two_in_the_same_chair_are_asked_what_they_are);
+    RUN(understanding_is_walking_what_was_said);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);
