@@ -1694,12 +1694,14 @@ out:
 /* ===================== the melody (P39) ================================== */
 
 uint32_t rz_melody_carry(const rz_lexicon *x, const rz_note *notes, uint32_t n,
-                         rz_binding *out, uint32_t cap)
+                         rz_binding *out, uint32_t cap, uint32_t *note_of)
 {
     uint32_t k = 0;
     for (uint32_t i = 0; i < n && k < cap; i++) {
         int32_t w = rz_lexicon_find(x, notes[i].s, notes[i].len);
-        if (w >= 0) out[k++] = (rz_binding){ notes[i].side, w, 0.0, 0 };
+        if (w < 0) continue;
+        if (note_of) note_of[k] = i;
+        out[k++] = (rz_binding){ notes[i].side, w, 0.0, 0 };
     }
     return k;
 }
@@ -1752,4 +1754,125 @@ int rz_melody_load(rz_note *notes, uint32_t cap, uint32_t *n, const char *path)
     else *n = head[2];
     fclose(f);
     return rc;
+}
+
+
+/* ===================== why it worked here and not there (P40) ============ */
+
+/* what binding word w on `side` alone tells, in `later`, about which words are
+   types: the mutual information of the two */
+static double note_information(const int32_t *later, uint32_t nlater, const uint8_t *is_type,
+                               int32_t w, int side)
+{
+    double n[2][2] = { { 0, 0 }, { 0, 0 } };
+    for (uint32_t i = 0; i < nlater; i++) {
+        int32_t a = later[i];
+        if (a < 0) continue;
+        int64_t j = (int64_t)i + side;
+        int bound = j >= 0 && (uint64_t)j < nlater && later[j] == w;
+        n[is_type[a] ? 1 : 0][bound]++;
+    }
+    double tot = n[0][0] + n[0][1] + n[1][0] + n[1][1], mi = 0;
+    if (tot <= 0) return 0;
+    for (int t = 0; t < 2; t++)
+        for (int k = 0; k < 2; k++) {
+            if (n[t][k] <= 0) continue;
+            double pt = (n[t][0] + n[t][1]) / tot, pk = (n[0][k] + n[1][k]) / tot;
+            mi += n[t][k] / tot * log(n[t][k] / tot / (pt * pk));
+        }
+    return mi;
+}
+
+void rz_melody_judge(rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                     const int32_t *later, uint32_t nlater, rz_note_verdict *v)
+{
+    memset(v, 0, nb * sizeof *v);
+    if (!x->n || nb == 0) return;
+    uint8_t *ty = calloc(x->n, 1);
+    uint32_t *tot = calloc(x->n, sizeof *tot), *c = calloc(x->n, sizeof *c);
+    double *vals = malloc((size_t)x->n * sizeof *vals);
+    int32_t *who = malloc((size_t)x->n * sizeof *who);
+    uint32_t *ord = malloc((size_t)x->n * sizeof *ord), *rank = malloc((size_t)x->n * sizeof *rank);
+    if (!ty || !tot || !c || !vals || !who || !ord || !rank) goto out;
+
+    /* the types each note marks on its own; a note is judged against the types
+       the REST of the melody marks -- judged against its own, a note always
+       agrees with itself (the first version did exactly that) */
+    uint8_t *own = calloc((size_t)nb * x->n, 1);
+    if (!own) goto out;
+    for (uint32_t k = 0; k < nb; k++) {
+        if (b[k].word < 0 || (uint32_t)b[k].word >= x->n) continue;
+        weave_types(x, &b[k], 1, x->nseq, tot, c, vals, who, own + (size_t)k * x->n);
+    }
+
+    /* words by frequency, for the blind twins */
+    for (uint32_t i = 0; i < x->n; i++) ord[i] = i;
+    for (uint32_t gap = x->n / 2; gap > 0; gap /= 2)
+        for (uint32_t i = gap; i < x->n; i++) {
+            uint32_t w = ord[i], j = i;
+            while (j >= gap && x->lego[ord[j - gap]].count < x->lego[w].count) { ord[j] = ord[j - gap]; j -= gap; }
+            ord[j] = w;
+        }
+    for (uint32_t i = 0; i < x->n; i++) rank[ord[i]] = i;
+
+    for (uint32_t k = 0; k < nb; k++) {
+        int32_t w = b[k].word;
+        if (w < 0 || (uint32_t)w >= x->n) continue;
+        v[k].sounds = x->lego[w].count >= 2;
+        if (!v[k].sounds) continue;
+        memset(ty, 0, x->n);
+        for (uint32_t o = 0; o < nb; o++)
+            if (o != k)
+                for (uint32_t i = 0; i < x->n; i++) ty[i] |= own[(size_t)o * x->n + i];
+
+        /* the work it does here: its uses that stand next to a type */
+        uint32_t uses = 0, next_to = 0;
+        for (uint32_t i = 0; i < x->nseq; i++) {
+            if (x->seq[i] != w) continue;
+            uses++;
+            int32_t t = at(x, i, -b[k].side);
+            if (t >= 0 && ty[t]) next_to++;
+        }
+        v[k].role = uses ? (double)next_to / uses : 0.0;
+
+        v[k].info = note_information(later, nlater, ty, w, b[k].side);
+        double bl = 0;
+        int runs = 0;
+        for (int j = 1; j <= 8; j++) {
+            int64_t r = (int64_t)rank[w] + ((j & 1) ? (j + 1) / 2 : -(j / 2));
+            if (r < 0 || r >= (int64_t)x->n) continue;
+            bl += note_information(later, nlater, ty, (int32_t)ord[r], b[k].side);
+            runs++;
+        }
+        v[k].blind = runs ? bl / runs : 0.0;
+        v[k].holds = v[k].info > v[k].blind;
+    }
+    free(own);
+out:
+    free(ty); free(tot); free(c); free(vals); free(who); free(ord); free(rank);
+}
+
+rz_why rz_melody_why(const rz_note *note, const rz_note_verdict *v)
+{
+    if (!v->sounds) return RZ_WHY_SILENT;
+    if (v->holds) return RZ_WHY_HOLDS;
+    /* where it held it stood next to types this often; here less: it is doing
+       something else in this text */
+    if (note->held > 0 && v->role < note->role) return RZ_WHY_OTHER_WORK;
+    return RZ_WHY_SAYS_NOTHING;
+}
+
+void rz_melody_remember(rz_note *note, const rz_note_verdict *v)
+{
+    if (!v->sounds) return;
+    if (note->heard < UINT16_MAX) note->heard++;
+    if (v->holds && note->held < UINT16_MAX) {
+        note->role = (float)((note->role * note->held + v->role) / (note->held + 1));
+        note->held++;
+    }
+}
+
+int rz_melody_trusted(const rz_note *note)
+{
+    return note->heard == 0 || 2u * note->held >= note->heard;
 }

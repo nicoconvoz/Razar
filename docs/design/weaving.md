@@ -170,6 +170,64 @@ So it always weaves, and now it stops by itself; whether the judge should also
 weigh what *travels* to other texts, and not only what holds within the text it
 learned on, is open (D90).
 
+## P40 — Why it worked here and not there (2026-10-11)
+
+> Let it ask itself why it worked in one text and not in another — see the
+> differences, draw conclusions. I expect the melody to write itself and rewrite
+> itself. — the author
+
+`rz_melody_judge`, `rz_melody_why`, `rz_melody_remember`, `rz_melody_trusted`;
+wired into `razar melody`.
+
+Every note now keeps a history: in how many texts it sounded, in how many it
+**held**, and — where it held — what work it did: the share of its uses that
+stand next to a type. In every text it reads, every note that sounds is judged
+on its own: does it tell, in the half not read, which words take an owner,
+better than a blind word of its frequency on its side? A note that held
+elsewhere and fails here is explained by the difference:
+
+| Conclusion | Measured as |
+| --- | --- |
+| silent | it does not sound in this text |
+| other work | it sounds, and stands next to a type less often than where it held |
+| tells nothing | same work as before, and still no information here |
+
+The melody rewrites itself from this: it weaves only with the notes it trusts —
+held at least as often as they failed — and a note is never deleted, so one that
+was let go comes back when a later text finds it holding.
+
+**First lesson from getting it wrong:** a note was first judged against the types
+the whole melody marks — including the ones it marks itself. It always agreed
+with itself. Each note is judged against the types **the rest** of the melody
+marks, as a concept's member is judged against the others (P36).
+
+### What it concludes
+
+On Quiroga, after the New Testament, among others:
+
+> **ha ___** held before, fails here: other work — next to a type 10% here, 47%
+> where it held.
+> **Su ___** held before, fails here: other work — 17% here, 67% where it held.
+> **mi ___** failed before, holds here.
+
+In the NT "ha" stands before participles the melody treated as types ("ha
+sido", "ha resucitado"); in a novel of Buenos Aires it does not. In the chess
+documentation "su" and "mi" are next to a type 0% of the time: possessives are
+rare in technical prose and do other work there. These are the differences, and
+they are read off the texts, not written in.
+
+### Does the rewritten melody carry better? Not yet
+
+The honest test is a text read for the first time, after lessons from other
+texts. Quiroga read first after the NT alone: 3.14× against 2.86× blind; after
+the NT and the chess documentation: **3.14× against 2.86× — the same**. The
+chess text (18 cases) is too short to teach anything Quiroga uses: none of the 22
+trusted notes changed.
+
+Reading Quiroga a second time gave 10.78× against 3.20× — and **that number does
+not count**: the lessons of the first reading came from the same held half it was
+then measured on. It is recorded here only so that it is never quoted.
+
 ## Lessons that came from getting it wrong
 
 1. **A word after the type always "replaces" "de"** — it is standing in de's own
@@ -196,6 +254,12 @@ learned on, is open (D90).
 - **D90** — the judge looks only inside the text being read. What it cut on the
   NT was partly what carried to Quiroga. A melody that has crossed several texts
   could judge a note by whether it holds in all of them.
+- **D91** — the rewriting has not yet improved a first reading: three texts, one
+  of them too short. A fourth text, and a fifth, read each for the first time,
+  are what can show whether lessons carry.
+- **D92** — "other work" is read as one number (share next to a type). What the
+  other work *is* — "ha" before a participle in one text, before a noun in
+  another — is the next question to ask, and the answer would be a new melody.
 - **D88** — this weaves one structure (type + owner). The same loop, started from
   any seed and any binding, is how any other structure would be woven; nothing in
   it is about kinship. Not yet run on other seeds.

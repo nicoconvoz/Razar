@@ -3593,7 +3593,7 @@ TEST(the_melody_travels_and_weaves_what_is_new)
 
     /* second book: carried in, no seed, and "our" is woven on */
     rz_lexicon *two = read_book(second_book);
-    uint32_t nc = rz_melody_carry(two, notes, nn, c, RZ_BINDINGS);
+    uint32_t nc = rz_melody_carry(two, notes, nn, c, RZ_BINDINGS, NULL);
     CHECK(nc >= 2);
     uint8_t *ty2 = calloc(two->n, 1);
     uint32_t nw = rz_lexicon_weave_from(two, c, nc, w, RZ_BINDINGS, ty2);
@@ -3616,6 +3616,112 @@ TEST(the_melody_travels_and_weaves_what_is_new)
     CHECK(rz_melody_load(back, RZ_MELODY, &nback, "no_such_melody.tmp") != RZ_OK);
     remove(path);
     free(ty1); free(ty2);
+}
+
+/* --- why it worked here and not there (P40) ------------------------------- */
+
+/* A third book where "his" does other work: it stands before verbs, and the
+   owned things are only ever "her" or "of". */
+static size_t other_book(char *out, size_t cap, int clauses)
+{
+    static const char *of_type[] = { "son", "king", "friend" };
+    static const char *pos_type[] = { "mother", "sister", "wife" };
+    static const char *name[] = { "rex", "tom", "lou" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen" };
+    static const char *verb[] = { "ran", "sat", "ate", "slept", "sang" };
+    size_t n = 0;
+    uint64_t r = 91;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 5];
+        const char *nm = name[(r >> 37) % 3], *no = noun[(r >> 41) % 4];
+        int w;
+        switch ((r >> 59) % 8) {
+        case 0: case 1: w = snprintf(out + n, cap - n, "the %s of %s %s %s ", of_type[(r >> 33) % 3], nm, v, j); break;
+        case 2:  w = snprintf(out + n, cap - n, "the %s of the %s %s %s ", of_type[(r >> 33) % 3], no, v, j); break;
+        case 3:  w = snprintf(out + n, cap - n, "her %s %s %s ", pos_type[(r >> 33) % 3], v, j); break;
+        case 4:  w = snprintf(out + n, cap - n, "her %s %s %s ", of_type[(r >> 33) % 3], v, j); break;
+        case 5:  w = snprintf(out + n, cap - n, "the %s his %s %s ", no, v, j); break;
+        case 6:  w = snprintf(out + n, cap - n, "a %s %s %s ", no, v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s his %s %s ", nm, v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static uint32_t binding_of(const rz_binding *b, uint32_t n, int32_t word, int side)
+{
+    for (uint32_t i = 0; i < n; i++) if (b[i].word == word && b[i].side == side) return i;
+    return n;
+}
+
+/* the halves of a book: x read from the first, later looked up in the second */
+static void read_halves(size_t (*book)(char *, size_t, int), rz_lexicon *x,
+                        int32_t *later, uint32_t *nlater)
+{
+    static char t[140000];
+    size_t n = book(t, sizeof t, 6000), half = n / 2;
+    while (half < n && t[half] != ' ') half++;
+    rz_mind *m = world_mind(t, half);
+    rz_lexicon_init(x);
+    rz_lexicon_read_words(x, m, (const unsigned char *)t, half);
+    *nlater = rz_lexicon_words_of(x, m, (const unsigned char *)t + half, n - half, later, 30000);
+}
+
+TEST(it_asks_why_a_note_held_in_one_book_and_not_in_another)
+{
+    static rz_note notes[RZ_MELODY];
+    static int32_t later[30000];
+    rz_binding b[RZ_BINDINGS], c[RZ_BINDINGS];
+    uint32_t note_of[RZ_BINDINGS];
+    rz_note_verdict v[RZ_BINDINGS];
+
+    /* the first book: "his" holds, and the note remembers what work it did */
+    rz_lexicon one;
+    uint32_t nl;
+    read_halves(woven_world, &one, later, &nl);
+    uint8_t *ty = calloc(one.n, 1);
+    uint32_t nb = rz_lexicon_weave(&one, lego_of(&one, "son"), b, RZ_BINDINGS, ty);
+    uint32_t nn = rz_melody_learn(&one, b, nb, notes, 0, RZ_MELODY);
+    uint32_t nc = rz_melody_carry(&one, notes, nn, c, RZ_BINDINGS, note_of);
+    rz_melody_judge(&one, c, nc, later, nl, v);
+    uint32_t his = binding_of(c, nc, lego_of(&one, "his"), -1);
+    CHECK(his < nc);
+    if (his < nc) {
+        CHECK(v[his].sounds && v[his].holds);
+        CHECK(v[his].info > v[his].blind);
+        CHECK_EQ_U(rz_melody_why(&notes[note_of[his]], &v[his]), RZ_WHY_HOLDS);
+    }
+    for (uint32_t k = 0; k < nc; k++) rz_melody_remember(&notes[note_of[k]], &v[k]);
+
+    /* the other book: "his" sounds, but next to verbs -- it fails, and it can
+       say why: it does other work here */
+    rz_lexicon two;
+    read_halves(other_book, &two, later, &nl);
+    nc = rz_melody_carry(&two, notes, nn, c, RZ_BINDINGS, note_of);
+    rz_melody_judge(&two, c, nc, later, nl, v);
+    his = binding_of(c, nc, lego_of(&two, "his"), -1);
+    CHECK(his < nc);
+    if (his < nc) {
+        rz_note *note = &notes[note_of[his]];
+        CHECK(v[his].sounds && !v[his].holds);
+        CHECK(v[his].role < note->role);
+        CHECK_EQ_U(rz_melody_why(note, &v[his]), RZ_WHY_OTHER_WORK);
+        rz_melody_remember(note, &v[his]);
+        CHECK_EQ_U(note->heard, 2u);
+        CHECK_EQ_U(note->held, 1u);
+        CHECK(rz_melody_trusted(note));      /* one and one: still trusted */
+    }
+    /* a note that never sounded says so */
+    rz_note ghost;
+    memset(&ghost, 0, sizeof ghost);
+    rz_note_verdict quiet;
+    memset(&quiet, 0, sizeof quiet);
+    ghost.heard = 1; ghost.held = 1; ghost.role = 0.5f;
+    CHECK_EQ_U(rz_melody_why(&ghost, &quiet), RZ_WHY_SILENT);
+    free(ty);
 }
 
 TEST(the_lexicon_survives_a_round_trip)
@@ -3752,6 +3858,7 @@ int main(void)
     RUN(a_type_asks_for_an_owner_and_an_identity_fills_the_slot);
     RUN(the_owner_moved_in_front_is_the_same_music);
     RUN(the_melody_travels_and_weaves_what_is_new);
+    RUN(it_asks_why_a_note_held_in_one_book_and_not_in_another);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

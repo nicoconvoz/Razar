@@ -1725,8 +1725,14 @@ static int cmd_melody(int argc, char **argv)
         printf("no melody kept yet: weaving one from [%s]\n", seed_word);
         nw = seed >= 0 ? rz_lexicon_weave(&x, seed, woven, RZ_MELODY, ty) : 0;
     } else {
-        nc = rz_melody_carry(&x, notes, nn, carried, RZ_MELODY);
-        printf("the melody kept: %u notes, %u of them sound in this text\n", nn, nc);
+        /* it weaves only with the notes it trusts: they held at least as often
+           as they failed, in the texts they sounded in */
+        static uint32_t from[RZ_MELODY];
+        static rz_binding all_c[RZ_MELODY];
+        uint32_t na = rz_melody_carry(&x, notes, nn, all_c, RZ_MELODY, from);
+        for (uint32_t k = 0; k < na; k++)
+            if (rz_melody_trusted(&notes[from[k]])) carried[nc++] = all_c[k];
+        printf("the melody kept: %u notes, %u sound in this text, %u of those trusted\n", nn, na, nc);
         nw = rz_lexicon_weave_from(&x, carried, nc, woven, RZ_MELODY, ty);
     }
 
@@ -1782,6 +1788,50 @@ static int cmd_melody(int argc, char **argv)
     }
 
     uint32_t grown = rz_melody_learn(&x, woven, nw, notes, nn, RZ_MELODY);
+
+    /* Why: every note that sounds is judged here, against the rest of the
+       melody and a blind word of its frequency. The verdicts are lessons for
+       the next text -- the bar above was read before them. */
+    {
+        static uint32_t from[RZ_MELODY];
+        static rz_binding every[RZ_MELODY];
+        static rz_note_verdict v[RZ_MELODY];
+        uint32_t ne = rz_melody_carry(&x, notes, grown, every, RZ_MELODY, from);
+        rz_melody_judge(&x, every, ne, later, nlater, v);
+        uint32_t count[4] = {0, 0, 0, 0};
+        printf("\n  why, note by note (%u that sound here):\n", ne);
+        for (uint32_t k = 0; k < ne; k++) {
+            rz_note *note = &notes[from[k]];
+            rz_why why = rz_melody_why(note, &v[k]);
+            count[why]++;
+            int was_trusted = rz_melody_trusted(note);
+            int changed = (note->held > 0 && why != RZ_WHY_HOLDS) || (note->heard > note->held && why == RZ_WHY_HOLDS);
+            if (changed) {
+                say_lego(&x, every[k].word, w, sizeof w);
+                const char *shape = every[k].side < 0 ? "%s ___" : "___ %s";
+                char named[96];
+                snprintf(named, sizeof named, shape, w);
+                if (why == RZ_WHY_HOLDS)
+                    printf("    %-20s failed before, holds here (%u of %u texts)\n", named, note->held, note->heard);
+                else if (why == RZ_WHY_OTHER_WORK)
+                    printf("    %-20s held before, fails here: other work -- next to a type %.0f%% here, %.0f%% where it held\n",
+                           named, 100 * v[k].role, 100.0 * note->role);
+                else
+                    printf("    %-20s held before, fails here: same work (%.0f%%), but here it tells nothing\n",
+                           named, 100 * v[k].role);
+            }
+            rz_melody_remember(note, &v[k]);
+            if (was_trusted && !rz_melody_trusted(note)) {
+                say_lego(&x, every[k].word, w, sizeof w);
+                printf("    %-20s now trusted no more (%u of %u)\n", w, note->held, note->heard);
+            }
+        }
+        printf("  holds %u, does other work %u, tells nothing %u\n", count[RZ_WHY_HOLDS],
+               count[RZ_WHY_OTHER_WORK], count[RZ_WHY_SAYS_NOTHING]);
+        uint32_t trusted = 0;
+        for (uint32_t i = 0; i < grown; i++) trusted += rz_melody_trusted(&notes[i]);
+        printf("  the melody rewrites itself: %u notes, %u trusted for the next text\n\n", grown, trusted);
+    }
     MKDIR(NEST);
     if (rz_melody_save(notes, grown, MELODY) != RZ_OK) fprintf(stderr, "warning: could not write %s\n", MELODY);
     else printf("  the melody kept: %u notes -> %u (%s)\n", nn, grown, MELODY);

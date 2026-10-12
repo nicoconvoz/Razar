@@ -269,6 +269,9 @@ typedef struct {
     int8_t        side;
     uint8_t       len;
     unsigned char s[RZ_LEGO_SPAN];
+    uint16_t      heard;             /* texts it sounded in */
+    uint16_t      held;              /* texts where it held against the blind */
+    float         role;              /* where it held: share of its uses next to a type */
 } rz_note;
 
 #define RZ_MELODY 512
@@ -277,9 +280,40 @@ typedef struct {
    with the known ones that occur in x (round 0) and grows. */
 uint32_t rz_lexicon_weave_from(rz_lexicon *x, const rz_binding *known, uint32_t nknown,
                                rz_binding *out, uint32_t cap, uint8_t *is_type);
-/* notes -> bindings of x (absent words are skipped) */
+/* notes -> bindings of x (absent words are skipped); note_of[k], when given,
+   is the note binding k came from */
 uint32_t rz_melody_carry(const rz_lexicon *x, const rz_note *notes, uint32_t n,
-                         rz_binding *out, uint32_t cap);
+                         rz_binding *out, uint32_t cap, uint32_t *note_of);
+
+/* Why it worked in one text and not in another (P40). Every note is judged in
+   the text being read: does it, on its own, tell which words take an owner in
+   the half not read, better than a blind word of its frequency on its side?
+   And what work does it do here: the share of its uses that stand next to a
+   type. A note that held elsewhere and fails here is explained by the
+   difference: it did not sound, it does other work here, or it does the same
+   work and still tells nothing. */
+typedef struct {
+    uint8_t sounds, holds;
+    double  info, blind;             /* what it alone tells, and a blind word */
+    double  role;                    /* share of its uses next to a type, here */
+} rz_note_verdict;
+
+typedef enum {
+    RZ_WHY_HOLDS = 0,
+    RZ_WHY_SILENT,                   /* it did not sound here */
+    RZ_WHY_OTHER_WORK,               /* it sounds, but next to other things */
+    RZ_WHY_SAYS_NOTHING              /* same work, and still tells nothing here */
+} rz_why;
+
+void   rz_melody_judge(rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                       const int32_t *later, uint32_t nlater, rz_note_verdict *v);
+/* the conclusion for one note, from its history and today's verdict */
+rz_why rz_melody_why(const rz_note *note, const rz_note_verdict *v);
+/* fold today's verdict into the note's history: the melody rewriting itself */
+void   rz_melody_remember(rz_note *note, const rz_note_verdict *v);
+/* whether the note is trusted to weave with: it has held at least as often as
+   it failed (a note with no history is trusted) */
+int    rz_melody_trusted(const rz_note *note);
 /* bindings of x -> notes, appended when new; returns the new count */
 uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
                          rz_note *notes, uint32_t n, uint32_t cap);
