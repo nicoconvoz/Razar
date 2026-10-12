@@ -450,6 +450,43 @@ void rz_penzar_bite(rz_penzar *p, const unsigned char *t, size_t n, rz_thought *
    side follows anything */
 int  rz_hunch_holds(const rz_hunch *h);
 
+/* --- the family of two in the same chair (P46) ----------------------------
+ *
+ * Sitting in the same chair says nothing of what two words are (riddle 3: "yet"
+ * and "is" share their followers). The author: what family are dog and cat?
+ * They ARE animals, they ARE four-legged; their shapes, sizes and breeds
+ * differ; and their names may be the same. So two in the same chair are asked
+ * what they are, with the relation's silhouette:
+ *
+ *   family      what both are -- the answers they share ("animal") and the
+ *               rest of the chair does not ("here" is said of the dog, the
+ *               cat and the table: that is the chair)
+ *   apart       what only one is ("ladra" / "maúlla" -- told apart)
+ *   names       who is said to be each (answers from behind: "rex es un
+ *               perro"); a name shared by both makes no family, it is an
+ *               identity, not a kind (P37)
+ *
+ * Siblings share a family; the same note in another key is P44; and two that
+ * share nothing but the chair are only neighbours. */
+typedef enum {
+    RZ_KIN_CHAIR = 0,                /* only the chair: nothing they are is shared */
+    RZ_KIN_SIBLINGS,                 /* a family in common, and differences */
+    RZ_KIN_KEY                       /* one note in two keys (P44) */
+} rz_kin;
+
+#define RZ_FAMILY 16
+
+typedef struct {
+    rz_kin   kin;
+    int32_t  family[RZ_FAMILY];      uint32_t nfamily;
+    int32_t  only_a[RZ_FAMILY];      uint32_t nonly_a;
+    int32_t  only_b[RZ_FAMILY];      uint32_t nonly_b;
+    int32_t  names[RZ_FAMILY];       uint32_t nnames;    /* said to be both */
+} rz_family;
+
+void rz_lexicon_family(rz_lexicon *x, int32_t a, int32_t b,
+                       const int32_t *relations, uint32_t nrel, rz_family *out);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

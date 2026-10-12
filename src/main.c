@@ -1989,6 +1989,7 @@ static int cmd_penzar(int argc, char **argv)
 {
     const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
     size_t bite = (argc > 1) ? (size_t)strtoul(argv[1], NULL, 10) : 40000;
+    const char *shown = (argc > 2) ? argv[2] : "es";       /* the question it was taught */
     if (bite < 1000) bite = 1000;
 
     FILE *f = fopen(path, "rb");
@@ -2009,6 +2010,8 @@ static int cmd_penzar(int argc, char **argv)
 
     static uint8_t was_lent[RZ_HUNCHES];
     uint64_t bets = 0, won = 0, base = 0;
+    uint32_t *seen_before = NULL, seen_n = 0;
+    uint8_t *wondered = NULL;
     size_t at2 = 0;
     char w[80], v[80];
     while (at2 < n) {
@@ -2020,6 +2023,50 @@ static int cmd_penzar(int argc, char **argv)
         rz_penzar_bite(p, t + at2, len, &th);
         at2 += len;
         bets += th.bets; won += th.won; base += th.base_won;
+
+        /* What caught its attention: the word that grew the most in this bite,
+           seen twice, not wondered about before. Who sits in its chair, and
+           what family are they? (P46, riddle 3) -- asked with the question it
+           was taught and that question's silhouette */
+        int32_t family_a = -1, family_b = -1;
+        rz_family fam;
+        memset(&fam, 0, sizeof fam);
+        {
+            uint32_t *grown = realloc(seen_before, p->lex.n * sizeof *grown);
+            uint8_t *wd = grown ? realloc(wondered, p->lex.n) : NULL;
+            if (grown) seen_before = grown;
+            if (wd) wondered = wd;
+            if (grown && wd) {
+                for (uint32_t i = seen_n; i < p->lex.n; i++) { seen_before[i] = 0; wondered[i] = 0; }
+                uint32_t best = 0;
+                int32_t pick = -1;
+                for (uint32_t i = 0; i < p->lex.n; i++) {
+                    uint32_t gain = p->lex.lego[i].count - seen_before[i];
+                    if (p->lex.lego[i].count < 2 || wondered[i] || gain <= best) continue;
+                    if (p->have_keys && p->keys.marks[i] >= 0) continue;   /* the glue of the key */
+                    if (p->lex.lego[i].len < 3) continue;
+                    best = gain;
+                    pick = (int32_t)i;
+                }
+                for (uint32_t i = 0; i < p->lex.n; i++) seen_before[i] = p->lex.lego[i].count;
+                seen_n = p->lex.n;
+                if (pick >= 0) {
+                    wondered[pick] = 1;
+                    int32_t sil[8];
+                    uint32_t ks = rz_lexicon_silhouette(&p->lex, pick, sil, 8);
+                    int32_t rel = lego_for_word(&p->lex, shown);
+                    if (ks && rel >= 0) {
+                        int32_t rels[16];
+                        uint32_t nr = 1;
+                        rels[0] = rel;
+                        nr += rz_lexicon_silhouette(&p->lex, rel, rels + 1, 15);
+                        rz_lexicon_family(&p->lex, pick, sil[0], rels, nr, &fam);
+                        family_a = pick;
+                        family_b = sil[0];
+                    }
+                }
+            }
+        }
 
         printf("bite %u", p->bites);
         if (th.bets)
@@ -2040,6 +2087,30 @@ static int cmd_penzar(int argc, char **argv)
                 printf("  a hunch: after %s comes side %d\n", w, p->hunch[i].side);
             }
         }
+        if (family_a >= 0) {
+            say_lego(&p->lex, family_a, w, sizeof w);
+            say_lego(&p->lex, family_b, v, sizeof v);
+            printf("  wonders: %s sits where %s sits -- ", w, v);
+            if (fam.kin == RZ_KIN_KEY) printf("the same note in another key\n");
+            else if (fam.kin == RZ_KIN_CHAIR) printf("they share only the chair\n");
+            else {
+                printf("one family:");
+                for (uint32_t i = 0; i < fam.nfamily; i++) { say_lego(&p->lex, fam.family[i], v, sizeof v); printf(" %s", v); }
+                printf("\n");
+            }
+            if (fam.nonly_a || fam.nonly_b) {
+                printf("           apart:");
+                for (uint32_t i = 0; i < fam.nonly_a && i < 4; i++) { say_lego(&p->lex, fam.only_a[i], v, sizeof v); printf(" %s", v); }
+                printf(" |");
+                for (uint32_t i = 0; i < fam.nonly_b && i < 4; i++) { say_lego(&p->lex, fam.only_b[i], v, sizeof v); printf(" %s", v); }
+                printf("\n");
+            }
+            if (fam.nnames) {
+                printf("           names said of both (an identity, not a kind):");
+                for (uint32_t i = 0; i < fam.nnames && i < 4; i++) { say_lego(&p->lex, fam.names[i], v, sizeof v); printf(" %s", v); }
+                printf("\n");
+            }
+        }
         fflush(stdout);
     }
 
@@ -2056,6 +2127,8 @@ static int cmd_penzar(int argc, char **argv)
                p->keys.property.from_end, p->keys.property.a, p->keys.property.b, p->keys.property.twins);
     printf("on text it had not read yet: bet %llu times, won %llu, chance would win %llu\n",
            (unsigned long long)bets, (unsigned long long)won, (unsigned long long)base);
+    free(seen_before);
+    free(wondered);
     rz_penzar_free(p);
     free(p);
     free(t);

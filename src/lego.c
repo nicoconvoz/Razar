@@ -823,8 +823,19 @@ static int32_t at(const rz_lexicon *x, uint32_t i, int d)
     return (j >= 0 && (uint64_t)j < x->nseq) ? x->seq[j] : -1;
 }
 
+static uint32_t ask_core(rz_lexicon *x, int32_t subject, int32_t relation,
+                         rz_answer *out, uint32_t cap, double *scores);
+
 uint32_t rz_lexicon_ask(rz_lexicon *x, int32_t subject, int32_t relation,
                         rz_answer *out, uint32_t cap)
+{
+    return ask_core(x, subject, relation, out, cap, NULL);
+}
+
+/* the same, also handing back each answer's score: log(lift), plus 1e6 when
+   it was said at least twice */
+static uint32_t ask_core(rz_lexicon *x, int32_t subject, int32_t relation,
+                         rz_answer *out, uint32_t cap, double *scores)
 {
     if (subject < 0 || relation < 0 || cap == 0 || !x->nseq || !x->n) return 0;
 
@@ -895,6 +906,7 @@ uint32_t rz_lexicon_ask(rz_lexicon *x, int32_t subject, int32_t relation,
     }
     uint32_t k = n < cap ? n : cap;
     memcpy(out, all, k * sizeof *out);
+    if (scores) memcpy(scores, score, k * sizeof *scores);
     free(base); free(with); free(score); free(all);
     return k;
 }
@@ -2683,4 +2695,82 @@ void rz_penzar_bite(rz_penzar *p, const unsigned char *t, size_t n, rz_thought *
         p->hunch[p->nhunch++] = (rz_hunch){ (int32_t)m, p->keys.marks[m], -1, p->bites, 0, 0, 0, 0, 0 };
         out->born++;
     }
+}
+
+
+/* ===================== the family of two in the same chair (P46) ========= */
+
+/* what a word is (forward answers said twice) and who is said to be it
+   (backward answers said twice: names) */
+static void what_it_is(rz_lexicon *x, int32_t w, const int32_t *rel, uint32_t nrel,
+                       int32_t *is, uint32_t *nis, int32_t *names, uint32_t *nnames)
+{
+    rz_answer a[64];
+    double sc[64];
+    *nis = *nnames = 0;
+    for (uint32_t r = 0; r < nrel; r++) {
+        uint32_t k = ask_core(x, w, rel[r], a, 64, sc);
+        for (uint32_t i = 0; i < k; i++) {
+            if (sc[i] < 1e6) continue;                   /* said once: an anecdote */
+            if (a[i].dir < 0) { if (*nnames < 64) names[(*nnames)++] = a[i].lego; }
+            else if (*nis < 64) is[(*nis)++] = a[i].lego;
+        }
+    }
+}
+
+static int has(const int32_t *l, uint32_t n, int32_t w)
+{
+    for (uint32_t i = 0; i < n; i++) if (l[i] == w) return 1;
+    return 0;
+}
+
+void rz_lexicon_family(rz_lexicon *x, int32_t a, int32_t b,
+                       const int32_t *relations, uint32_t nrel, rz_family *out)
+{
+    memset(out, 0, sizeof *out);
+    if (a < 0 || b < 0) return;
+    int32_t ia[64], ib[64], na[64], nb[64];
+    uint32_t nia, nib, nna, nnb;
+    what_it_is(x, a, relations, nrel, ia, &nia, na, &nna);
+    what_it_is(x, b, relations, nrel, ib, &nib, nb, &nnb);
+    /* the others in the same chair: the silhouettes of both. What most of them
+       are told as well is the chair ("here": the dog, the cat and the table);
+       a first cut took the tall side of one word's own answers, and "animal",
+       shared by two, fell under it */
+    int32_t mates[32], sil[16];
+    uint32_t nm = 0;
+    for (int side2 = 0; side2 < 2; side2++) {
+        uint32_t k = rz_lexicon_silhouette(x, side2 ? b : a, sil, 16);
+        for (uint32_t i = 0; i < k; i++)
+            if (sil[i] != a && sil[i] != b && !has(mates, nm, sil[i]) && nm < 32) mates[nm++] = sil[i];
+    }
+    uint32_t *told = calloc(x->n, sizeof *told);
+    if (told) {
+        for (uint32_t m = 0; m < nm; m++) {
+            int32_t mi[64], mn[64];
+            uint32_t nmi, nmn;
+            what_it_is(x, mates[m], relations, nrel, mi, &nmi, mn, &nmn);
+            for (uint32_t i = 0; i < nmi; i++) told[mi[i]]++;
+        }
+    }
+    for (uint32_t i = 0; i < nia; i++) {
+        int chair = told && nm && 2 * told[ia[i]] > nm;
+        if (has(ib, nib, ia[i])) {
+            if (!chair && out->nfamily < RZ_FAMILY && !has(out->family, out->nfamily, ia[i]))
+                out->family[out->nfamily++] = ia[i];
+        } else if (out->nonly_a < RZ_FAMILY && !has(out->only_a, out->nonly_a, ia[i]))
+            out->only_a[out->nonly_a++] = ia[i];
+    }
+    free(told);
+    for (uint32_t i = 0; i < nib; i++)
+        if (!has(ia, nia, ib[i]) && out->nonly_b < RZ_FAMILY && !has(out->only_b, out->nonly_b, ib[i]))
+            out->only_b[out->nonly_b++] = ib[i];
+    for (uint32_t i = 0; i < nna; i++)
+        if (has(nb, nnb, na[i]) && out->nnames < RZ_FAMILY && !has(out->names, out->nnames, na[i]))
+            out->names[out->nnames++] = na[i];
+
+    rz_keys k;
+    int same_key = 0;
+    if (rz_lexicon_keys(x, &k) == RZ_OK) { same_key = rz_keys_same(&k, a, b); rz_keys_free(&k); }
+    out->kin = same_key ? RZ_KIN_KEY : out->nfamily ? RZ_KIN_SIBLINGS : RZ_KIN_CHAIR;
 }

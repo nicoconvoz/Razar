@@ -4085,6 +4085,65 @@ TEST(a_hunch_that_holds_lends_itself_sideways)
     free(p);
 }
 
+/* --- the family of two in the same chair (P46) --------------------------- */
+
+/* the dog and the cat are animals and four-legged; one barks and one meows;
+   a dog and a cat may both be called rex. The table sits where they sit
+   ("the dog is here", "the table is here") and is none of it. */
+static size_t family_tree_world(char *out, size_t cap, int clauses)
+{
+    static const char *said[] = {
+        "the dog is an animal", "the cat is an animal",
+        "the dog is a quadruped", "the cat is a quadruped",
+        "the dog is a barker", "the cat is a meower",
+        "rex is a dog", "rex is a cat", "tom is a cat", "fido is a dog",
+        "the table is a thing", "the table is a board",
+    };
+    static const char *place[] = { "dog", "cat", "table" };
+    static const char *where[] = { "here", "there", "inside", "outside" };
+    size_t n = 0;
+    uint64_t r = 83;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6];
+        int w;
+        if ((r >> 60) % 2)
+            w = snprintf(out + n, cap - n, "%s %s ", said[(r >> 33) % 12], j);
+        else
+            w = snprintf(out + n, cap - n, "the %s is %s %s ", place[(r >> 40) % 3], where[(r >> 44) % 4], j);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int in_list(const int32_t *l, uint32_t n, int32_t w)
+{
+    for (uint32_t i = 0; i < n; i++) if (l[i] == w) return 1;
+    return 0;
+}
+
+TEST(two_in_the_same_chair_are_asked_what_they_are)
+{
+    rz_lexicon *x = read_book(family_tree_world);
+    int32_t is = lego_of(x, "is");
+    rz_family f;
+    rz_lexicon_family(x, lego_of(x, "dog"), lego_of(x, "cat"), &is, 1, &f);
+    CHECK_EQ_U(f.kin, RZ_KIN_SIBLINGS);
+    CHECK(in_list(f.family, f.nfamily, lego_of(x, "animal")));
+    CHECK(in_list(f.family, f.nfamily, lego_of(x, "quadruped")));
+    CHECK(in_list(f.only_a, f.nonly_a, lego_of(x, "barker")));
+    CHECK(in_list(f.only_b, f.nonly_b, lego_of(x, "meower")));
+    /* rex is said to be both -- a name, not a family */
+    CHECK(in_list(f.names, f.nnames, lego_of(x, "rex")));
+    CHECK(!in_list(f.family, f.nfamily, lego_of(x, "rex")));
+
+    /* the table sits in the same chair and shares nothing they are */
+    rz_lexicon_family(x, lego_of(x, "dog"), lego_of(x, "table"), &is, 1, &f);
+    CHECK_EQ_U(f.kin, RZ_KIN_CHAIR);
+    CHECK_EQ_U(f.nfamily, 0u);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -4228,6 +4287,7 @@ int main(void)
     RUN(the_same_song_is_heard_in_another_key);
     RUN(it_thinks_while_it_reads);
     RUN(a_hunch_that_holds_lends_itself_sideways);
+    RUN(two_in_the_same_chair_are_asked_what_they_are);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

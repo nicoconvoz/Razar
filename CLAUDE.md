@@ -127,7 +127,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Every way a type is bound, woven round by round | `./razar weave [type] [path]` |
 | Carry the melody to a text, weave the new, keep it | `./razar melody <path> [seed]` |
 | The different instruments one word plays | `./razar instruments <word> [path]` |
-| PENZAR: think while reading — bet, read, think, sideways | `./razar penzar [path] [bite]` |
+| PENZAR: think while reading — bet, read, think, sideways | `./razar penzar [path] [bite] [relation]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

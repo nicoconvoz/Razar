@@ -75,6 +75,49 @@ sideways from a marker's silhouette, bet on, and does not hold.
   markers, in the same bite, fixed the order; lending again as the silhouette
   grows is still open.
 
+## P46 — The family of two in the same chair (2026-10-12)
+
+> What kind of family are dog and cat? They are "animals", "four-legged", and
+> their shapes, sizes and breeds differ — although their names may be the same.
+> It has to PENZAR it. — the author, answering riddle 3 (the twins on the same
+> chair: "yet" and "is" share their followers and are nothing alike)
+
+`rz_lexicon_family`; thought in `razar penzar` every bite.
+
+Two in the same chair are **asked what they are**, with the question taught
+(imitation, P34/P35) and its silhouette:
+
+| | What it is |
+| --- | --- |
+| **family** | what both are, said twice, that most of the others in the chair are not told — "here" is said of the dog, the cat and the table: that is the chair |
+| **apart** | what only one is: barker / meower |
+| **names** | who is said to be both ("rex is a dog", "rex is a cat"): an identity, not a kind (P37) |
+
+The kin: one family (siblings), the same note in another key (P44), or only
+the chair.
+
+In the little world: dog and cat are **one family** — animal, quadruped —
+apart in barker / meower, and "rex" is a name said of both, not a family. The
+table sits in the same chair and is none of it: **only the chair**.
+
+**Lesson from getting it wrong:** the family was first cut at the tall side of
+one word's own answers, and "animal", shared by two, fell under it. What
+separates family from chair is what the *others* in the chair are told — their
+silhouettes say who they are.
+
+### Thinking it while reading
+
+Every bite, what catches its attention — the word that grew most in that bite,
+not glue of the key — is put beside the first word of its silhouette, and it
+wonders what family they are. On the NT it picks chair-mates that are truly
+alike: judíos / fariseos, Pablo / Santiago, respondió / preguntó, Jesús /
+Pedro, nosotros / ellos.
+
+And it concludes, every time, **"they share only the chair"**. The NT almost
+never says "los fariseos son…" or "Pablo es…": the same diagnosis as P36 — a
+narrative is thin food for what things *are*. The mechanism answers the riddle
+in the little world; on scripture there is nothing to answer it with yet.
+
 ## Open
 
 - **D100** — PENZAR thinks only in keys today. The same loop — bet, read,
@@ -86,3 +129,8 @@ sideways from a marker's silhouette, bet on, and does not hold.
   are noise that the bets then let fade. Whether to hold back until there is
   enough to judge, or let the bets do it, as now.
 - **D103** — a hunch lends itself once; a silhouette grows as it reads.
+- **D104** — families on the NT: the question taught is "es"; plurals answer with
+  "son", pasts with "era". Whether the question's silhouette should reach them,
+  or the family be read from other relations it has woven (P38).
+- **D105** — a family thought has no bet yet. It could bet that what is said of
+  one sibling will be said of the other.
