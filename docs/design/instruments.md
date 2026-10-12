@@ -63,6 +63,53 @@ the original AMMC, at the level of use.
 other's silhouette because their company differs by gender (the same reason
 *madre* did not sit with *padre* in P37).
 
+## P44 — The same song in another key (2026-10-11)
+
+> Notice they share many letters in common, and the structure is very similar.
+> What it must detect to fix this: know when it is masculine, when it is
+> feminine, and when the rule is for both. — the author, answering riddle 11
+
+`rz_lexicon_keys`, `rz_keys_same`; used by the instrument judge (`alike`).
+
+1. **Twins:** words of the same length that differ in one letter at one place,
+   seen twice.
+2. **The property:** the difference that repeats across the most twins. On the
+   NT, without being told: the final **a/o** — 256 twins (una/uno, toda/todo,
+   hija/hijo, esta/esto).
+3. **Markers:** the words that stand before twins, split in three by the exact
+   optimum — before one side only, before both, before the other only.
+4. **One note in two keys:** a marker of one side and one of the other that
+   stand **after** the same words, each the other's best.
+
+On the NT:
+
+| | Marks |
+| --- | --- |
+| el, un, este, las | one side |
+| la, una | the other |
+| **su, mi, de, los** | **both** — the rule for both |
+| el ↔ la, un ↔ una | one note in two keys (51 such pairs) |
+
+### Two lessons from getting it wrong
+
+- **Twins judged by their company lost the real twins.** The first version kept
+  only twins of similar company, and dropped gato/gata while keeping toma/tomo:
+  the key is exactly what changes a twin's company ("el gato", "la gata").
+  Twins are read by their letters; the structure is read in the markers.
+- **Partners matched by what follows never met.** Most nouns have no twin ("el
+  trono", "la Ciudad"), so "el" and "la" are followed by different words even
+  once twins are merged. The key changes what follows a marker, not what comes
+  before it — matched by what stands before, el and la paired at once.
+
+### What did not change: "es" still splits by gender
+
+The instruments of "es" on the NT are still 14, with "es la…" apart from "es
+el…". The split that separates them is made higher up, where what stands before
+is "**esta** es la…" against "**este** es el…" — and este/esta differ by **e/a**,
+not by a/o. Gender in Spanish is sung in more than one key (este/esta, ese/esa,
+el/la), and Razar found one. Also only the commonest neighbour of each side is
+compared (D98).
+
 ## Lessons that came from getting it wrong
 
 1. **The two-means collapsed.** Centres kept as raw sums: the larger group's sum
@@ -78,10 +125,11 @@ other's silhouette because their company differs by gender (the same reason
 
 ## Open
 
-- **D96** — gender splits an instrument ("es la", "es el"): two neighbours that
-  differ only by agreement should count as one kind. The silhouette of a word
-  with the agreement removed, or a second silhouette over the neighbours'
-  neighbours.
+- **D96** — *partly answered by P44:* el/la and un/una are one note in two keys,
+  and masculine, feminine and both are told apart. Still open as **D99**: more
+  than one key — the twins of other differences (e/a: este/esta, ese/esa) whose
+  sides fall in line with the sides el and la already mark are the same property
+  sung another way.
 - **D97** — each instrument its own plan (P42) and its own melody (P39): ask
   "Dios es ?" with the instrument that describes, not with all of "es".
 - **D98** — only the commonest neighbour of each side is compared; an instrument

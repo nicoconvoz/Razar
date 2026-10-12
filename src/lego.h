@@ -368,6 +368,38 @@ typedef struct {
 uint32_t rz_word_instruments(rz_lexicon *x, int32_t word, rz_instrument *out, uint32_t cap,
                              uint8_t *which, uint32_t which_cap);
 
+/* --- the same song in another key (P44) -----------------------------------
+ *
+ * "hijo" and "hija", "este" and "esta", "padre" and "madre" share almost every
+ * letter and keep a similar structure (the author). Twins are words of the same
+ * length that differ in one letter at one place and keep similar company (the
+ * tall side of the split of their company similarity: "toma/tomo" share letters
+ * and not structure). The difference that repeats across the most twins is a
+ * PROPERTY -- found, not named; on the NT it is the final a/o. Each twin falls
+ * on one side of it. Then the words before them: a word that stands before one
+ * side only marks that side ("el", "la"); one that stands before both is for
+ * both ("su", "mi") -- three groups, cut by the exact optimum. And two markers
+ * of opposite sides that are followed by the same words once each twin is read
+ * as its partner are one note in two keys: "el" and "la". */
+typedef struct {
+    int8_t   from_end;               /* where the letter differs, counted from the end */
+    uint8_t  a, b;                   /* the two letters: side 0 has a, side 1 has b */
+    uint32_t twins;                  /* how many twins carry it */
+} rz_property;
+
+typedef struct {
+    rz_property property;
+    int8_t  *side;                   /* x->n: -1, or the side of a twin */
+    int32_t *twin;                   /* x->n: the partner across the property, or -1 */
+    int8_t  *marks;                  /* x->n: -1, 0 or 1 (marks a side), 2 (both) */
+    int32_t *key;                    /* x->n: a marker's partner in the other key, or -1 */
+} rz_keys;
+
+int  rz_lexicon_keys(rz_lexicon *x, rz_keys *k);
+void rz_keys_free(rz_keys *k);
+/* the same note: equal, twins, or markers that are each other's key */
+int  rz_keys_same(const rz_keys *k, int32_t a, int32_t b);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

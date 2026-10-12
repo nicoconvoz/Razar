@@ -3907,6 +3907,76 @@ TEST(a_word_that_plays_one_instrument_is_not_split)
     CHECK_EQ_U(rz_word_instruments(x, lego_of(x, "ran"), in, RZ_INSTRUMENTS, NULL, 0), 1u);
 }
 
+/* --- the same song in another key (P44) ---------------------------------- */
+
+/* nouns in two keys: el niño / la niña, el gato / la gata, un perro / una
+   perra; "su" goes with both. Verbs that also differ by a letter -- toma/tomo
+   -- are twins as well, but nothing before them marks a key. */
+static size_t key_world(char *out, size_t cap, int clauses)
+{
+    static const char *mo[] = { "niño", "gato", "perro", "hermano", "amigo" };
+    static const char *fe[] = { "niña", "gata", "perra", "hermana", "amiga" };
+    static const char *verb[] = { "corre", "duerme", "canta", "come" };
+    static const char *who[] = { "rex", "tom", "lou" };
+    size_t n = 0;
+    uint64_t r = 61;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 4];
+        int i = (int)((r >> 33) % 5), w;
+        switch ((r >> 58) % 8) {
+        case 0: w = snprintf(out + n, cap - n, "el %s %s %s ", mo[i], v, j); break;
+        case 1: w = snprintf(out + n, cap - n, "la %s %s %s ", fe[i], v, j); break;
+        case 2: w = snprintf(out + n, cap - n, "un %s %s %s ", mo[i], v, j); break;
+        case 3: w = snprintf(out + n, cap - n, "una %s %s %s ", fe[i], v, j); break;
+        case 4: w = snprintf(out + n, cap - n, "su %s %s %s ", (r >> 40) % 2 ? mo[i] : fe[i], v, j); break;
+        case 5: w = snprintf(out + n, cap - n, "%s es el %s %s ", who[(r >> 44) % 3], mo[i], j); break;
+        case 6: w = snprintf(out + n, cap - n, "%s es la %s %s ", who[(r >> 44) % 3], fe[i], j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s y %s %s ", who[(r >> 44) % 3], (r >> 46) % 2 ? "toma" : "tomo",
+                              (r >> 47) % 2 ? "sopa" : "pan", j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(the_same_song_is_heard_in_another_key)
+{
+    rz_lexicon *x = read_book(key_world);
+    rz_keys k;
+    CHECK_EQ_U(rz_lexicon_keys(x, &k), RZ_OK);
+    /* the property: the last letter, a against o */
+    CHECK_EQ_U(k.property.from_end, 0u);
+    CHECK((k.property.a == 'a' && k.property.b == 'o') || (k.property.a == 'o' && k.property.b == 'a'));
+    CHECK_EQ_U(k.twin[lego_of(x, "gata")], lego_of(x, "gato"));
+    CHECK(k.side[lego_of(x, "gata")] != k.side[lego_of(x, "gato")]);
+    /* toma/tomo are twins too -- same letters, same structure, as the author
+       defined it -- but what stands before them stands before both sides: the
+       key does not change there */
+    CHECK_EQ_U(k.twin[lego_of(x, "toma")], lego_of(x, "tomo"));
+    CHECK_EQ_U(k.marks[lego_of(x, "rex")], 2u);
+
+    /* markers: el and un mark one side, la and una the other, su both */
+    int8_t mel = k.marks[lego_of(x, "el")], mla = k.marks[lego_of(x, "la")];
+    CHECK(mel == 0 || mel == 1);
+    CHECK(mla == 0 || mla == 1);
+    CHECK(mel != mla);
+    CHECK_EQ_U(k.marks[lego_of(x, "un")], (unsigned)mel);
+    CHECK_EQ_U(k.marks[lego_of(x, "una")], (unsigned)mla);
+    CHECK_EQ_U(k.marks[lego_of(x, "su")], 2u);
+
+    /* one note in two keys */
+    CHECK(rz_keys_same(&k, lego_of(x, "el"), lego_of(x, "la")));
+    CHECK(rz_keys_same(&k, lego_of(x, "niño"), lego_of(x, "niña")));
+    CHECK(!rz_keys_same(&k, lego_of(x, "el"), lego_of(x, "una")));
+    rz_keys_free(&k);
+
+    /* and "es el" / "es la" are one instrument */
+    rz_instrument in[RZ_INSTRUMENTS];
+    CHECK_EQ_U(rz_word_instruments(x, lego_of(x, "es"), in, RZ_INSTRUMENTS, NULL, 0), 1u);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -4047,6 +4117,7 @@ int main(void)
     RUN(the_question_it_was_shown_is_put_where_it_applies);
     RUN(a_word_can_play_more_than_one_instrument);
     RUN(a_word_that_plays_one_instrument_is_not_split);
+    RUN(the_same_song_is_heard_in_another_key);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

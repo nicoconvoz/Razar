@@ -2016,6 +2016,7 @@ typedef struct {
     uint8_t          *label;         /* nocc: the instrument, while splitting */
     uint32_t          nlabel;
     uint64_t          rng;
+    const rz_keys    *keys;          /* the same note in another key is not a new kind */
 } band;
 
 static double dotf(const float *a, const double *b, uint32_t n)
@@ -2057,6 +2058,7 @@ static int alike(band *bd, int32_t a, int32_t b)
 {
     if (a < 0 || b < 0) return a == b;
     if (a == b) return 1;
+    if (bd->keys && rz_keys_same(bd->keys, a, b)) return 1;   /* "es el" and "es la" (P44) */
     int32_t sil[64];
     uint32_t k = rz_lexicon_silhouette((rz_lexicon *)bd->x, a, sil, 64);
     for (uint32_t i = 0; i < k; i++) if (sil[i] == b) return 1;
@@ -2259,7 +2261,10 @@ uint32_t rz_word_instruments(rz_lexicon *x, int32_t word, rz_instrument *out, ui
         set[o] = o;
     }
 
-    band bd = { x, pos, nocc, timbre, D, x->nseq / 2, label, 1, 0x9E3779B97F4A7C15ull };
+    rz_keys keys;
+    int have_keys = rz_lexicon_keys(x, &keys) == RZ_OK;
+    band bd = { x, pos, nocc, timbre, D, x->nseq / 2, label, 1, 0x9E3779B97F4A7C15ull,
+                have_keys ? &keys : NULL };
     split_band(&bd, set, nocc, cap < 256 ? cap : 256);
 
     /* study each track apart: what sounds before and after it, more than
@@ -2302,10 +2307,266 @@ uint32_t rz_word_instruments(rz_lexicon *x, int32_t word, rz_instrument *out, ui
     }
     if (which)
         for (uint32_t o = 0; o < nocc && o < which_cap; o++) which[o] = label[o];
+    if (have_keys) rz_keys_free(&keys);
 out:
     if (cache) for (uint32_t i = 0; i < x->n; i++) free(cache[i]);
     free(cache); free(pos); free(set); free(timbre); free(slot); free(row); free(label);
     free(cnt0); free(cnt1); free(cnt2);
     company_free(&c);
     return k;
+}
+
+
+/* ===================== the same song in another key (P44) ================ */
+
+typedef struct { uint32_t dim; float v; } cell;
+typedef struct { uint32_t *start; cell *cells; double *norm; } sparse_company;
+
+static int by_dim(const void *a, const void *b)
+{
+    const cell *p = a, *q = b;
+    return p->dim < q->dim ? -1 : p->dim > q->dim;
+}
+
+/* every word's company as a sorted sparse vector, read off the pair table */
+static int sparse_build(const rz_lexicon *x, const company *c, sparse_company *sc)
+{
+    sc->start = calloc((size_t)x->n + 1, sizeof *sc->start);
+    sc->norm = c->norm;
+    if (!sc->start) return 0;
+    for (uint32_t p = 0; p < x->npair; p++) {
+        if (c->fidx[x->pair[p].a] >= 0) sc->start[x->pair[p].b + 1]++;
+        if (c->fidx[x->pair[p].b] >= 0) sc->start[x->pair[p].a + 1]++;
+    }
+    for (uint32_t i = 0; i < x->n; i++) sc->start[i + 1] += sc->start[i];
+    sc->cells = malloc(((size_t)sc->start[x->n] + 1) * sizeof *sc->cells);
+    uint32_t *fill = malloc(((size_t)x->n + 1) * sizeof *fill);
+    if (!sc->cells || !fill) { free(fill); return 0; }
+    memcpy(fill, sc->start, ((size_t)x->n + 1) * sizeof *fill);
+    for (uint32_t p = 0; p < x->npair; p++) {
+        const rz_lego_pair *q = &x->pair[p];
+        float v = (float)log1p((double)q->count);
+        if (c->fidx[q->a] >= 0) sc->cells[fill[q->b]++] = (cell){ (uint32_t)c->fidx[q->a], v };
+        if (c->fidx[q->b] >= 0) sc->cells[fill[q->a]++] = (cell){ c->F + (uint32_t)c->fidx[q->b], v };
+    }
+    free(fill);
+    for (uint32_t i = 0; i < x->n; i++)
+        qsort(sc->cells + sc->start[i], sc->start[i + 1] - sc->start[i], sizeof *sc->cells, by_dim);
+    return 1;
+}
+
+static double sparse_cos(const sparse_company *sc, uint32_t a, uint32_t b)
+{
+    if (sc->norm[a] <= 0 || sc->norm[b] <= 0) return 0;
+    uint32_t i = sc->start[a], j = sc->start[b];
+    double d = 0;
+    while (i < sc->start[a + 1] && j < sc->start[b + 1]) {
+        if (sc->cells[i].dim < sc->cells[j].dim) i++;
+        else if (sc->cells[i].dim > sc->cells[j].dim) j++;
+        else { d += (double)sc->cells[i].v * sc->cells[j].v; i++; j++; }
+    }
+    return d / (sc->norm[a] * sc->norm[b]);
+}
+
+typedef struct { uint32_t w; uint8_t pos; } masked;
+static const rz_lexicon *masked_x;
+
+/* order by length, then by the spelling with one letter hidden */
+static int by_masked(const void *pa, const void *pb)
+{
+    const masked *p = pa, *q = pb;
+    const rz_lego *a = &masked_x->lego[p->w], *b = &masked_x->lego[q->w];
+    if (a->len != b->len) return a->len < b->len ? -1 : 1;
+    if (p->pos != q->pos) return p->pos < q->pos ? -1 : 1;
+    for (uint8_t i = 0; i < a->len; i++) {
+        if (i == p->pos) continue;
+        if (a->s[i] != b->s[i]) return a->s[i] < b->s[i] ? -1 : 1;
+    }
+    return 0;
+}
+
+typedef struct { uint32_t a, b; int8_t from_end; uint8_t la, lb; double sim; } twin_pair;
+
+void rz_keys_free(rz_keys *k)
+{
+    free(k->side); free(k->twin); free(k->marks); free(k->key);
+    memset(k, 0, sizeof *k);
+}
+
+int rz_keys_same(const rz_keys *k, int32_t a, int32_t b)
+{
+    if (a == b) return 1;
+    if (a < 0 || b < 0 || !k->twin) return 0;
+    return k->twin[a] == b || k->key[a] == b;
+}
+
+int rz_lexicon_keys(rz_lexicon *x, rz_keys *k)
+{
+    memset(k, 0, sizeof *k);
+    if (!x->n || !x->nseq) return RZ_ERR_IO;
+    k->side = malloc(x->n);
+    k->twin = malloc((size_t)x->n * sizeof *k->twin);
+    k->marks = malloc(x->n);
+    k->key = malloc((size_t)x->n * sizeof *k->key);
+    if (!k->side || !k->twin || !k->marks || !k->key) { rz_keys_free(k); return RZ_ERR_IO; }
+    for (uint32_t i = 0; i < x->n; i++) { k->side[i] = -1; k->twin[i] = -1; k->marks[i] = -1; k->key[i] = -1; }
+
+    company c;
+    memset(&c, 0, sizeof c);
+    sparse_company sc;
+    memset(&sc, 0, sizeof sc);
+    masked *mk = NULL;
+    twin_pair *tp = NULL;
+    int rc = RZ_ERR_IO;
+    if (!company_build(x, &c) || !sparse_build(x, &c, &sc)) goto out;
+
+    /* 1. twins: same length, one letter different at one place, seen twice */
+    uint32_t nm = 0;
+    for (uint32_t i = 0; i < x->n; i++) if (x->lego[i].count >= 2 && x->lego[i].len >= 3) nm += x->lego[i].len;
+    mk = malloc(((size_t)nm + 1) * sizeof *mk);
+    if (!mk) goto out;
+    nm = 0;
+    for (uint32_t i = 0; i < x->n; i++)
+        if (x->lego[i].count >= 2 && x->lego[i].len >= 3)
+            for (uint8_t p = 0; p < x->lego[i].len; p++) mk[nm++] = (masked){ i, p };
+    masked_x = x;
+    qsort(mk, nm, sizeof *mk, by_masked);
+    uint32_t ntp = 0, tcap = 1024;
+    tp = malloc(tcap * sizeof *tp);
+    if (!tp) goto out;
+    for (uint32_t i = 0; i < nm; ) {
+        uint32_t j = i + 1;
+        while (j < nm && by_masked(&mk[i], &mk[j]) == 0) j++;
+        for (uint32_t a = i; a < j; a++)
+            for (uint32_t b = a + 1; b < j; b++) {
+                if (ntp == tcap) {
+                    twin_pair *g = realloc(tp, (tcap *= 2) * sizeof *tp);
+                    if (!g) goto out;
+                    tp = g;
+                }
+                const rz_lego *A = &x->lego[mk[a].w], *B = &x->lego[mk[b].w];
+                uint8_t la = A->s[mk[a].pos], lb = B->s[mk[a].pos];
+                uint32_t wa = mk[a].w, wb = mk[b].w;
+                if (la > lb) { uint8_t tl = la; la = lb; lb = tl; uint32_t tw = wa; wa = wb; wb = tw; }
+                tp[ntp++] = (twin_pair){ wa, wb, (int8_t)(A->len - 1 - mk[a].pos), la, lb,
+                                         sparse_cos(&sc, wa, wb) };
+            }
+        i = j;
+    }
+
+    /* 2. No filter on company here. The first version kept only twins of
+       similar company -- and dropped gato/gata while keeping toma/tomo: the key
+       is exactly what changes a twin's company ("el gato", "la gata"), so
+       judging twins by their whole company punishes them for being twins. The
+       structure is read in step 4 instead: what changes with the key marks it,
+       what stands before both sides is the rule for both. */
+    double cut = -HUGE_VAL;
+
+    /* 3. the property: the difference that repeats across the most of them */
+    uint32_t best = 0, bestn = 0;
+    for (uint32_t i = 0; i < ntp; i++) {
+        if (tp[i].sim <= cut) continue;
+        uint32_t n2 = 0;
+        for (uint32_t j = 0; j < ntp; j++)
+            n2 += tp[j].sim > cut && tp[j].from_end == tp[i].from_end && tp[j].la == tp[i].la && tp[j].lb == tp[i].lb;
+        if (n2 > bestn) { bestn = n2; best = i; }
+    }
+    if (bestn == 0) goto out;
+    k->property = (rz_property){ tp[best].from_end, tp[best].la, tp[best].lb, bestn };
+    for (uint32_t i = 0; i < ntp; i++) {
+        const twin_pair *t = &tp[i];
+        if (t->sim <= cut || t->from_end != k->property.from_end || t->la != k->property.a || t->lb != k->property.b) continue;
+        if (k->twin[t->a] >= 0 || k->twin[t->b] >= 0) continue;
+        k->side[t->a] = 0; k->side[t->b] = 1;
+        k->twin[t->a] = (int32_t)t->b; k->twin[t->b] = (int32_t)t->a;
+    }
+
+    /* 4. the markers: what stands before each side. Three groups by the exact
+       optimum: before side 0 only, before both, before side 1 only */
+    {
+        uint32_t *c0 = calloc(x->n, sizeof *c0), *c1 = calloc(x->n, sizeof *c1);
+        double *f = malloc((size_t)x->n * sizeof *f);
+        uint32_t *who = malloc((size_t)x->n * sizeof *who);
+        if (!c0 || !c1 || !f || !who) { free(c0); free(c1); free(f); free(who); goto out; }
+        for (uint32_t i = 0; i + 1 < x->nseq; i++) {
+            int32_t m = x->seq[i], nx = x->seq[i + 1];
+            if (m < 0 || nx < 0 || k->side[nx] < 0) continue;
+            if (k->side[nx]) c1[m]++; else c0[m]++;
+        }
+        uint32_t nf = 0;
+        for (uint32_t m = 0; m < x->n; m++)
+            if (c0[m] + c1[m] >= 2) { f[nf] = (double)c1[m] / (c0[m] + c1[m]); who[nf++] = m; }
+        /* sort, then the two cuts that leave the least spread inside the groups */
+        for (uint32_t i = 1; i < nf; i++) {
+            double v = f[i];
+            uint32_t w = who[i], j = i;
+            while (j > 0 && f[j - 1] > v) { f[j] = f[j - 1]; who[j] = who[j - 1]; j--; }
+            f[j] = v; who[j] = w;
+        }
+        double *ps = malloc(((size_t)nf + 1) * sizeof *ps), *pq = malloc(((size_t)nf + 1) * sizeof *pq);
+        if (ps && pq && nf >= 3) {
+            ps[0] = pq[0] = 0;
+            for (uint32_t i = 0; i < nf; i++) { ps[i + 1] = ps[i] + f[i]; pq[i + 1] = pq[i] + f[i] * f[i]; }
+            #define SSE(lo, hi) ((pq[hi] - pq[lo]) - (ps[hi] - ps[lo]) * (ps[hi] - ps[lo]) / (double)((hi) - (lo)))
+            double bv = HUGE_VAL;
+            uint32_t bi = 1, bj = 2;
+            for (uint32_t i = 1; i + 1 < nf; i++)
+                for (uint32_t j = i + 1; j < nf; j++) {
+                    double v = SSE(0, i) + SSE(i, j) + SSE(j, nf);
+                    if (v < bv) { bv = v; bi = i; bj = j; }
+                }
+            #undef SSE
+            for (uint32_t i = 0; i < nf; i++) k->marks[who[i]] = i < bi ? 0 : i < bj ? 2 : 1;
+        }
+        free(ps); free(pq);
+        free(c0); free(c1); free(f); free(who);
+    }
+
+    /* 5. one note in two keys: a marker of one side and a marker of the other
+       that stand after the same words -- the key changes what follows a
+       marker, not what comes before it ("de el…", "de la…"). Each must be the
+       other's best. (Matched first by what follows, once twins were read as
+       their partner: "el" and "la" never met, since most nouns have no twin --
+       "el trono", "la Ciudad".) */
+    {
+        uint32_t nmk = 0;
+        uint32_t *mks = malloc((size_t)x->n * sizeof *mks);
+        int32_t *best_of = malloc((size_t)x->n * sizeof *best_of);
+        if (!mks || !best_of) { free(mks); free(best_of); goto out; }
+        for (uint32_t m = 0; m < x->n; m++) if (k->marks[m] == 0 || k->marks[m] == 1) mks[nmk++] = m;
+        for (uint32_t i = 0; i < nmk; i++) {
+            best_of[i] = -1;
+            double bv = 0;
+            for (uint32_t j = 0; j < nmk; j++) {
+                if (k->marks[mks[j]] == k->marks[mks[i]]) continue;
+                /* cosine of what stands before each: the first F dimensions */
+                uint32_t a2 = mks[i], b2 = mks[j];
+                uint32_t p = sc.start[a2], q = sc.start[b2];
+                double d = 0, na = 0, nb = 0;
+                for (uint32_t t2 = sc.start[a2]; t2 < sc.start[a2 + 1] && sc.cells[t2].dim < c.F; t2++)
+                    na += (double)sc.cells[t2].v * sc.cells[t2].v;
+                for (uint32_t t2 = sc.start[b2]; t2 < sc.start[b2 + 1] && sc.cells[t2].dim < c.F; t2++)
+                    nb += (double)sc.cells[t2].v * sc.cells[t2].v;
+                while (p < sc.start[a2 + 1] && q < sc.start[b2 + 1]
+                       && sc.cells[p].dim < c.F && sc.cells[q].dim < c.F) {
+                    if (sc.cells[p].dim < sc.cells[q].dim) p++;
+                    else if (sc.cells[p].dim > sc.cells[q].dim) q++;
+                    else { d += (double)sc.cells[p].v * sc.cells[q].v; p++; q++; }
+                }
+                double cs = (na > 0 && nb > 0) ? d / sqrt(na * nb) : 0;
+                if (cs > bv) { bv = cs; best_of[i] = (int32_t)j; }
+            }
+        }
+        for (uint32_t i = 0; i < nmk; i++) {
+            int32_t j = best_of[i];
+            if (j >= 0 && best_of[j] == (int32_t)i) k->key[mks[i]] = (int32_t)mks[j];
+        }
+        free(mks); free(best_of);
+    }
+    rc = RZ_OK;
+out:
+    free(mk); free(tp); free(sc.start); free(sc.cells);
+    company_free(&c);
+    if (rc != RZ_OK) rz_keys_free(k);
+    return rc;
 }
