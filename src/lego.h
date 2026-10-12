@@ -260,6 +260,32 @@ typedef struct {
 uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t cap,
                           uint8_t *is_type);
 
+/* The melody (P39): the bindings, kept as notes -- a side and a spelling --
+ * so that they belong to no text and travel from book to book. Every text it
+ * reads, it carries the melody in, weaves on from it whatever that text has
+ * that the melody did not, and keeps the larger melody. It always weaves the
+ * new; it never forgets a note. */
+typedef struct {
+    int8_t        side;
+    uint8_t       len;
+    unsigned char s[RZ_LEGO_SPAN];
+} rz_note;
+
+#define RZ_MELODY 512
+
+/* Weave on from bindings already known instead of from a seed. `out` starts
+   with the known ones that occur in x (round 0) and grows. */
+uint32_t rz_lexicon_weave_from(rz_lexicon *x, const rz_binding *known, uint32_t nknown,
+                               rz_binding *out, uint32_t cap, uint8_t *is_type);
+/* notes -> bindings of x (absent words are skipped) */
+uint32_t rz_melody_carry(const rz_lexicon *x, const rz_note *notes, uint32_t n,
+                         rz_binding *out, uint32_t cap);
+/* bindings of x -> notes, appended when new; returns the new count */
+uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                         rz_note *notes, uint32_t n, uint32_t cap);
+int      rz_melody_save(const rz_note *notes, uint32_t n, const char *path);
+int      rz_melody_load(rz_note *notes, uint32_t cap, uint32_t *n, const char *path);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

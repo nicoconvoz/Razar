@@ -1519,6 +1519,53 @@ static int is_bound(const rz_lexicon *x, uint32_t i, const rz_binding *b, uint32
     return 0;
 }
 
+/* types under the bindings, read over the first `upto` words: for every
+   binding, the tall side of the share of a word's life it spends bound that
+   way, seen bound twice at least */
+static void weave_types(const rz_lexicon *x, const rz_binding *b, uint32_t nb, uint32_t upto,
+                        uint32_t *tot, uint32_t *c, double *vals, int32_t *who, uint8_t *is_type)
+{
+    memset(is_type, 0, x->n);
+    memset(tot, 0, (size_t)x->n * sizeof *tot);
+    for (uint32_t i = 0; i < upto; i++) if (x->seq[i] >= 0) tot[x->seq[i]]++;
+    for (uint32_t k = 0; k < nb; k++) {
+        memset(c, 0, (size_t)x->n * sizeof *c);
+        for (uint32_t i = 0; i < upto; i++)
+            if (x->seq[i] >= 0 && at(x, i, b[k].side) == b[k].word) c[x->seq[i]]++;
+        uint32_t nv = 0;
+        for (uint32_t w = 0; w < x->n; w++)
+            if (tot[w] >= 2 && (int32_t)w != b[k].word) { vals[nv] = (double)c[w] / tot[w]; who[nv++] = (int32_t)w; }
+        double cut = otsu_list(vals, nv);
+        if (cut == -HUGE_VAL) continue;
+        for (uint32_t i = 0; i < nv; i++)
+            if (vals[i] > cut && c[who[i]] >= 2) is_type[who[i]] = 1;
+    }
+}
+
+/* how much, on the words from `from` on, being a type tells about taking an
+   owner: the mutual information of the two, in nats. It rewards a melody that
+   is both right and wide; one that binds everything to everything tells less */
+static double held_information(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                               const uint8_t *is_type, uint32_t from)
+{
+    double n[2][2] = { { 0, 0 }, { 0, 0 } };
+    for (uint32_t i = from; i < x->nseq; i++) {
+        int32_t a = x->seq[i];
+        if (a < 0) continue;
+        int bound = is_bound(x, i, b, nb, -1) || is_bound(x, i, b, nb, 1);
+        n[is_type[a] ? 1 : 0][bound]++;
+    }
+    double tot = n[0][0] + n[0][1] + n[1][0] + n[1][1], mi = 0;
+    if (tot <= 0) return 0;
+    for (int t = 0; t < 2; t++)
+        for (int k = 0; k < 2; k++) {
+            if (n[t][k] <= 0) continue;
+            double pt = (n[t][0] + n[t][1]) / tot, pk = (n[0][k] + n[1][k]) / tot;
+            mi += n[t][k] / tot * log(n[t][k] / tot / (pt * pk));
+        }
+    return mi;
+}
+
 uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t cap,
                           uint8_t *is_type)
 {
@@ -1530,9 +1577,22 @@ uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t
     rz_lexicon_roles(x, seed, &first, is_type, ident);
     free(ident);
     if (first < 0) return 0;
+    rz_binding known = { 1, first, 0.0, 0 };
+    return rz_lexicon_weave_from(x, &known, 1, out, cap, is_type);
+}
 
+uint32_t rz_lexicon_weave_from(rz_lexicon *x, const rz_binding *known, uint32_t nknown,
+                               rz_binding *out, uint32_t cap, uint8_t *is_type)
+{
+    if (cap == 0) return 0;
+    memset(is_type, 0, x->n);
     uint32_t nb = 0;
-    out[nb++] = (rz_binding){ 1, first, 0.0, 0 };
+    for (uint32_t k = 0; k < nknown && nb < cap; k++)
+        if (known[k].word >= 0 && (uint32_t)known[k].word < x->n) {
+            out[nb] = known[k];
+            out[nb++].round = 0;
+        }
+    if (nb == 0) return 0;
 
     uint32_t *tot = calloc(x->n, sizeof *tot), *c = calloc(x->n, sizeof *c);
     double *vals = malloc((size_t)x->n * 2 * sizeof *vals);
@@ -1542,24 +1602,16 @@ uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t
     double *with = calloc((size_t)x->n * 2, sizeof *with), *all = calloc((size_t)x->n * 2, sizeof *all);
     double *kept = calloc((size_t)x->n * 2, sizeof *kept);
     if (!tot || !c || !vals || !str || !who || !sd || !with || !all || !kept) goto out;
-    for (uint32_t i = 0; i < x->nseq; i++) if (x->seq[i] >= 0) tot[x->seq[i]]++;
+
+    /* It weaves on the first half of what it read and judges each round on
+       the second. Without a judge the loop never stopped by itself: given room
+       for 512 bindings it filled them with plurals and verbs, and on a second
+       text the woven melody predicted worse than the one carried in. */
+    uint32_t learn = x->nseq / 2;
 
     for (uint8_t round = 1; round < 255; round++) {
-        /* types: for every binding, the tall side of the share of a word's
-           life it spends bound that way, seen bound twice at least */
-        memset(is_type, 0, x->n);
-        for (uint32_t b = 0; b < nb; b++) {
-            memset(c, 0, (size_t)x->n * sizeof *c);
-            for (uint32_t i = 0; i < x->nseq; i++)
-                if (x->seq[i] >= 0 && at(x, i, out[b].side) == out[b].word) c[x->seq[i]]++;
-            uint32_t nv = 0;
-            for (uint32_t w = 0; w < x->n; w++)
-                if (tot[w] >= 2 && (int32_t)w != out[b].word) { vals[nv] = (double)c[w] / tot[w]; who[nv++] = (int32_t)w; }
-            double cut = otsu_list(vals, nv);
-            if (cut == -HUGE_VAL) continue;
-            for (uint32_t i = 0; i < nv; i++)
-                if (vals[i] > cut && c[who[i]] >= 2) is_type[who[i]] = 1;
-        }
+        weave_types(x, out, nb, learn, tot, c, vals, who, is_type);
+        double now = held_information(x, out, nb, is_type, learn);
         if (nb == cap) break;
 
         /* candidates on each side of a type, and how often the binding on the
@@ -1571,7 +1623,7 @@ uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t
         double nw = 0, na = 0, side_n[2] = {0, 0}, side_b[2] = {0, 0};
         int has[2] = {0, 0};
         for (uint32_t k = 0; k < nb; k++) has[out[k].side > 0] = 1;
-        for (uint32_t i = 0; i < x->nseq; i++) {
+        for (uint32_t i = 0; i < learn; i++) {
             int32_t a = x->seq[i];
             if (a < 0) continue;
             na++;
@@ -1619,16 +1671,85 @@ uint32_t rz_lexicon_weave(rz_lexicon *x, int32_t seed, rz_binding *out, uint32_t
         for (uint32_t i = 0; i < nc; i++) if (vals[i] < rcut) sv[ns++] = str[i];
         double scut = otsu_list(sv, ns);
         free(sv);
-        uint32_t added = 0;
+        uint32_t before = nb;
         for (uint32_t i = 0; i < nc && nb < cap; i++)
-            if (vals[i] < rcut && (scut == -HUGE_VAL || str[i] > scut)) {
+            if (vals[i] < rcut && (scut == -HUGE_VAL || str[i] > scut))
                 out[nb++] = (rz_binding){ sd[i], who[i], vals[i], round };
-                added++;
-            }
-        if (!added) break;
+        if (nb == before) break;
+
+        /* the judge: keep the round only if, on the half it did not weave on,
+           being a type now says more about taking an owner than it did */
+        weave_types(x, out, nb, learn, tot, c, vals, who, is_type);
+        if (held_information(x, out, nb, is_type, learn) <= now) { nb = before; break; }
     }
+    /* the types of the melody it kept, read over everything it read */
+    weave_types(x, out, nb, x->nseq, tot, c, vals, who, is_type);
 out:
     free(tot); free(c); free(vals); free(str); free(who); free(sd);
     free(with); free(all); free(kept);
     return nb;
+}
+
+
+/* ===================== the melody (P39) ================================== */
+
+uint32_t rz_melody_carry(const rz_lexicon *x, const rz_note *notes, uint32_t n,
+                         rz_binding *out, uint32_t cap)
+{
+    uint32_t k = 0;
+    for (uint32_t i = 0; i < n && k < cap; i++) {
+        int32_t w = rz_lexicon_find(x, notes[i].s, notes[i].len);
+        if (w >= 0) out[k++] = (rz_binding){ notes[i].side, w, 0.0, 0 };
+    }
+    return k;
+}
+
+uint32_t rz_melody_learn(const rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                         rz_note *notes, uint32_t n, uint32_t cap)
+{
+    for (uint32_t i = 0; i < nb && n < cap; i++) {
+        if (b[i].word < 0 || (uint32_t)b[i].word >= x->n) continue;
+        const rz_lego *g = &x->lego[b[i].word];
+        int known = 0;
+        for (uint32_t j = 0; j < n && !known; j++)
+            known = notes[j].side == b[i].side && notes[j].len == g->len
+                 && memcmp(notes[j].s, g->s, g->len) == 0;
+        if (known) continue;
+        rz_note note;
+        memset(&note, 0, sizeof note);
+        note.side = b[i].side;
+        note.len = g->len;
+        memcpy(note.s, g->s, g->len);
+        notes[n++] = note;
+    }
+    return n;
+}
+
+#define RZ_MELODY_MAGIC 0x4C454D52u   /* "RMEL" */
+#define RZ_MELODY_VER   (1u + 1000u * (uint32_t)sizeof(rz_note))
+
+int rz_melody_save(const rz_note *notes, uint32_t n, const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return RZ_ERR_IO;
+    uint32_t head[3] = { RZ_MELODY_MAGIC, RZ_MELODY_VER, n };
+    int ok = fwrite(head, sizeof head, 1, f) == 1
+          && (n == 0 || fwrite(notes, sizeof *notes, n, f) == n);
+    if (fclose(f) != 0) ok = 0;
+    return ok ? RZ_OK : RZ_ERR_IO;
+}
+
+int rz_melody_load(rz_note *notes, uint32_t cap, uint32_t *n, const char *path)
+{
+    *n = 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return RZ_ERR_MISSING;
+    uint32_t head[3];
+    int rc = RZ_OK;
+    if (fread(head, sizeof head, 1, f) != 1) rc = RZ_ERR_IO;
+    else if (head[0] != RZ_MELODY_MAGIC || head[1] != RZ_MELODY_VER || head[2] > cap) rc = RZ_ERR_VERSION;
+    else if (head[2] && fread(notes, sizeof *notes, head[2], f) != head[2]) rc = RZ_ERR_IO;
+    else *n = head[2];
+    fclose(f);
+    return rc;
 }

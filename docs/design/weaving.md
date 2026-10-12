@@ -114,6 +114,62 @@ recognises the owned things of a novel it never read.
 Noise that came along: `.` and `—dijo` (the dash of dialogue is not yet found as
 a mark, D71), and "después", "dejar".
 
+## P39 — The melody: it always weaves the new (2026-10-11)
+
+> Let it weave — always let it weave the new. — the author
+
+`rz_melody_carry`, `rz_melody_learn`, `rz_lexicon_weave_from`, `razar melody <path>`;
+kept in `nido/melody.dat`.
+
+The bindings are kept as **notes** — a side and a spelling — so they belong to no
+text. Every text it reads, it carries the melody in, weaves on from it with no
+seed, and keeps whatever new note that text gave. A note is never forgotten.
+
+### Without a judge, weaving never stopped
+
+Given room for 512 bindings instead of 64, the loop filled all 512 on the NT —
+plurals after the type, verbs before it, anything. The cap had been hiding it
+(D87). With the melody full there was no room left for a second text to add
+anything, and on the chess documentation the woven melody predicted *worse* than
+the one carried in (5.22× → 3.21×).
+
+**The judge** is the behaviour P35 already had — repeat what works, let go of
+what does not. It weaves on the first half of what it read and keeps a round only
+if, on the second half, being a type says **more** about taking an owner than it
+did before: the mutual information of the two. That rewards a melody that is
+both right and wide; one that binds everything to everything says less.
+
+### The voyage, measured
+
+Each text: the melody woven on its first half, judged on its second half (not
+read), against eight blind melodies of the same frequencies.
+
+| Text | Notes that sound | Woven new | Melody | Blind | Cases |
+| --- | --- | --- | --- | --- | --- |
+| New Testament (from "hijo") | — | 46 | **12.12×** | 1.29× | 3,471 |
+| Quiroga, *Historia de un amor turbio* | 30 of 46 | none passed the judge | 2.95× | 2.55× | 1,059 |
+| chess documentation | 12 of 46 | en, rival | 15.05× (carried alone 18.45×) | 7.13× | 18 |
+
+What it shows:
+
+- **On the NT the judge turned noise into structure**: 12× against 1.3× blind,
+  where the unjudged 512 gave 3.17×.
+- **It wove a second music by itself.** Besides the possessives, the NT melody
+  holds *ha, han, hemos, había, habían, haya, he, has* and *será, sea, ser*
+  before the type — auxiliaries before a participle. The same test found a
+  different structure, nobody pointed at it.
+- **Quiroga added nothing.** No round passed the judge, and the margin over the
+  blind melodies is small (2.95× vs 2.55×). The earlier, unjudged 64-binding
+  melody carried better to this novel (4.14× vs 1.96×): what the judge cut on the
+  NT was partly what travels.
+- **The chess text is too short to read** (18 cases): weaving "en" and "rival"
+  passed the judge inside the first half and then predicted a little worse on the
+  second.
+
+So it always weaves, and now it stops by itself; whether the judge should also
+weigh what *travels* to other texts, and not only what holds within the text it
+learned on, is open (D90).
+
 ## Lessons that came from getting it wrong
 
 1. **A word after the type always "replaces" "de"** — it is standing in de's own
@@ -131,13 +187,15 @@ a mark, D71), and "después", "dejar".
   "adoptivos"), verbs before it ("quedó", "tener"), and "Buena" (of "Buena
   Noticia"). The candidate's own kind — does it itself behave like a binding
   elsewhere — is the next filter.
-- **D87** — the cap of 64 is reached in round 5 and "hermanos" stays out: "sus"
-  arrives in the last round. Whether the loop should stop by itself (nothing new
-  pays) rather than at a cap.
+- **D87** — *answered by P39:* the loop now stops by itself — a round is kept
+  only when it pays on the half it did not weave on.
 - **D89** — *measured:* the melody carries — 1.6× the blind bar on the chess
   documentation (25 cases), **2.1× on Quiroga's novel (711 cases)**. Still open:
   whether weaving again on the new text, starting from the carried melody, adds
   the bindings that text has and the NT does not.
+- **D90** — the judge looks only inside the text being read. What it cut on the
+  NT was partly what carried to Quiroga. A melody that has crossed several texts
+  could judge a note by whether it holds in all of them.
 - **D88** — this weaves one structure (type + owner). The same loop, started from
   any seed and any binding, is how any other structure would be woven; nothing in
   it is about kinship. Not yet run on other seeds.

@@ -3524,6 +3524,100 @@ TEST(the_owner_moved_in_front_is_the_same_music)
     rz_lexicon_free(&x);
 }
 
+/* --- the melody (P39) ---------------------------------------------------- */
+
+/* A second book: the same music, plus a note the first never had -- "our",
+   bridged by "our son". It must be woven in from the melody carried over,
+   with no seed. */
+static size_t second_book(char *out, size_t cap, int clauses)
+{
+    static const char *of_type[] = { "son", "king", "friend" };
+    static const char *pos_type[] = { "mother", "sister", "wife" };
+    static const char *pos[] = { "his", "her", "our" };
+    static const char *name[] = { "rex", "tom", "lou" };
+    static const char *noun[] = { "dog", "cat", "cow", "hen" };
+    static const char *verb[] = { "ran", "sat", "ate", "slept", "sang" };
+    size_t n = 0;
+    uint64_t r = 77;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 5];
+        const char *nm = name[(r >> 37) % 3], *no = noun[(r >> 41) % 4];
+        int w;
+        switch ((r >> 59) % 8) {
+        case 0: case 1: w = snprintf(out + n, cap - n, "the %s of %s %s %s ", of_type[(r >> 33) % 3], nm, v, j); break;
+        case 2:  w = snprintf(out + n, cap - n, "the %s of the %s %s %s ", of_type[(r >> 33) % 3], no, v, j); break;
+        case 3:  w = snprintf(out + n, cap - n, "%s %s %s %s ", pos[(r >> 45) % 3], pos_type[(r >> 33) % 3], v, j); break;
+        case 4:  w = snprintf(out + n, cap - n, "%s %s %s %s ", pos[(r >> 45) % 3], of_type[(r >> 33) % 3], v, j); break;
+        case 5:  w = snprintf(out + n, cap - n, "the %s %s %s ", no, v, j); break;
+        case 6:  w = snprintf(out + n, cap - n, "a %s %s %s ", no, v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s %s ", nm, v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static rz_lexicon *read_book(size_t (*book)(char *, size_t, int))
+{
+    static char t[140000];
+    size_t n = book(t, sizeof t, 6000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon *x = malloc(sizeof *x);
+    rz_lexicon_init(x);
+    rz_lexicon_read_words(x, m, (const unsigned char *)t, n);
+    return x;
+}
+
+static int has_note(const rz_note *notes, uint32_t n, const char *s, int side)
+{
+    for (uint32_t i = 0; i < n; i++)
+        if (notes[i].side == side && notes[i].len == strlen(s) && memcmp(notes[i].s, s, notes[i].len) == 0)
+            return 1;
+    return 0;
+}
+
+TEST(the_melody_travels_and_weaves_what_is_new)
+{
+    static rz_note notes[RZ_MELODY];
+    rz_binding b[RZ_BINDINGS], c[RZ_BINDINGS], w[RZ_BINDINGS];
+
+    /* first book: woven from a seed, kept as notes */
+    rz_lexicon *one = read_book(woven_world);
+    uint8_t *ty1 = calloc(one->n, 1);
+    uint32_t nb = rz_lexicon_weave(one, lego_of(one, "son"), b, RZ_BINDINGS, ty1);
+    uint32_t nn = rz_melody_learn(one, b, nb, notes, 0, RZ_MELODY);
+    CHECK(has_note(notes, nn, "his", -1) && has_note(notes, nn, "of", 1));
+    CHECK(!has_note(notes, nn, "our", -1));
+
+    /* second book: carried in, no seed, and "our" is woven on */
+    rz_lexicon *two = read_book(second_book);
+    uint32_t nc = rz_melody_carry(two, notes, nn, c, RZ_BINDINGS);
+    CHECK(nc >= 2);
+    uint8_t *ty2 = calloc(two->n, 1);
+    uint32_t nw = rz_lexicon_weave_from(two, c, nc, w, RZ_BINDINGS, ty2);
+    CHECK(nw > nc);
+    uint32_t grown = rz_melody_learn(two, w, nw, notes, nn, RZ_MELODY);
+    CHECK(grown > nn);
+    CHECK(has_note(notes, grown, "our", -1));          /* the new note */
+    CHECK(has_note(notes, grown, "his", -1));          /* nothing forgotten */
+    CHECK(!has_note(notes, grown, "the", -1));
+    CHECK(ty2[lego_of(two, "mother")]);
+
+    /* and a melody survives the voyage to disk */
+    const char *path = "test_melody.tmp";
+    CHECK_EQ_U(rz_melody_save(notes, grown, path), RZ_OK);
+    static rz_note back[RZ_MELODY];
+    uint32_t nback = 0;
+    CHECK_EQ_U(rz_melody_load(back, RZ_MELODY, &nback, path), RZ_OK);
+    CHECK_EQ_U(nback, grown);
+    CHECK(memcmp(back, notes, grown * sizeof *notes) == 0);
+    CHECK(rz_melody_load(back, RZ_MELODY, &nback, "no_such_melody.tmp") != RZ_OK);
+    remove(path);
+    free(ty1); free(ty2);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -3657,6 +3751,7 @@ int main(void)
     RUN(finding_concepts_learns_nothing);
     RUN(a_type_asks_for_an_owner_and_an_identity_fills_the_slot);
     RUN(the_owner_moved_in_front_is_the_same_music);
+    RUN(the_melody_travels_and_weaves_what_is_new);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

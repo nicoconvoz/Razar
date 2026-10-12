@@ -29,6 +29,7 @@
 #define AUTOPSIES "autopsies"
 #define FEED_DIR  "feed"
 #define LEXICON   NEST "/lexicon.dat"
+#define MELODY    NEST "/melody.dat"
 
 static int is_dir(const char *path)
 {
@@ -1651,6 +1652,149 @@ static int cmd_weave(int argc, char **argv)
     return 0;
 }
 
+/* --- the melody (P39) ----------------------------------------------------- */
+
+/* how much more often the types a melody hears in x (the first half) take an
+   owner in `later` (the second half, not read) than every other word */
+static double melody_lift(rz_lexicon *x, const rz_binding *b, uint32_t nb,
+                          const int32_t *later, uint32_t nlater, uint32_t *cases)
+{
+    uint8_t *ty = calloc(x->n, 1);
+    rz_binding *tmp = malloc((nb + 1) * sizeof *tmp);
+    if (!ty || !tmp) { free(ty); free(tmp); return 0; }
+    rz_lexicon_weave_from(x, b, nb, tmp, nb, ty);     /* types only: no room to grow */
+    uint32_t n1 = 0, h1 = 0, n0 = 0, h0 = 0;
+    for (uint32_t i = 0; i < nlater; i++) {
+        int32_t a = later[i];
+        if (a < 0) continue;
+        int bound = 0;
+        for (uint32_t k = 0; k < nb && !bound; k++) {
+            int64_t j = (int64_t)i + b[k].side;
+            bound = j >= 0 && (uint64_t)j < nlater && later[j] == b[k].word;
+        }
+        if (ty[a]) { n1++; h1 += bound; } else { n0++; h0 += bound; }
+    }
+    free(ty);
+    free(tmp);
+    *cases = n1;
+    double r1 = n1 ? (double)h1 / n1 : 0, r0 = n0 ? (double)h0 / n0 : 0;
+    return r0 > 0 ? r1 / r0 : 0;
+}
+
+static int cmd_melody(int argc, char **argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "usage: razar melody <path> [seed]   (seed only when no melody is kept yet)\n");
+        return 1;
+    }
+    const char *path = argv[0];
+    const char *seed_word = (argc > 1) ? argv[1] : "hijo";
+
+    static rz_note notes[RZ_MELODY];
+    uint32_t nn = 0;
+    int rc = rz_melody_load(notes, RZ_MELODY, &nn, MELODY);
+    if (rc != RZ_OK && rc != RZ_ERR_MISSING) { fprintf(stderr, "refusing an unreadable melody\n"); return 1; }
+
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+    size_t half = n / 2;
+    while (half < n && t[half] != ' ') half++;
+
+    rz_mind *m = malloc(sizeof(*m));
+    if (!m || !t) { fprintf(stderr, "out of memory\n"); free(t); free(m); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, half);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, half);
+    int32_t *later = malloc((n - half + 1) * sizeof *later);
+    uint32_t nlater = later ? rz_lexicon_words_of(&x, m, t + half, n - half, later, (uint32_t)(n - half)) : 0;
+
+    static rz_binding carried[RZ_MELODY], woven[RZ_MELODY];
+    uint8_t *ty = calloc(x.n, 1);
+    uint32_t nc = 0, nw = 0;
+    if (nn == 0) {
+        int32_t seed = lego_for_word(&x, seed_word);
+        printf("no melody kept yet: weaving one from [%s]\n", seed_word);
+        nw = seed >= 0 ? rz_lexicon_weave(&x, seed, woven, RZ_MELODY, ty) : 0;
+    } else {
+        nc = rz_melody_carry(&x, notes, nn, carried, RZ_MELODY);
+        printf("the melody kept: %u notes, %u of them sound in this text\n", nn, nc);
+        nw = rz_lexicon_weave_from(&x, carried, nc, woven, RZ_MELODY, ty);
+    }
+
+    char w[80];
+    printf("woven here: %u bindings, new:", nw);
+    uint32_t fresh = 0;
+    for (uint32_t i = nc; i < nw; i++) {
+        say_lego(&x, woven[i].word, w, sizeof w);
+        printf("  %s%s%s", woven[i].side < 0 ? "" : "___ ", w, woven[i].side < 0 ? " ___" : "");
+        fresh++;
+    }
+    printf("%s\n\n", fresh ? "" : " none");
+
+    /* the bar: the second half, not read */
+    uint32_t cs = 0;
+    if (nc) {
+        double lc = melody_lift(&x, carried, nc, later, nlater, &cs);
+        printf("  carried melody alone   %.2fx  (%u cases)\n", lc, cs);
+    }
+    double lw = melody_lift(&x, woven, nw, later, nlater, &cs);
+    printf("  carried and woven on   %.2fx  (%u cases)\n", lw, cs);
+    {
+        /* blind melodies: every binding swapped for the word of the nearest
+           frequency in this text, on the same side */
+        uint32_t *ord = malloc(x.n * sizeof *ord), *rank = malloc(x.n * sizeof *rank);
+        static rz_binding blind[RZ_MELODY];
+        double sum = 0;
+        int runs = 0;
+        if (ord && rank) {
+            for (uint32_t i = 0; i < x.n; i++) ord[i] = i;
+            for (uint32_t gap = x.n / 2; gap > 0; gap /= 2)
+                for (uint32_t i = gap; i < x.n; i++) {
+                    uint32_t v = ord[i], j = i;
+                    while (j >= gap && x.lego[ord[j - gap]].count < x.lego[v].count) { ord[j] = ord[j - gap]; j -= gap; }
+                    ord[j] = v;
+                }
+            for (uint32_t i = 0; i < x.n; i++) rank[ord[i]] = i;
+            for (int j = 1; j <= 8; j++) {
+                for (uint32_t k = 0; k < nw; k++) {
+                    int64_t r = (int64_t)rank[woven[k].word] + ((j & 1) ? (j + 1) / 2 : -(j / 2));
+                    if (r < 0) r = 0;
+                    if (r >= (int64_t)x.n) r = (int64_t)x.n - 1;
+                    blind[k] = (rz_binding){ woven[k].side, (int32_t)ord[r], 0.0, 0 };
+                }
+                uint32_t bc;
+                sum += melody_lift(&x, blind, nw, later, nlater, &bc);
+                runs++;
+            }
+        }
+        printf("  blind melodies         %.2fx  (average of %d)\n\n", runs ? sum / runs : 0.0, runs);
+        free(ord);
+        free(rank);
+    }
+
+    uint32_t grown = rz_melody_learn(&x, woven, nw, notes, nn, RZ_MELODY);
+    MKDIR(NEST);
+    if (rz_melody_save(notes, grown, MELODY) != RZ_OK) fprintf(stderr, "warning: could not write %s\n", MELODY);
+    else printf("  the melody kept: %u notes -> %u (%s)\n", nn, grown, MELODY);
+
+    free(ty);
+    free(later);
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -1686,6 +1830,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "concepts"))     return cmd_concepts(argc - 2, argv + 2);
     if (!strcmp(argv[1], "roles"))        return cmd_roles(argc - 2, argv + 2);
     if (!strcmp(argv[1], "weave"))        return cmd_weave(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "melody"))       return cmd_melody(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
