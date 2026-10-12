@@ -404,7 +404,7 @@ they still hold; a status changed because code now answers it says so.
 | D73–D77, D95 | [behaviours.md](behaviours.md) |
 | D96–D99 | [instruments.md](instruments.md) |
 | D100–D105 | [penzar.md](penzar.md) |
-| D106–D108 | [associations.md](associations.md) |
+| D106–D110 | [associations.md](associations.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
 | D86–D94 | [weaving.md](weaving.md) |
@@ -425,7 +425,7 @@ they still hold; a status changed because code now answers it says so.
 | P35 behaviours, P42 where a question applies | [behaviours.md](behaviours.md) |
 | P43 the instruments of a word, P44 the same song in another key | [instruments.md](instruments.md) |
 | P45 PENZAR — thinking in real time, P46 the family of two in the same chair | [penzar.md](penzar.md) |
-| P47 the map of associations | [associations.md](associations.md) |
+| P47 the map of associations, P48 the melody of the path | [associations.md](associations.md) |
 | P36 concepts | [concepts.md](concepts.md) |
 | P37 types and identities | [types-and-identities.md](types-and-identities.md) |
 | P38 weaving, P39 the melody, P40 why it worked, P41 the specialised key | [weaving.md](weaving.md) |

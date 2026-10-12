@@ -2228,6 +2228,135 @@ done:
     return 0;
 }
 
+/* --- the melody of the path (P48) ----------------------------------------- */
+
+typedef struct { rz_mind *m; rz_lexicon x; rz_keys k; rz_assoc a; int ok; } read_map;
+
+static void map_of(const unsigned char *t, size_t n, read_map *r)
+{
+    memset(r, 0, sizeof *r);
+    r->m = malloc(sizeof *r->m);
+    if (!r->m) return;
+    rz_init(r->m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(r->m, t, n);
+    rz_lexicon_init(&r->x);
+    rz_lexicon_read_words(&r->x, r->m, t, n);
+    if (rz_lexicon_keys(&r->x, &r->k) != RZ_OK) return;
+    rz_assoc_build(&r->x, &r->k, &r->a);
+    r->ok = 1;
+}
+
+static void map_free(read_map *r)
+{
+    if (r->ok) { rz_assoc_free(&r->a); rz_keys_free(&r->k); }
+    rz_lexicon_free(&r->x);
+    if (r->m) { rz_free(r->m); free(r->m); }
+}
+
+/* the same word in another reading, by its spelling */
+static int32_t same_word(const rz_lexicon *from, int32_t w, const rz_lexicon *to)
+{
+    if (w < 0) return -1;
+    return rz_lexicon_find(to, from->lego[w].s, from->lego[w].len);
+}
+
+static int map_says(const rz_assoc *a, int32_t x1, int32_t r, int32_t b)
+{
+    for (uint32_t i = 0; i < a->n; i++)
+        if (a->link[i].a == x1 && a->link[i].r == r && a->link[i].b == b && a->link[i].round == 0) return 1;
+    return 0;
+}
+
+static int cmd_dominoes(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+    size_t half = n / 2;
+    while (half < n && t[half] != ' ') half++;
+
+    /* the first half: the map, the tunes heard in it, the dominoes */
+    read_map one, two;
+    map_of(t, half, &one);
+    map_of(t + half, n - half, &two);
+    if (!one.ok || !two.ok) { fprintf(stderr, "no key heard in one of the halves\n"); map_free(&one); map_free(&two); free(t); return 1; }
+    uint32_t said = one.a.n;
+    static rz_tune tu[256], all_tu[4096];
+    uint32_t nall = rz_assoc_tunes(&one.a, all_tu, 4096), nt = 0;
+    /* the tunes of the question taught (imitation): "es" and its silhouette.
+       Every relation let in, the NT's glue -- "Los", "Y", the comma -- made
+       the tunes, and the dominoes multiplied it */
+    const char *rel = (argc > 1) ? argv[1] : "es";
+    int32_t rels[16];
+    uint32_t nr = 0;
+    int32_t r0 = lego_for_word(&one.x, rel);
+    if (r0 >= 0) { rels[nr++] = r0; nr += rz_lexicon_silhouette(&one.x, r0, rels + 1, 15); }
+    for (uint32_t i = 0; i < nall && nt < 256; i++) {
+        int in1 = 0, in2 = 0, in3 = 0;
+        for (uint32_t q = 0; q < nr; q++) { in1 |= rels[q] == all_tu[i].r1; in2 |= rels[q] == all_tu[i].r2; in3 |= rels[q] == all_tu[i].r3; }
+        if (in1 && in2 && in3) tu[nt++] = all_tu[i];
+    }
+    char a1[80], a2[80], a3[80];
+    printf("first half: %u links said; %u tunes heard twice or more, %u of them in the question taught\n",
+           said, nall, nt);
+    for (uint32_t i = 0; i < nt && i < 10; i++) {
+        say_lego(&one.x, tu[i].r1, a1, sizeof a1);
+        say_lego(&one.x, tu[i].r2, a2, sizeof a2);
+        say_lego(&one.x, tu[i].r3, a3, sizeof a3);
+        printf("  %s . %s  ->  %s    (%u walks, shortcut said %u times)\n", a1, a2, a3, tu[i].paths, tu[i].heard);
+    }
+    uint32_t rounds = 0;
+    uint32_t fell = rz_assoc_dominoes(&one.a, tu, nt, 50000, &rounds);
+    printf("\n%u meanings fell in %u rounds -- nobody wrote them in the first half\n", fell, rounds);
+
+    /* the bar: the second half, read alone. Of what fell, how much does it
+       say? Against the same shortcut with its end swapped for another end that
+       fell with the same relation (blind) */
+    uint32_t tested = 0, found = 0, blind_found = 0, shown = 0;
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    uint32_t *fallen = malloc((one.a.n + 1) * sizeof *fallen);
+    uint32_t nfal = 0;
+    for (uint32_t i = 0; fallen && i < one.a.n; i++) if (one.a.link[i].round) fallen[nfal++] = i;
+    for (uint32_t q = 0; q < nfal; q++) {
+        const rz_link *l = &one.a.link[fallen[q]];
+        int32_t A = same_word(&one.x, l->a, &two.x), R = same_word(&one.x, l->r, &two.x), B = same_word(&one.x, l->b, &two.x);
+        if (A < 0 || R < 0 || B < 0) continue;
+        tested++;
+        int hit = map_says(&two.a, A, R, B);
+        found += (uint32_t)hit;
+        /* blind: another fallen link's end, same relation */
+        for (int tries = 0; tries < 16; tries++) {
+            rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+            const rz_link *o = &one.a.link[fallen[rng % nfal]];
+            if (o->r != l->r || o->b == l->b) continue;
+            int32_t B2 = same_word(&one.x, o->b, &two.x);
+            if (B2 >= 0 && map_says(&two.a, A, R, B2)) blind_found++;
+            break;
+        }
+        if (hit && shown < 12) {
+            say_lego(&one.x, l->a, a1, sizeof a1);
+            say_lego(&one.x, l->r, a2, sizeof a2);
+            say_lego(&one.x, l->b, a3, sizeof a3);
+            printf("  fell in round %u, and the second half says it: %s %s %s\n", l->round, a1, a2, a3);
+            shown++;
+        }
+    }
+    printf("\nof %u fallen meanings whose words the second half knows: %u said there; blind ends: %u\n",
+           tested, found, blind_found);
+    free(fallen);
+    map_free(&one);
+    map_free(&two);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2267,6 +2396,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "instruments"))  return cmd_instruments(argc - 2, argv + 2);
     if (!strcmp(argv[1], "penzar"))       return cmd_penzar(argc - 2, argv + 2);
     if (!strcmp(argv[1], "map"))          return cmd_map(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "dominoes"))     return cmd_dominoes(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

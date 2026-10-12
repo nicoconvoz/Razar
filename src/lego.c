@@ -2556,6 +2556,15 @@ int rz_lexicon_keys(rz_lexicon *x, rz_keys *k)
                 }
             #undef SSE
             for (uint32_t i = 0; i < nf; i++) k->marks[who[i]] = i < bi ? 0 : i < bj ? 2 : 1;
+        } else {
+            for (uint32_t i = 0; i < nf; i++) k->marks[who[i]] = f[i] > 0.5 ? 1 : f[i] < 0.5 ? 0 : 2;
+        }
+        /* "For both" is only what was seen before both sides, twice each: the
+           three-way split makes three groups even where there is no "both",
+           and with few markers "la" landed in the middle. */
+        for (uint32_t i = 0; i < nf; i++) {
+            uint32_t m = who[i];
+            if (k->marks[m] == 2 && (c0[m] < 2 || c1[m] < 2)) k->marks[m] = c1[m] > c0[m] ? 1 : 0;
         }
         free(ps); free(pq);
         free(c0); free(c1); free(f); free(who); free(was);
@@ -2827,7 +2836,7 @@ static void add_link(rz_assoc *m, int32_t a, int32_t r, int32_t b)
         m->link = l;
         m->cap = cap;
     }
-    m->link[m->n++] = (rz_link){ a, r, b, 1 };
+    m->link[m->n++] = (rz_link){ a, r, b, 1, 0 };
 }
 
 uint32_t rz_assoc_build(rz_lexicon *x, const rz_keys *k, rz_assoc *m)
@@ -2850,19 +2859,30 @@ uint32_t rz_assoc_build(rz_lexicon *x, const rz_keys *k, rz_assoc *m)
         thing[w] = after[w] >= 2 && 2 * after[w] > x->lego[w].count && !is_marker(k, (int32_t)w);
     free(after);
 
+    /* An article: a marker of one side whose next word is mostly a thing
+       ("una perra", "el gato"). It is neither what a statement is about nor its
+       relation. Told first by having a partner in the other key, "una" -- left
+       without one -- related: "then una perra" became then --una--> perra. A
+       marker whose next word is mostly not a thing still relates: "es un",
+       "es bueno". */
+    uint8_t *article = calloc(x->n, 1);
+    uint32_t *to_thing = calloc(x->n, sizeof *to_thing);
+    if (!article || !to_thing) { free(thing); free(article); free(to_thing); return 0; }
+    for (uint32_t i = 0; i + 1 < x->nseq; i++)
+        if (x->seq[i] >= 0 && x->seq[i + 1] >= 0 && thing[x->seq[i + 1]]) to_thing[x->seq[i]]++;
+    for (uint32_t w = 0; w < x->n; w++)
+        article[w] = (k->marks[w] == 0 || k->marks[w] == 1) && 2 * to_thing[w] > x->lego[w].count;
+    free(to_thing);
+
     /* Read left to right, as a person reads: a statement uses its words, and
        the next one starts after it. Read every position instead, "es un
        animal so el gato" also gave animal --so--> gato. */
     for (uint32_t i = 0; i + 1 < x->nseq; i++) {
         int32_t a = x->seq[i], r = x->seq[i + 1];
         if (a < 0 || r < 0) continue;
-        /* An article -- a marker with a partner in the other key, el/la,
-           un/una -- is neither what a statement is about nor its relation:
-           read so, "el perro ladra" became el --perro--> ladra. A marker
-           without a partner may relate: "es" stands before gendered words
-           ("es bueno", "es buena") and is still the relation of "Dios es
-           amor". */
-        if (k->key[a] >= 0 || k->key[r] >= 0) continue;
+        /* an article is neither what a statement is about nor its relation:
+           read so, "el perro ladra" became el --perro--> ladra */
+        if (article[a] || article[r]) continue;
         if (thing[r]) continue;
         /* a statement: the thing, the word between, one or two markers, what
            it says it is -- "perro es un animal", "mesa es de madera". The
@@ -2896,6 +2916,7 @@ uint32_t rz_assoc_build(rz_lexicon *x, const rz_keys *k, rz_assoc *m)
         }
     }
     free(thing);
+    free(article);
     /* the same thing said again is one link said more times */
     qsort(m->link, m->n, sizeof *m->link, by_link);
     uint32_t w = 0;
@@ -2945,7 +2966,7 @@ uint32_t rz_assoc_reach(const rz_assoc *m, int32_t start, const int32_t *rel, ui
         uint32_t end, i = links_of(m, node, &end);
         for (; i < end; i++) {
             const rz_link *l = &m->link[i];
-            if (l->b < 0 || l->said < 2 || !one_of(rel, nrel, l->r) || l->b == start) continue;
+            if (l->b < 0 || (l->said < 2 && !l->round) || !one_of(rel, nrel, l->r) || l->b == start) continue;
             int seen = 0;
             for (uint32_t q = 0; q < nq && !seen; q++) seen = queue[q] == l->b;
             if (seen || nq == 1024) continue;
@@ -2966,11 +2987,164 @@ uint32_t rz_assoc_traits(const rz_assoc *m, int32_t start, const int32_t *rel, u
         uint32_t end, i = links_of(m, node, &end);
         for (; i < end && n < cap; i++) {
             const rz_link *l = &m->link[i];
-            if (l->said < 2) continue;                    /* said once: an anecdote */
+            if (l->said < 2 && !l->round) continue;       /* said once: an anecdote */
             int dup = 0;
             for (uint32_t q = 0; q < n && !dup; q++) dup = out[q].r == l->r && out[q].b == l->b;
             if (!dup) out[n++] = (rz_trait){ l->r, l->b, node };
         }
     }
     return n;
+}
+
+
+/* ===================== the melody of the path (P48) ====================== */
+
+/* a link that may be walked: said twice, or fallen in a domino round */
+static int walkable(const rz_link *l)
+{
+    return l->b >= 0 && (l->said >= 2 || l->round > 0);
+}
+
+typedef struct { uint64_t key; uint32_t count; } tune_cell;
+typedef struct { tune_cell *cell; uint32_t cap, used; } tune_table;
+
+static uint64_t tune_key(int32_t r1, int32_t r2, int32_t r3)
+{
+    return ((uint64_t)(uint32_t)r1 << 42) | ((uint64_t)(uint32_t)r2 << 21) | (uint64_t)(uint32_t)(r3 & 0x1FFFFF);
+}
+
+static uint32_t *tune_slot(tune_table *t, uint64_t key)
+{
+    if ((t->used + 1) * 2 > t->cap) {
+        uint32_t cap = t->cap ? t->cap * 2 : 4096;
+        tune_cell *c = calloc(cap, sizeof *c);
+        if (!c) return NULL;
+        for (uint32_t i = 0; i < t->cap; i++) {
+            if (!t->cell[i].count) continue;
+            uint32_t h = (uint32_t)((t->cell[i].key * 0x9E3779B97F4A7C15ull) >> 40) & (cap - 1);
+            while (c[h].count) h = (h + 1) & (cap - 1);
+            c[h] = t->cell[i];
+        }
+        free(t->cell);
+        t->cell = c;
+        t->cap = cap;
+    }
+    uint32_t h = (uint32_t)((key * 0x9E3779B97F4A7C15ull) >> 40) & (t->cap - 1);
+    while (t->cell[h].count && t->cell[h].key != key) h = (h + 1) & (t->cap - 1);
+    if (!t->cell[h].count) { t->cell[h].key = key; t->used++; }
+    return &t->cell[h].count;
+}
+
+static uint32_t tune_get(const tune_table *t, uint64_t key)
+{
+    if (!t->cap) return 0;
+    uint32_t h = (uint32_t)((key * 0x9E3779B97F4A7C15ull) >> 40) & (t->cap - 1);
+    while (t->cell[h].count) {
+        if (t->cell[h].key == key) return t->cell[h].count;
+        h = (h + 1) & (t->cap - 1);
+    }
+    return 0;
+}
+
+#define RZ_PATH_BUDGET 20000000u   /* walks counted, at most: a hub of glue can square the work */
+
+uint32_t rz_assoc_tunes(const rz_assoc *m, rz_tune *out, uint32_t cap)
+{
+    tune_table paths = { 0 }, heard = { 0 };
+    uint64_t walked = 0;
+    for (uint32_t i = 0; i < m->n && walked < RZ_PATH_BUDGET; i++) {
+        const rz_link *l1 = &m->link[i];
+        if (!walkable(l1)) continue;
+        uint32_t e2, j = links_of(m, l1->b, &e2);
+        uint32_t ea, ia = links_of(m, l1->a, &ea);
+        for (; j < e2 && walked < RZ_PATH_BUDGET; j++) {
+            const rz_link *l2 = &m->link[j];
+            if (!walkable(l2) || l2->b == l1->a) continue;
+            walked++;
+            uint32_t *p = tune_slot(&paths, tune_key(l1->r, l2->r, 0x1FFFFF));
+            if (p) (*p)++;
+            /* the shortcut said straight out, twice: a --r3--> c */
+            for (uint32_t q = ia; q < ea; q++) {
+                const rz_link *l3 = &m->link[q];
+                if (l3->b != l2->b || l3->said < 2 || l3->round) continue;
+                uint32_t *h = tune_slot(&heard, tune_key(l1->r, l2->r, l3->r));
+                if (h) (*h)++;
+            }
+        }
+    }
+    /* heard twice: learned */
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < heard.cap && n < cap; i++) {
+        if (heard.cell[i].count < 2) continue;
+        uint64_t k = heard.cell[i].key;
+        int32_t r1 = (int32_t)(k >> 42), r2 = (int32_t)((k >> 21) & 0x1FFFFF), r3 = (int32_t)(k & 0x1FFFFF);
+        out[n++] = (rz_tune){ r1, r2, r3, tune_get(&paths, tune_key(r1, r2, 0x1FFFFF)), heard.cell[i].count };
+    }
+    for (uint32_t i = 1; i < n; i++) {
+        rz_tune v = out[i];
+        uint32_t j = i;
+        while (j > 0 && out[j - 1].heard < v.heard) { out[j] = out[j - 1]; j--; }
+        out[j] = v;
+    }
+    free(paths.cell);
+    free(heard.cell);
+    return n;
+}
+
+static int has_link(const rz_assoc *m, int32_t a, int32_t r, int32_t b)
+{
+    uint32_t e, i = links_of(m, a, &e);
+    for (; i < e; i++) if (m->link[i].r == r && m->link[i].b == b) return 1;
+    return 0;
+}
+
+uint32_t rz_assoc_dominoes(rz_assoc *m, const rz_tune *t, uint32_t nt, uint32_t max_new,
+                           uint32_t *rounds)
+{
+    uint32_t fell = 0;
+    *rounds = 0;
+    for (uint16_t round = 1; fell < max_new; round++) {
+        /* everything this round lets fall, from the links standing now */
+        rz_link *fall = NULL;
+        uint32_t nf = 0, cf = 0;
+        for (uint32_t ti = 0; ti < nt; ti++) {
+            for (uint32_t i = 0; i < m->n && fell + nf < max_new; i++) {
+                const rz_link *l1 = &m->link[i];
+                if (!walkable(l1) || l1->r != t[ti].r1) continue;
+                uint32_t e2, j = links_of(m, l1->b, &e2);
+                for (; j < e2 && fell + nf < max_new; j++) {
+                    const rz_link *l2 = &m->link[j];
+                    if (!walkable(l2) || l2->r != t[ti].r2 || l2->b == l1->a) continue;
+                    if (has_link(m, l1->a, t[ti].r3, l2->b)) continue;
+                    int dup = 0;
+                    for (uint32_t q = 0; q < nf && !dup; q++)
+                        dup = fall[q].a == l1->a && fall[q].r == t[ti].r3 && fall[q].b == l2->b;
+                    if (dup) continue;
+                    if (nf == cf) {
+                        cf = cf ? cf * 2 : 256;
+                        rz_link *g = realloc(fall, cf * sizeof *g);
+                        if (!g) { free(fall); return fell; }
+                        fall = g;
+                    }
+                    fall[nf++] = (rz_link){ l1->a, t[ti].r3, l2->b, 0, round };
+                }
+            }
+        }
+        if (nf == 0) { free(fall); break; }
+        for (uint32_t q = 0; q < nf; q++) {
+            if (m->n == m->cap) {
+                uint32_t cap = m->cap ? m->cap * 2 : 4096;
+                rz_link *l = realloc(m->link, cap * sizeof *l);
+                if (!l) break;
+                m->link = l;
+                m->cap = cap;
+            }
+            m->link[m->n++] = fall[q];
+        }
+        free(fall);
+        qsort(m->link, m->n, sizeof *m->link, by_link);
+        fell += nf;
+        *rounds = round;
+    }
+    return fell;
 }

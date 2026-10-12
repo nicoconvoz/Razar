@@ -4242,6 +4242,89 @@ TEST(understanding_is_walking_what_was_said)
     rz_lexicon_free(&x);
 }
 
+/* --- the melody of the path (P48) ---------------------------------------- */
+
+/* rex is a dog, dogs are animals, animals are beings -- and the text also says
+   "rex es un animal" and "el perro es un ser": the tune es·es is heard to lead
+   to es. Nothing says tom is an animal, or fido a being. */
+static size_t tune_world(char *out, size_t cap, int clauses)
+{
+    static const char *mo[] = { "niño", "gato", "perro", "hermano", "amigo" };
+    static const char *fe[] = { "niña", "gata", "perra", "hermana", "amiga" };
+    static const char *verb[] = { "corre", "duerme", "canta", "come" };
+    static const char *said[] = {
+        "rex es un perro", "el perro es un animal", "el animal es un ser",
+        "rex es un animal", "el perro es un ser",
+        "tom es un gato", "el gato es un animal", "fido es un perro",
+    };
+    size_t n = 0;
+    uint64_t r = 101;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *j = wb_join[(r >> 20) % 6], *v = verb[(r >> 26) % 4];
+        int i = (int)((r >> 33) % 5), w;
+        switch ((r >> 58) % 8) {
+        case 0: w = snprintf(out + n, cap - n, "el %s %s %s ", mo[i], v, j); break;
+        case 1: w = snprintf(out + n, cap - n, "la %s %s %s ", fe[i], v, j); break;
+        case 2: w = snprintf(out + n, cap - n, "un %s %s %s ", mo[i], v, j); break;
+        case 3: w = snprintf(out + n, cap - n, "una %s %s %s ", fe[i], v, j); break;
+        default: w = snprintf(out + n, cap - n, "%s %s ", said[(r >> 40) % 8], j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int said_link(const rz_assoc *a, int32_t x1, int32_t r, int32_t b, uint16_t *round)
+{
+    for (uint32_t i = 0; i < a->n; i++)
+        if (a->link[i].a == x1 && a->link[i].r == r && a->link[i].b == b) { if (round) *round = a->link[i].round; return 1; }
+    return 0;
+}
+
+TEST(meanings_fall_like_dominoes)
+{
+    static char t[200000];
+    size_t n = tune_world(t, sizeof t, 6000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    rz_keys k;
+    CHECK_EQ_U(rz_lexicon_keys(&x, &k), RZ_OK);
+    rz_assoc a;
+    rz_assoc_build(&x, &k, &a);
+    int32_t es = lego_of(&x, "es");
+
+    /* the tune es·es is heard to lead to es */
+    rz_tune tu[16];
+    uint32_t nt = rz_assoc_tunes(&a, tu, 16);
+    int heard = 0;
+    for (uint32_t i = 0; i < nt; i++) if (tu[i].r1 == es && tu[i].r2 == es && tu[i].r3 == es) heard = 1;
+    CHECK(heard);
+
+    /* nobody said tom is an animal: it falls in the first round */
+    CHECK(!said_link(&a, lego_of(&x, "tom"), es, lego_of(&x, "animal"), NULL));
+    uint32_t rounds = 0;
+    uint32_t fell = rz_assoc_dominoes(&a, tu, nt, 1000, &rounds);
+    CHECK(fell > 0);
+    uint16_t r1 = 0, r2 = 0;
+    CHECK(said_link(&a, lego_of(&x, "tom"), es, lego_of(&x, "animal"), &r1));
+    CHECK_EQ_U(r1, 1u);
+    /* and tom is a being only once tom is an animal: the second domino */
+    CHECK(said_link(&a, lego_of(&x, "tom"), es, lego_of(&x, "ser"), &r2));
+    CHECK_EQ_U(r2, 2u);
+    CHECK(rounds >= 2);
+    /* what the text said is never rewritten as fallen */
+    uint16_t r0 = 9;
+    CHECK(said_link(&a, lego_of(&x, "rex"), es, lego_of(&x, "perro"), &r0));
+    CHECK_EQ_U(r0, 0u);
+    rz_assoc_free(&a);
+    rz_keys_free(&k);
+    rz_lexicon_free(&x);
+}
+
 TEST(the_lexicon_survives_a_round_trip)
 {
     const char *path = "test_lexicon.tmp";
@@ -4387,6 +4470,7 @@ int main(void)
     RUN(a_hunch_that_holds_lends_itself_sideways);
     RUN(two_in_the_same_chair_are_asked_what_they_are);
     RUN(understanding_is_walking_what_was_said);
+    RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
     RUN(a_rule_says_when_what_and_how_much);

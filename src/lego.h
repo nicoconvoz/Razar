@@ -510,6 +510,7 @@ typedef struct {
     int32_t  r;                      /* the relation: the word between */
     int32_t  b;                      /* what it says it is, or -1 for an act */
     uint32_t said;                   /* how many times the text said it */
+    uint16_t round;                  /* 0: said; else the domino round it fell in (P48) */
 } rz_link;
 
 typedef struct {
@@ -531,6 +532,29 @@ uint32_t rz_assoc_reach(const rz_assoc *m, int32_t start, const int32_t *rel, ui
 /* everything said of it and of what it reaches -- inherited */
 uint32_t rz_assoc_traits(const rz_assoc *m, int32_t start, const int32_t *rel, uint32_t nrel,
                          rz_trait *out, uint32_t cap);
+
+/* --- the melody of the path (P48) -----------------------------------------
+ *
+ * Not every construction stored, but the shape of the walk (the author). Two
+ * steps, a --r1--> m --r2--> c, are a tune (r1, r2). When the text also says
+ * the shortcut, a --r3--> c, the tune is heard to lead to r3. A tune heard so
+ * twice is learned -- a tool for thinking: "Cristo es Dios", "Dios es amor",
+ * and somewhere "X es Z" said straight out.
+ *
+ * Learned tunes then write what nobody wrote: every path with that shape and
+ * no shortcut gets one, marked with the round it fell in. The new links make
+ * new paths, and the next round falls from them -- dominoes, until nothing new
+ * falls. Meanings of meanings. */
+typedef struct {
+    int32_t  r1, r2, r3;
+    uint32_t paths, heard;           /* walks of this shape, and those the text shortcut */
+} rz_tune;
+
+/* learned tunes, most heard first */
+uint32_t rz_assoc_tunes(const rz_assoc *m, rz_tune *out, uint32_t cap);
+/* let the dominoes fall; returns how many links fell, *rounds how many rounds */
+uint32_t rz_assoc_dominoes(rz_assoc *m, const rz_tune *t, uint32_t nt, uint32_t max_new,
+                           uint32_t *rounds);
 
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);

@@ -90,6 +90,63 @@ it stands before a twin, never how often it does. Now:
 On the NT: Dios, porque, Jesús, amor, y are no markers; el, la, un, una, de, su
 are; "es" is one too, honestly — it stands before gendered adjectives.
 
+## P48 — The melody of the path (2026-10-12)
+
+> Associations are diverse, and that is where it understands meaning — the
+> difference between "Dios es grande" and "Dios es amor". If instead of storing
+> every construction we store the melody of the path in the AMMC, we can
+> generate meanings of meanings, combined meanings, more complex ones — and from
+> there create senses, tools, things never thought of, falling like dominoes.
+> — the author
+
+`rz_assoc_tunes`, `rz_assoc_dominoes`; `razar dominoes [path] [relation]`.
+
+- **Meaning is how far a word lets you walk.** "grande" is a leaf; "amor" is a
+  place with its own paths ("el amor es paciente").
+- **A tune** is the shape of a two-step walk, a —r1→ m —r2→ c, written (r1, r2).
+  It is **heard** to lead to r3 when the text also says the shortcut a —r3→ c
+  straight out. Heard twice, it is learned — a tool for thinking.
+- **Dominoes.** A learned tune writes what nobody wrote: every path of its shape
+  without a shortcut gets one, marked with its round. The new links make new
+  paths; the next round falls from them, until nothing new falls. Fallen links
+  are walked like said ones.
+
+### In the little world
+
+The text says rex is a dog, dogs are animals, animals are beings — and also "rex
+es un animal" and "el perro es un ser": the tune **es · es → es** is heard.
+Nothing says tom is an animal, nor that tom is a being:
+
+- round 1: **tom es animal** falls;
+- round 2: **tom es ser** falls — only because tom became an animal in round 1.
+
+Meanings of meanings, and what the text said is never rewritten as fallen.
+
+### On the New Testament and on Quiroga: no tune to learn yet
+
+Learning on the first half of the NT, judged on the second:
+
+- every relation let in, 2,962 tunes are heard twice — all of them glue
+  ("Jerusalén · Los → los", ", · yo → ,"). 50,000 meanings fall; the second half
+  says 160 of them against 108 for blind ends (1.5×), and what it confirms is
+  glue: "de que los", "de los sumos";
+- the tunes of the question taught ("es" and its silhouette): **none** is heard
+  twice. Quiroga hears no tune at all.
+
+To learn *es · es → es* a book has to say all three — X is Y, Y is Z, and X is Z
+— and say them more than once. A narrative almost never does. The mechanism falls
+like dominoes where a tune is heard; scripture and a novel do not teach the tune.
+
+### Fixed in P44 on the way
+
+- **"Both" only if seen before both sides**, twice each. The three-way split
+  makes three groups even where there is no "both"; with few markers "la" landed
+  in the middle and the keys broke (el paired with una).
+- **An article is told by what follows it**: a marker of one side whose next
+  word is mostly a thing. Told by having a partner in the other key, "una" —
+  left without one — was read as a relation: "then una perra" became
+  then —una→ perra, and the glue tunes came from there.
+
 ## Open
 
 - **D106** — glue as objects ("es que", "es ."): an object should be something
@@ -97,5 +154,11 @@ are; "es" is one too, honestly — it stands before gendered adjectives.
   everything.
 - **D107** — PENZAR should build the map while it reads, and bet by walking: what
   is inherited ("the dog lives") predicts what will be said of it.
+- **D109** — a tune has to be taught somewhere: a text that says what things are
+  (X is Y, Y is Z, X is Z), or the author teaching one tune by example the way
+  he taught the question (imitation, P35). Then the dominoes can fall on the NT.
+- **D110** — the glue tunes: relations that are punctuation or capitalised
+  articles ("Los", "Y") should not be relations; an article at a sentence start
+  is not yet told.
 - **D108** — senses from the map: a node that many things reach ("animal",
   "vive") is a deep property; whether it should become a sense (P30).
