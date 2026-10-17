@@ -96,24 +96,105 @@ size_t rz_lego_cut(const rz_mind *m, const unsigned char *t, size_t n,
     return legos;
 }
 
+/* What a reading of words costs, in nats, in its own units (D39, D45): the
+   spelling of every distinct word, every word said, and which part stood at
+   each edge -- so a reading cannot get cheaper by dropping what told two
+   edges apart. A word is told by a 64-bit hash of its bytes; a collision would
+   only make a reading look a little cheaper. */
+static double reading_cost(const unsigned char *t, size_t n,
+                           const unsigned char *lego, const uint8_t part[RZ_ATOMS])
+{
+    size_t cap = 1024;
+    while (cap < n / 2) cap <<= 1;
+    uint64_t *key = calloc(cap, sizeof *key);
+    uint32_t *cnt = calloc(cap, sizeof *cnt), *len = calloc(cap, sizeof *len);
+    if (!key || !cnt || !len) { free(key); free(cnt); free(len); return HUGE_VAL; }
+
+    uint64_t seen[RZ_ATOMS] = {0}, edge[RZ_ATOMS] = {0};
+    for (size_t i = 0; i < n; i++) seen[t[i]]++;
+    double alphabet = 0;
+    for (int b = 0; b < RZ_ATOMS; b++) alphabet += seen[b] ? 1 : 0;
+
+    uint64_t said = 0, edges = 0;
+    size_t start = 0;
+    for (size_t i = 0; i < n; i++) {
+        int end = (lego[i] && part[t[i]]) || i + 1 == n;
+        if (!end) continue;
+        size_t stop = (lego[i] && part[t[i]]) ? i : i + 1;
+        if (lego[i] && part[t[i]]) { edge[t[i]]++; edges++; }
+        if (stop > start) {
+            uint64_t h = 1469598103934665603ull;
+            for (size_t q = start; q < stop; q++) { h ^= t[q]; h *= 1099511628211ull; }
+            if (!h) h = 1;
+            size_t s = (size_t)(h ^ (h >> 29)) & (cap - 1);
+            while (key[s] && key[s] != h) s = (s + 1) & (cap - 1);
+            if (!key[s]) { key[s] = h; len[s] = (uint32_t)(stop - start); }
+            cnt[s]++;
+            said++;
+        }
+        start = i + 1;
+    }
+
+    double cost = 0;
+    for (size_t s = 0; s < cap; s++) {
+        if (!key[s]) continue;
+        cost += (len[s] + 1) * log(alphabet + 1);              /* its spelling */
+        cost += cnt[s] * log((double)said / cnt[s]);           /* every time it is said */
+    }
+    for (int b = 0; b < RZ_ATOMS; b++)
+        if (edge[b]) cost += edge[b] * log((double)edges / edge[b]);   /* which part */
+    free(key); free(cnt); free(len);
+    return cost;
+}
+
 size_t rz_word_cut(const rz_mind *m, const unsigned char *t, size_t n,
                    unsigned char *ends)
 {
     size_t legos = rz_lego_cut(m, t, n, ends);
     if (legos == 0) return 0;
 
-    /* the atoms legos end on, and the split of their heights once more */
+    /* Up: the atoms legos end on, and the split of their heights once more */
     uint64_t at[RZ_ATOMS] = {0};
     for (size_t i = 0; i < n; i++) if (ends[i]) at[t[i]]++;
     double mid = best_split(m, at);
     if (mid == -HUGE_VAL) return legos;    /* one height: every lego is a word */
 
+    uint8_t part[RZ_ATOMS] = {0};
+    for (int b = 0; b < RZ_ATOMS; b++) {
+        if (!at[b]) continue;
+        double v = rz_branching(m, (unsigned char)b);
+        part[b] = (v > 0.0 ? log(v) : 0.0) > mid;
+    }
+
+    /* Down and up again (P49). The split by heights always makes two groups,
+       and a dictionary that parts its words with tabs and with spaces lost
+       one of them: "1. El" was a word. An atom legos end on that the reading
+       left inside its words is a seam; it is proposed as a part, the text is
+       read again, and the reading is kept only if it describes the same text
+       with less. A part may be given back the same way. The order of the
+       proposals -- the atoms legos end on most, first -- is only a bias; the
+       judge alone accepts (D41). Until nothing pays. */
+    double base = reading_cost(t, n, ends, part);
+    for (int changed = 1; changed && base < HUGE_VAL; ) {
+        changed = 0;
+        uint8_t tried[RZ_ATOMS] = {0};
+        for (;;) {
+            int b = -1;
+            for (int c = 0; c < RZ_ATOMS; c++)
+                if (at[c] >= 2 && !tried[c] && (b < 0 || at[c] > at[b])) b = c;
+            if (b < 0) break;
+            tried[b] = 1;
+            part[b] ^= 1;
+            double c = reading_cost(t, n, ends, part);
+            if (c < base) { base = c; changed = 1; break; }
+            part[b] ^= 1;
+        }
+    }
+
     size_t words = 0;
     for (size_t i = 0; i < n; i++) {
         if (!ends[i]) continue;
-        double v = rz_branching(m, t[i]);
-        double h = v > 0.0 ? log(v) : 0.0;
-        if (h > mid || i + 1 == n) words++;
+        if (part[t[i]] || i + 1 == n) words++;
         else ends[i] = 0;
     }
     return words;

@@ -2870,6 +2870,34 @@ TEST(a_word_ends_only_where_a_lego_does)
     free(legos); free(words);
 }
 
+TEST(a_text_may_part_its_words_with_two_atoms)
+{
+    /* A dictionary parts its words with tabs and with spaces. Both stand
+       between words; the cut must hear both, not only the taller one. */
+    static char t[60000];
+    size_t n = little_world(t, sizeof t, ' ', 2000);
+    uint64_t rng = 0x2545F4914F6CDD1Dull;
+    for (size_t i = 0; i < n; i++) {
+        if (t[i] != ' ') continue;
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        if (rng % 10 < 7) t[i] = '\t';
+    }
+    rz_mind *m = world_mind(t, n);
+    unsigned char *words = calloc(n, 1);
+    rz_word_cut(m, (const unsigned char *)t, n, words);
+    size_t tabs = 0, spaces = 0, missed_tab = 0, missed_space = 0, extra = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (t[i] == '\t') { tabs++; if (!words[i]) missed_tab++; }
+        else if (t[i] == ' ') { spaces++; if (!words[i]) missed_space++; }
+        else if (words[i] && i + 1 < n) extra++;
+    }
+    CHECK(tabs > 0 && spaces > 0);
+    CHECK_EQ_U(missed_tab, 0u);
+    CHECK_EQ_U(missed_space, 0u);
+    CHECK_EQ_U(extra, 0u);
+    free(words);
+}
+
 TEST(the_word_cut_never_looks_at_the_space_either)
 {
     static char a[60000], b[60000];
@@ -4435,6 +4463,7 @@ int main(void)
     RUN(a_lego_never_crosses_from_one_word_into_the_next);
     RUN(the_cut_never_looks_at_the_space);
     RUN(a_word_ends_only_where_a_lego_does);
+    RUN(a_text_may_part_its_words_with_two_atoms);
     RUN(the_word_cut_never_looks_at_the_space_either);
     RUN(a_word_is_read_without_the_marks_that_close_it);
     RUN(reading_legos_leaves_the_mind_untouched);
