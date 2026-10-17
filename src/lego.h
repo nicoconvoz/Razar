@@ -556,6 +556,50 @@ uint32_t rz_assoc_tunes(const rz_assoc *m, rz_tune *out, uint32_t cap);
 uint32_t rz_assoc_dominoes(rz_assoc *m, const rz_tune *t, uint32_t nt, uint32_t max_new,
                            uint32_t *rounds);
 
+/* --- asking every word (P50) ----------------------------------------------
+ *
+ * The child does not choose what to ask about (the author): it asks about
+ * every word, "el" as much as "perro", and learns the differences, how they
+ * join, and how they are used together. Riddle 1 had searched for the word
+ * worth asking; there is none to choose.
+ *
+ * Every word gets the same questions, answered by what the map says and by
+ * the company it keeps -- each answer said twice, never once (an anecdote):
+ *
+ *   of        what is said of it        (it is the thing spoken of)
+ *   about     what it is said to be     (it is what is said of another)
+ *   relates   what it joins             (it is the relation)
+ *   before    words it stands before
+ *   after     words it stands after
+ *
+ * The shape -- which questions got an answer -- is the kind of the word. "el"
+ * gets only company; "perro" is spoken of; "es" relates. Nothing names the
+ * kinds: the shapes are what the answers happened to be.
+ *
+ * Used together: a pair of shapes that stand side by side, heard across
+ * several different pairs of words, so that it is the shapes and not one
+ * pair that is heard. One piece: two words where one brings nothing to the
+ * map that the other lacks -- "el perro" says what "perro" says. */
+typedef struct {
+    uint32_t of, about, relates;     /* map answers, each link said twice */
+    uint32_t before, after;          /* company: neighbours met twice */
+    uint8_t  shape;                  /* bit per question that got an answer */
+} rz_answers;
+
+typedef struct {
+    uint8_t  s1, s2;                 /* the shape before, the shape after */
+    uint32_t heard, pairs;           /* times side by side; distinct word pairs */
+} rz_together;
+
+/* every word, asked; out holds x->n answers. Returns the words asked. */
+uint32_t rz_ask_every_word(const rz_lexicon *x, const rz_assoc *m, rz_answers *out);
+/* pairs of shapes used together, heard across two or more word pairs, most first */
+uint32_t rz_used_together(const rz_lexicon *x, const rz_answers *ans, rz_together *out, uint32_t cap);
+/* one brings nothing to the map that the other lacks */
+int      rz_one_piece(const rz_answers *a, const rz_answers *b);
+/* how many times lego a stood just before lego b (0: never) */
+uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
+
 int     rz_lexicon_save(const rz_lexicon *x, const char *path);
 int     rz_lexicon_load(rz_lexicon *x, const char *path);
 

@@ -406,6 +406,7 @@ they still hold; a status changed because code now answers it says so.
 | D100–D105 | [penzar.md](penzar.md) |
 | D106–D110 | [associations.md](associations.md) |
 | D111–D112 | [adapting.md](adapting.md) |
+| D113–D114 | [asking.md](asking.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
 | D86–D94 | [weaving.md](weaving.md) |

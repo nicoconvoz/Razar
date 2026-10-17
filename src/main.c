@@ -2357,6 +2357,105 @@ static int cmd_dominoes(int argc, char **argv)
     return 0;
 }
 
+/* --- asking every word (P50) ---------------------------------------------- */
+
+static void say_shape(uint8_t sh, char *out, size_t cap)
+{
+    snprintf(out, cap, "%s%s%s%s",
+             (sh & 1) ? "spoken-of " : "", (sh & 2) ? "said-of-others " : "",
+             (sh & 4) ? "relates " : "", (sh & 24) ? "keeps-company" : "");
+}
+
+static int cmd_asks(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+    size_t half = n / 2;
+    while (half < n && t[half] != ' ') half++;
+
+    read_map one, two;
+    map_of(t, half, &one);
+    map_of(t + half, n - half, &two);
+    if (!one.ok || !two.ok) { fprintf(stderr, "no key heard in one of the halves\n"); map_free(&one); map_free(&two); free(t); return 1; }
+    rz_answers *ans = calloc(one.x.n, sizeof *ans);
+    if (!ans) { map_free(&one); map_free(&two); free(t); return 1; }
+    uint32_t asked = rz_ask_every_word(&one.x, &one.a, ans);
+    printf("first half: every word asked -- %u words, the same questions to each\n\n", asked);
+
+    /* the kinds: words grouped by the shape of their answers, most used first */
+    char sh[96], w1[80], w2[80];
+    for (int s0 = 0; s0 < 32; s0++) {
+        uint32_t members = 0;
+        for (uint32_t w = 0; w < one.x.n; w++) if (one.x.lego[w].count >= 2 && ans[w].shape == s0) members++;
+        if (!members) continue;
+        say_shape((uint8_t)s0, sh, sizeof sh);
+        printf("  [%2d] %-48s %6u words:", s0, sh, members);
+        int32_t top[8];
+        uint32_t nt = 0;
+        for (uint32_t w = 0; w < one.x.n; w++) {
+            if (one.x.lego[w].count < 2 || ans[w].shape != s0) continue;
+            uint32_t j = nt < 8 ? nt++ : 8;
+            if (j == 8) { if (one.x.lego[w].count <= one.x.lego[top[7]].count) continue; j = 7; }
+            while (j > 0 && one.x.lego[top[j - 1]].count < one.x.lego[w].count) { top[j] = top[j - 1]; j--; }
+            top[j] = (int32_t)w;
+        }
+        for (uint32_t i = 0; i < nt; i++) { say_lego(&one.x, top[i], w1, sizeof w1); printf(" %s", w1); }
+        printf("\n");
+    }
+
+    /* used together, and the pieces that are one */
+    static rz_together tg[64];
+    uint32_t ng = rz_used_together(&one.x, ans, tg, 64);
+    printf("\nused together (pairs of shapes heard across several pairs of words): %u\n", ng);
+    for (uint32_t i = 0; i < ng && i < 10; i++)
+        printf("  [%2u] . [%2u]   heard %6u times, by %5u pairs of words\n", tg[i].s1, tg[i].s2, tg[i].heard, tg[i].pairs);
+
+    /* the bar: pairs the second half says that the first never did. Of those
+       whose words the first half asked, how many fall in a pair of shapes it
+       learned to use together? Blind: the same first words, each with the
+       second word of another new pair -- the same words, shuffled */
+    uint32_t fresh = 0, covered = 0, blind = 0;
+    int32_t *b2 = malloc((two.x.npair + 1) * sizeof *b2), *a1 = malloc((two.x.npair + 1) * sizeof *a1);
+    for (uint32_t i = 0; b2 && a1 && i < two.x.npair; i++) {
+        const rz_lego_pair *p = &two.x.pair[i];
+        int32_t A = rz_lexicon_find(&one.x, two.x.lego[p->a].s, two.x.lego[p->a].len);
+        int32_t B = rz_lexicon_find(&one.x, two.x.lego[p->b].s, two.x.lego[p->b].len);
+        if (A < 0 || B < 0 || one.x.lego[A].count < 2 || one.x.lego[B].count < 2) continue;
+        if (rz_lexicon_pair_count(&one.x, A, B)) continue;
+        a1[fresh] = A; b2[fresh] = B; fresh++;
+    }
+    int one_piece_shown = 0;
+    for (uint32_t i = 0; i < fresh; i++) {
+        int32_t A = a1[i], B = b2[i], Bb = b2[(i + fresh / 2 + 1) % fresh];
+        for (uint32_t g = 0; g < ng; g++) {
+            if (tg[g].s1 == ans[A].shape && tg[g].s2 == ans[B].shape) covered++;
+            if (tg[g].s1 == ans[A].shape && tg[g].s2 == ans[Bb].shape) blind++;
+        }
+        if (one_piece_shown < 8 && rz_one_piece(&ans[A], &ans[B]) && (ans[B].shape & 1)) {
+            say_lego(&one.x, A, w1, sizeof w1);
+            say_lego(&one.x, B, w2, sizeof w2);
+            printf("%s  never together in the first half, one piece in the second: %s %s\n",
+                   one_piece_shown ? "" : "\n", w1, w2);
+            one_piece_shown++;
+        }
+    }
+    printf("\nnew pairs in the second half: %u; in a pair of shapes it learned: %u (%.1f%%); blind: %u (%.1f%%)\n",
+           fresh, covered, fresh ? 100.0 * covered / fresh : 0.0, blind, fresh ? 100.0 * blind / fresh : 0.0);
+    free(a1); free(b2); free(ans);
+    map_free(&one);
+    map_free(&two);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2373,6 +2472,7 @@ int main(int argc, char **argv)
         printf("  razar dash                            its whole state, as JSON\n");
         printf("  razar think [path] [bite]             watch it think out loud\n");
         printf("  razar legos [path] [kinds]            its legos, their kinds, and a game\n");
+        printf("  razar asks [path]                     ask every word; the kinds its answers make\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2397,6 +2497,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "penzar"))       return cmd_penzar(argc - 2, argv + 2);
     if (!strcmp(argv[1], "map"))          return cmd_map(argc - 2, argv + 2);
     if (!strcmp(argv[1], "dominoes"))     return cmd_dominoes(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "asks"))         return cmd_asks(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

@@ -3229,3 +3229,91 @@ uint32_t rz_assoc_dominoes(rz_assoc *m, const rz_tune *t, uint32_t nt, uint32_t 
     }
     return fell;
 }
+
+/* ===================== asking every word (P50) ============================ */
+
+enum { ASK_OF = 1, ASK_ABOUT = 2, ASK_RELATES = 4, ASK_BEFORE = 8, ASK_AFTER = 16 };
+#define ASK_MAP (ASK_OF | ASK_ABOUT | ASK_RELATES)
+#define ASK_SHAPES 32
+
+static int asked(const rz_lexicon *x, int32_t w)
+{
+    return w >= 0 && (uint32_t)w < x->n && x->lego[w].count >= 2;
+}
+
+uint32_t rz_ask_every_word(const rz_lexicon *x, const rz_assoc *m, rz_answers *out)
+{
+    memset(out, 0, x->n * sizeof *out);
+    /* what the map says, each link said twice: an answer said once is an
+       anecdote; fallen links (P48) are thoughts, not answers */
+    for (uint32_t i = 0; i < m->n; i++) {
+        const rz_link *l = &m->link[i];
+        if (l->said < 2 || l->round) continue;
+        if (asked(x, l->a)) out[l->a].of++;
+        if (asked(x, l->b)) out[l->b].about++;
+        if (asked(x, l->r)) out[l->r].relates++;
+    }
+    /* the company it keeps, each neighbour met twice */
+    for (uint32_t i = 0; i < x->npair; i++) {
+        const rz_lego_pair *p = &x->pair[i];
+        if (p->count < 2) continue;
+        if (asked(x, (int32_t)p->a)) out[p->a].before++;
+        if (asked(x, (int32_t)p->b)) out[p->b].after++;
+    }
+    uint32_t words = 0;
+    for (uint32_t w = 0; w < x->n; w++) {
+        if (!asked(x, (int32_t)w)) continue;
+        rz_answers *a = &out[w];
+        a->shape = (uint8_t)((a->of ? ASK_OF : 0) | (a->about ? ASK_ABOUT : 0) |
+                             (a->relates ? ASK_RELATES : 0) |
+                             (a->before ? ASK_BEFORE : 0) | (a->after ? ASK_AFTER : 0));
+        words++;
+    }
+    return words;
+}
+
+uint32_t rz_used_together(const rz_lexicon *x, const rz_answers *ans, rz_together *out, uint32_t cap)
+{
+    /* every pair of shapes side by side; heard by one pair of words it is
+       that pair, heard by several it is the shapes */
+    static rz_together all[ASK_SHAPES * ASK_SHAPES];
+    memset(all, 0, sizeof all);
+    for (uint32_t i = 0; i < x->npair; i++) {
+        const rz_lego_pair *p = &x->pair[i];
+        if (p->count < 2 || !asked(x, (int32_t)p->a) || !asked(x, (int32_t)p->b)) continue;
+        uint8_t s1 = ans[p->a].shape, s2 = ans[p->b].shape;
+        rz_together *t = &all[s1 * ASK_SHAPES + s2];
+        t->s1 = s1; t->s2 = s2;
+        t->heard += p->count;
+        t->pairs++;
+    }
+    uint32_t k = 0;
+    for (uint32_t i = 0; i < ASK_SHAPES * ASK_SHAPES; i++) {
+        if (all[i].pairs < 2) continue;
+        uint32_t j = k < cap ? k++ : cap;
+        if (j == cap) {
+            if (cap == 0 || all[i].heard <= out[cap - 1].heard) continue;
+            j = cap - 1;
+        }
+        while (j > 0 && out[j - 1].heard < all[i].heard) { out[j] = out[j - 1]; j--; }
+        out[j] = all[i];
+    }
+    return k;
+}
+
+int rz_one_piece(const rz_answers *a, const rz_answers *b)
+{
+    /* one adds nothing to the map the other lacks, and the other adds
+       something: the pair says what the fuller one says. Two that say the
+       same are twins, not one piece. */
+    uint8_t ma = a->shape & ASK_MAP, mb = b->shape & ASK_MAP;
+    if (ma == mb) return 0;
+    return (ma & mb) == ma || (ma & mb) == mb;
+}
+
+uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b)
+{
+    if (a < 0 || b < 0) return 0;
+    int32_t p = find_pair(x, (uint32_t)a, (uint32_t)b);
+    return p < 0 ? 0 : x->pair[p].count;
+}

@@ -4270,6 +4270,57 @@ TEST(understanding_is_walking_what_was_said)
     rz_lexicon_free(&x);
 }
 
+/* --- asking every word (P50) --------------------------------------------- */
+
+static int tune_heard(const rz_together *t, uint32_t n, uint8_t s1, uint8_t s2)
+{
+    for (uint32_t i = 0; i < n; i++) if (t[i].s1 == s1 && t[i].s2 == s2) return 1;
+    return 0;
+}
+
+TEST(the_child_asks_about_every_word)
+{
+    static char t[260000];
+    size_t n = said_world(t, sizeof t, 6000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    rz_keys k;
+    CHECK_EQ_U(rz_lexicon_keys(&x, &k), RZ_OK);
+    rz_assoc a;
+    CHECK(rz_assoc_build(&x, &k, &a) > 0);
+    rz_answers *ans = calloc(x.n, sizeof *ans);
+    CHECK(rz_ask_every_word(&x, &a, ans) > 10);
+
+    int32_t el = lego_of(&x, "el"), perro = lego_of(&x, "perro"), gato = lego_of(&x, "gato");
+    int32_t es = lego_of(&x, "es");
+    /* asked the same questions, "el" is never spoken of and never relates,
+       yet it stands before many words; the dog is spoken of; "es" relates */
+    CHECK_EQ_U(ans[el].of, 0u);
+    CHECK_EQ_U(ans[el].relates, 0u);
+    CHECK(ans[el].before > 2);
+    CHECK(ans[perro].of > 0);
+    CHECK(ans[es].relates > 0);
+    /* the shape of the answers tells the kinds apart, and nothing named them */
+    CHECK_EQ_U(ans[perro].shape, ans[gato].shape);
+    CHECK(ans[el].shape != ans[perro].shape);
+    CHECK(ans[es].shape != ans[perro].shape);
+
+    /* how they are used together: a pair of shapes heard by many pairs */
+    rz_together tg[64];
+    uint32_t nt = rz_used_together(&x, ans, tg, 64);
+    CHECK(tune_heard(tg, nt, ans[el].shape, ans[perro].shape));
+    /* integration: "el perro" is one piece -- "el" brings nothing to the
+       map that "perro" lacks; "perro es" is two */
+    CHECK(rz_one_piece(&ans[el], &ans[perro]));
+    CHECK(!rz_one_piece(&ans[perro], &ans[es]));
+    free(ans);
+    rz_assoc_free(&a);
+    rz_keys_free(&k);
+    rz_lexicon_free(&x);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4499,6 +4550,7 @@ int main(void)
     RUN(a_hunch_that_holds_lends_itself_sideways);
     RUN(two_in_the_same_chair_are_asked_what_they_are);
     RUN(understanding_is_walking_what_was_said);
+    RUN(the_child_asks_about_every_word);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
