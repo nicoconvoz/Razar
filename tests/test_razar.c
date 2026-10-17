@@ -4321,6 +4321,106 @@ TEST(the_child_asks_about_every_word)
     rz_lexicon_free(&x);
 }
 
+/* --- the silhouette of a path (P51) -------------------------------------- */
+
+/* the dog is an animal and a mammal, the cat too; the horse only a mammal --
+   nothing says the horse is an animal */
+static size_t path_world(char *out, size_t cap, int clauses)
+{
+    static const char *said[] = {
+        "el perro es un animal", "el gato es un animal", "el perro es un mamífero",
+        "el gato es un mamífero", "el caballo es un mamífero", "el perro come carne",
+        "el gato come carne", "el caballo come pasto", "la mesa es de madera",
+        "la silla es de madera", "el ratón es un animal", "el ratón es un mamífero",
+        "el pez es un animal", "el pez bebe agua", "el sol es de fuego",
+        "la flor es de papel", "el ratón bebe agua",
+    };
+    /* With only a few words the last letters always close a word, and the
+       marks of P33 take them for closing marks: "gato" read as g + ato. A text
+       with more words, like any real one, does not; that weakness stays open. */
+    const unsigned nsaid = sizeof said / sizeof *said;
+    size_t n = 0;
+    uint64_t r = 11;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w = snprintf(out + n, cap - n, "%s %s ", said[(r >> 33) % nsaid], wb_join[(r >> 20) % 6]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int mates_of(const rz_paths *p, int32_t a, int32_t b)
+{
+    for (uint32_t i = 0; i < p->nm; i++)
+        if ((p->m[i].a == a && p->m[i].b == b) || (p->m[i].a == b && p->m[i].b == a))
+            return (int)p->m[i].frames;
+    return 0;
+}
+
+TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
+{
+    static char t[200000];
+    size_t n = path_world(t, sizeof t, 3000);
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+    rz_paths p;
+    CHECK(rz_paths_build(&x, &p) > 0);
+
+    int32_t el = lego_of(&x, "el"), es = lego_of(&x, "es"), un = lego_of(&x, "un");
+    int32_t perro = lego_of(&x, "perro"), gato = lego_of(&x, "gato"), caballo = lego_of(&x, "caballo");
+    int32_t animal = lego_of(&x, "animal"), mamifero = lego_of(&x, "mamífero"), carne = lego_of(&x, "carne");
+
+    /* the silhouette el _ es un _ is heard, put together with many pieces */
+    int found = 0;
+    for (uint32_t i = 0; i < p.ns; i++) {
+        const rz_silhouette *s = &p.s[i];
+        if (s->len == 5 && s->word[0] == el && s->word[1] < 0 && s->word[2] == es &&
+            s->word[3] == un && s->word[4] < 0 && s->fills >= 4) found = 1;
+    }
+    CHECK(found);
+
+    /* glue stands fixed in many forms; the pieces of the map fill them. Every
+       piece falls in many holes by the geometry of the runs alone, so it is
+       the share that tells: glue stands fixed more often than content */
+    double g_el = (double)p.fixed[el] / p.filled[el], g_un = (double)p.fixed[un] / p.filled[un];
+    double g_perro = (double)p.fixed[perro] / p.filled[perro], g_animal = (double)p.fixed[animal] / p.filled[animal];
+    CHECK(g_el > g_perro);
+    CHECK(g_el > g_animal);
+    CHECK(g_un > g_perro);
+    CHECK(g_un > g_animal);
+
+    /* animal and mammal fill the same place beside the same dog: mates */
+    CHECK(mates_of(&p, animal, mamifero) >= 2);
+    CHECK(mates_of(&p, perro, gato) >= 2);
+    CHECK(mates_of(&p, perro, carne) == 0);
+
+    /* put together again with other pieces: the horse is a mammal, and the
+       mammal stands where the animal stands -- so "caballo es un animal",
+       never said, is put together. The heaviest silhouettes first. */
+    static rz_recomposed rc[8192];
+    uint32_t nr = rz_paths_recompose(&p, rc, 8192);
+    int horse = 0;
+    for (uint32_t i = 0; i < nr && !horse; i++) {
+        const rz_silhouette *s = &p.s[rc[i].sil];
+        int32_t path[5];
+        int hole = 0;
+        for (int q = 0; q < s->len; q++) path[q] = s->word[q] >= 0 ? s->word[q] : (hole++ ? rc[i].f2 : rc[i].f1);
+        for (int q = 0; q + 3 < s->len; q++)
+            if (path[q] == caballo && path[q + 1] == es && path[q + 2] == un && path[q + 3] == animal) horse = 1;
+    }
+    CHECK(horse);
+    /* and the heaviest silhouette comes first */
+    int ordered = 1;
+    for (uint32_t i = 1; i < nr; i++) if (p.s[rc[i - 1].sil].fills < p.s[rc[i].sil].fills) ordered = 0;
+    CHECK(ordered);
+    (void)es;
+    rz_paths_free(&p);
+    rz_lexicon_free(&x);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4551,6 +4651,7 @@ int main(void)
     RUN(two_in_the_same_chair_are_asked_what_they_are);
     RUN(understanding_is_walking_what_was_said);
     RUN(the_child_asks_about_every_word);
+    RUN(a_path_is_taken_apart_and_put_together_with_other_pieces);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

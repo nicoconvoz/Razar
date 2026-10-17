@@ -131,6 +131,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Walk what was said: what a word is, what it inherits | `./razar map <word> [other] [relation] [path]` |
 | Tunes of the path, and meanings nobody wrote | `./razar dominoes [path] [relation]` |
 | Ask every word; the kinds its answers make | `./razar asks [path]` |
+| Silhouettes of paths, taken apart and put together | `./razar paths [path]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

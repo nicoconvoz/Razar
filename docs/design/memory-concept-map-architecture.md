@@ -407,6 +407,7 @@ they still hold; a status changed because code now answers it says so.
 | D106–D110 | [associations.md](associations.md) |
 | D111–D112 | [adapting.md](adapting.md) |
 | D113–D114 | [asking.md](asking.md) |
+| D115–D117 | [paths.md](paths.md) |
 | D78–D82 | [concepts.md](concepts.md) |
 | D83–D85 | [types-and-identities.md](types-and-identities.md) |
 | D86–D94 | [weaving.md](weaving.md) |

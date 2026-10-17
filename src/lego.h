@@ -597,6 +597,52 @@ uint32_t rz_ask_every_word(const rz_lexicon *x, const rz_assoc *m, rz_answers *o
 uint32_t rz_used_together(const rz_lexicon *x, const rz_answers *ans, rz_together *out, uint32_t cap);
 /* one brings nothing to the map that the other lacks */
 int      rz_one_piece(const rz_answers *a, const rz_answers *b);
+/* --- the silhouette of a path (P51) ---------------------------------------
+ *
+ * The author: in the concept map "el", "perro", "es", "un", "animal" are one
+ * connected path. The silhouette of what it forms gives weight to every
+ * construction like it; it is taken apart and put together again in other
+ * examples -- where there is no "animal" but there is "mamífero" -- and so it
+ * understands, because it is a connected path whose pieces are not all worth
+ * the same: some are glue used in many forms, the others belong to the map.
+ *
+ * A silhouette is a run of 3 to 5 pieces read in a row with two of them left
+ * as holes: el _ es un _. Heard with two or more different pairs in its holes
+ * it is a construction, and the pairs it was put together with are its
+ * weight. Nothing tells a relation from glue: a piece standing fixed in many
+ * silhouettes is glue; a piece filling their holes belongs to the map.
+ *
+ * Mates: two pieces that filled the same hole of the same silhouette beside
+ * the same piece in the other hole -- "animal" and "mamífero", each with
+ * "perro" in el _ es un _. Put together again: a mate stands where its mate
+ * stood, so a path never said is built from one that was.
+ *
+ * Run length and two holes are the bias of the proposal; the text decides
+ * what is heard. */
+typedef struct {
+    uint8_t  len;                    /* pieces in the run, 3..5 */
+    int32_t  word[5];                /* the fixed pieces; -1 at a hole */
+    uint32_t fills, said;            /* distinct pairs in its holes; times heard */
+    uint32_t first, count;           /* its pairs, in rz_paths.fill */
+} rz_silhouette;
+
+typedef struct { int32_t f1, f2; uint32_t said; } rz_fill;
+typedef struct { int32_t a, b; uint32_t frames; } rz_mates;
+typedef struct { uint32_t sil; int32_t f1, f2; int32_t from; } rz_recomposed;
+
+typedef struct {
+    rz_silhouette *s;  uint32_t ns;
+    rz_fill       *fill; uint32_t nfill;
+    rz_mates      *m;  uint32_t nm;  /* frames >= 2 */
+    uint32_t      *fixed, *filled;   /* per lego: silhouettes it stands fixed in, fills */
+    uint32_t       nwords;
+} rz_paths;
+
+uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p);
+void     rz_paths_free(rz_paths *p);
+/* paths never said, put together from said ones by a mate; from = the mate replaced */
+uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap);
+
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 

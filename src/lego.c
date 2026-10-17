@@ -3317,3 +3317,270 @@ uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b)
     int32_t p = find_pair(x, (uint32_t)a, (uint32_t)b);
     return p < 0 ? 0 : x->pair[p].count;
 }
+
+/* ===================== the silhouette of a path (P51) ===================== */
+
+#define RUN_MIN 3
+#define RUN_MAX 5
+/* Pairs of mates are counted in a table of fixed size; past half of it, new
+   pairs are no longer counted (a budget, like the paths of P48). */
+#define MATE_SLOTS (1u << 22)
+
+typedef struct { uint64_t key; int32_t f1, f2; uint32_t at; uint8_t len, h1, h2; } path_rec;
+
+static int rec_order(const void *pa, const void *pb)
+{
+    const path_rec *a = pa, *b = pb;
+    if (a->key != b->key) return a->key < b->key ? -1 : 1;
+    if (a->f1 != b->f1) return a->f1 < b->f1 ? -1 : 1;
+    if (a->f2 != b->f2) return a->f2 < b->f2 ? -1 : 1;
+    return 0;
+}
+
+static uint64_t path_key(const int32_t *run, int len, int h1, int h2)
+{
+    uint64_t v = 1469598103934665603ull ^ (uint64_t)(len * 64 + h1 * 8 + h2);
+    for (int q = 0; q < len; q++) {
+        uint64_t w = (q == h1 || q == h2) ? 0xFFFFFFFFull : (uint32_t)run[q];
+        v ^= w; v *= 1099511628211ull; v ^= v >> 31;
+    }
+    return v ? v : 1;
+}
+
+typedef struct { int32_t a, b; uint32_t frames, stamp; } mate_slot;
+
+static void mate_add(mate_slot *t, uint32_t *used, int32_t a, int32_t b, uint32_t stamp)
+{
+    if (a == b) return;
+    if (a > b) { int32_t c = a; a = b; b = c; }
+    uint32_t s = pair_hash((uint32_t)a, (uint32_t)b) & (MATE_SLOTS - 1);
+    while (t[s].frames && !(t[s].a == a && t[s].b == b)) s = (s + 1) & (MATE_SLOTS - 1);
+    if (!t[s].frames) {
+        if (*used >= MATE_SLOTS / 2) return;
+        (*used)++;
+        t[s].a = a; t[s].b = b;
+    } else if (t[s].stamp == stamp) {
+        return;                       /* once per silhouette and partner */
+    }
+    t[s].frames++;
+    t[s].stamp = stamp;
+}
+
+static int by_f1(const void *pa, const void *pb)
+{
+    const rz_fill *a = pa, *b = pb;
+    if (a->f1 != b->f1) return a->f1 < b->f1 ? -1 : 1;
+    return (a->f2 > b->f2) - (a->f2 < b->f2);
+}
+
+static int by_f2(const void *pa, const void *pb)
+{
+    const rz_fill *a = pa, *b = pb;
+    if (a->f2 != b->f2) return a->f2 < b->f2 ? -1 : 1;
+    return (a->f1 > b->f1) - (a->f1 < b->f1);
+}
+
+/* the mates in one silhouette: fills that share the piece in the other hole.
+   side 0: the partner is the first hole, the mates fill the second */
+static void mates_in(const rz_fill *f, uint32_t n, int side, mate_slot *t, uint32_t *used,
+                     uint32_t *stamp, rz_fill *tmp)
+{
+    memcpy(tmp, f, n * sizeof *f);
+    qsort(tmp, n, sizeof *tmp, side ? by_f2 : by_f1);
+    for (uint32_t i = 0; i < n; ) {
+        int32_t partner = side ? tmp[i].f2 : tmp[i].f1;
+        uint32_t e = i;
+        while (e < n && (side ? tmp[e].f2 : tmp[e].f1) == partner) e++;
+        (*stamp)++;
+        for (uint32_t a = i; a < e; a++)
+            for (uint32_t b = a + 1; b < e; b++)
+                mate_add(t, used, side ? tmp[a].f1 : tmp[a].f2, side ? tmp[b].f1 : tmp[b].f2, *stamp);
+        i = e;
+    }
+}
+
+uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
+{
+    memset(p, 0, sizeof *p);
+    p->nwords = x->n;
+    p->fixed = calloc(x->n ? x->n : 1, sizeof *p->fixed);
+    p->filled = calloc(x->n ? x->n : 1, sizeof *p->filled);
+    if (!p->fixed || !p->filled) return 0;
+
+    /* every run of 3 to 5 pieces, every way of leaving two holes in it */
+    size_t per = 0;
+    for (int len = RUN_MIN; len <= RUN_MAX; len++) per += (size_t)len * (len - 1) / 2;
+    size_t cap = (size_t)x->nseq * per + 1, nr = 0;
+    path_rec *r = malloc(cap * sizeof *r);
+    if (!r) return 0;
+    for (uint32_t i = 0; i < x->nseq; i++) {
+        for (int len = RUN_MIN; len <= RUN_MAX && i + (uint32_t)len <= x->nseq; len++) {
+            const int32_t *run = x->seq + i;
+            int broken = 0;
+            for (int q = 0; q < len; q++) if (run[q] < 0) broken = 1;
+            if (broken) break;
+            for (int h1 = 0; h1 < len; h1++)
+                for (int h2 = h1 + 1; h2 < len; h2++) {
+                    path_rec *e = &r[nr++];
+                    e->key = path_key(run, len, h1, h2);
+                    e->f1 = run[h1]; e->f2 = run[h2];
+                    e->at = i; e->len = (uint8_t)len; e->h1 = (uint8_t)h1; e->h2 = (uint8_t)h2;
+                }
+        }
+    }
+    qsort(r, nr, sizeof *r, rec_order);
+
+    /* the silhouettes heard with two different pairs in their holes */
+    uint32_t scap = 1024, fcap = 4096;
+    p->s = malloc(scap * sizeof *p->s);
+    p->fill = malloc(fcap * sizeof *p->fill);
+    uint32_t *seen = calloc(x->n ? x->n : 1, sizeof *seen), *held = calloc(x->n ? x->n : 1, sizeof *held);
+    if (!p->s || !p->fill || !seen || !held) { free(r); free(seen); free(held); return 0; }
+    for (size_t i = 0; i < nr; ) {
+        size_t e = i;
+        uint32_t distinct = 0;
+        while (e < nr && r[e].key == r[i].key) {
+            if (e == i || r[e].f1 != r[e - 1].f1 || r[e].f2 != r[e - 1].f2) distinct++;
+            e++;
+        }
+        if (distinct >= 2) {
+            if (p->ns == scap) {
+                scap *= 2;
+                rz_silhouette *ns = realloc(p->s, scap * sizeof *p->s);
+                if (!ns) break;
+                p->s = ns;
+            }
+            while (p->nfill + distinct > fcap) {
+                fcap *= 2;
+                rz_fill *nf = realloc(p->fill, fcap * sizeof *p->fill);
+                if (!nf) { free(r); free(seen); free(held); return p->ns; }
+                p->fill = nf;
+            }
+            rz_silhouette *s = &p->s[p->ns];
+            uint32_t mark = p->ns + 1;
+            s->len = r[i].len;
+            for (int q = 0; q < 5; q++) s->word[q] = -1;
+            for (int q = 0; q < s->len; q++)
+                if (q != r[i].h1 && q != r[i].h2) s->word[q] = x->seq[r[i].at + (uint32_t)q];
+            s->fills = distinct;
+            s->said = (uint32_t)(e - i);
+            s->first = p->nfill;
+            s->count = distinct;
+            for (size_t k = i; k < e; k++) {
+                if (k == i || r[k].f1 != r[k - 1].f1 || r[k].f2 != r[k - 1].f2) {
+                    rz_fill *f = &p->fill[p->nfill++];
+                    f->f1 = r[k].f1; f->f2 = r[k].f2; f->said = 0;
+                }
+                p->fill[p->nfill - 1].said++;
+                if (seen[r[k].f1] != mark) { seen[r[k].f1] = mark; p->filled[r[k].f1]++; }
+                if (seen[r[k].f2] != mark) { seen[r[k].f2] = mark; p->filled[r[k].f2]++; }
+            }
+            for (int q = 0; q < s->len; q++)
+                if (s->word[q] >= 0 && held[s->word[q]] != mark) {
+                    held[s->word[q]] = mark;
+                    p->fixed[s->word[q]]++;
+                }
+            p->ns++;
+        }
+        i = e;
+    }
+    free(r);
+    free(seen);
+    free(held);
+
+    /* mates: pieces that filled the same hole beside the same piece */
+    mate_slot *t = calloc(MATE_SLOTS, sizeof *t);
+    rz_fill *tmp = malloc((p->nfill + 1) * sizeof *tmp);
+    if (t && tmp) {
+        uint32_t used = 0, stamp = 0;
+        for (uint32_t i = 0; i < p->ns; i++) {
+            const rz_fill *f = p->fill + p->s[i].first;
+            mates_in(f, p->s[i].count, 0, t, &used, &stamp, tmp);
+            mates_in(f, p->s[i].count, 1, t, &used, &stamp, tmp);
+        }
+        uint32_t k = 0;
+        for (uint32_t s = 0; s < MATE_SLOTS; s++) if (t[s].frames >= 2) k++;
+        p->m = malloc((k + 1) * sizeof *p->m);
+        if (p->m)
+            for (uint32_t s = 0; s < MATE_SLOTS; s++)
+                if (t[s].frames >= 2) {
+                    p->m[p->nm].a = t[s].a; p->m[p->nm].b = t[s].b; p->m[p->nm].frames = t[s].frames;
+                    p->nm++;
+                }
+    }
+    free(t);
+    free(tmp);
+    return p->ns;
+}
+
+void rz_paths_free(rz_paths *p)
+{
+    free(p->s); free(p->fill); free(p->m); free(p->fixed); free(p->filled);
+    memset(p, 0, sizeof *p);
+}
+
+static int fill_said(const rz_fill *f, uint32_t n, int32_t f1, int32_t f2)
+{
+    uint32_t lo = 0, hi = n;
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) / 2;
+        if (f[mid].f1 < f1 || (f[mid].f1 == f1 && f[mid].f2 < f2)) lo = mid + 1;
+        else hi = mid;
+    }
+    return lo < n && f[lo].f1 == f1 && f[lo].f2 == f2;
+}
+
+static const rz_silhouette *sil_weights;
+
+static int heavier(const void *pa, const void *pb)
+{
+    uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
+    if (sil_weights[a].fills != sil_weights[b].fills) return sil_weights[a].fills > sil_weights[b].fills ? -1 : 1;
+    return (a > b) - (a < b);
+}
+
+uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
+{
+    /* each piece's mates, gathered */
+    uint32_t *start = calloc((size_t)p->nwords + 1, sizeof *start);
+    uint32_t *at = malloc(((size_t)p->nwords + 1) * sizeof *at);
+    int32_t *mate = malloc(((size_t)p->nm * 2 + 1) * sizeof *mate);
+    if (!start || !at || !mate) { free(start); free(at); free(mate); return 0; }
+    for (uint32_t i = 0; i < p->nm; i++) { start[p->m[i].a + 1]++; start[p->m[i].b + 1]++; }
+    for (uint32_t w = 0; w < p->nwords; w++) start[w + 1] += start[w];
+    memcpy(at, start, ((size_t)p->nwords + 1) * sizeof *at);
+    for (uint32_t i = 0; i < p->nm; i++) { mate[at[p->m[i].a]++] = p->m[i].b; mate[at[p->m[i].b]++] = p->m[i].a; }
+    free(at);
+
+    /* the silhouette gives weight (the author): the one put together with
+       the most pairs is put together again first */
+    uint32_t *order = malloc(((size_t)p->ns + 1) * sizeof *order);
+    if (!order) { free(start); free(mate); return 0; }
+    for (uint32_t i = 0; i < p->ns; i++) order[i] = i;
+    sil_weights = p->s;
+    qsort(order, p->ns, sizeof *order, heavier);
+
+    uint32_t k = 0;
+    for (uint32_t o = 0; o < p->ns && k < cap; o++) {
+        uint32_t s = order[o];
+        const rz_fill *f = p->fill + p->s[s].first;
+        uint32_t nf = p->s[s].count, mine = k;
+        for (uint32_t i = 0; i < nf && k < cap; i++)
+            for (int side = 0; side < 2 && k < cap; side++) {
+                int32_t w = side ? f[i].f1 : f[i].f2;
+                for (uint32_t q = start[w]; q < start[w + 1] && k < cap; q++) {
+                    int32_t f1 = side ? mate[q] : f[i].f1, f2 = side ? f[i].f2 : mate[q];
+                    if (fill_said(f, nf, f1, f2)) continue;
+                    int dup = 0;
+                    for (uint32_t d = mine; d < k && !dup; d++) dup = out[d].f1 == f1 && out[d].f2 == f2;
+                    if (dup) continue;
+                    out[k].sil = s; out[k].f1 = f1; out[k].f2 = f2; out[k].from = w;
+                    k++;
+                }
+            }
+    }
+    free(order);
+    free(start);
+    free(mate);
+    return k;
+}

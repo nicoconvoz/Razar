@@ -2456,6 +2456,182 @@ static int cmd_asks(int argc, char **argv)
     return 0;
 }
 
+/* --- the silhouette of a path (P51) --------------------------------------- */
+
+static uint64_t run_hash(const int32_t *w, int len)
+{
+    uint64_t v = 1469598103934665603ull ^ (uint64_t)len;
+    for (int q = 0; q < len; q++) { v ^= (uint32_t)w[q]; v *= 1099511628211ull; v ^= v >> 29; }
+    return v ? v : 1;
+}
+
+typedef struct { uint64_t *k; size_t cap; } run_set;
+
+static void runs_of(const rz_lexicon *x, run_set *r)
+{
+    r->cap = 1;
+    while (r->cap < (size_t)x->nseq * 6) r->cap <<= 1;
+    r->k = calloc(r->cap, sizeof *r->k);
+    if (!r->k) return;
+    for (uint32_t i = 0; i < x->nseq; i++)
+        for (int len = 3; len <= 5 && i + (uint32_t)len <= x->nseq; len++) {
+            int broken = 0;
+            for (int q = 0; q < len; q++) if (x->seq[i + (uint32_t)q] < 0) broken = 1;
+            if (broken) break;
+            uint64_t h = run_hash(x->seq + i, len);
+            size_t s = (size_t)(h ^ (h >> 31)) & (r->cap - 1);
+            while (r->k[s] && r->k[s] != h) s = (s + 1) & (r->cap - 1);
+            r->k[s] = h;
+        }
+}
+
+static int run_said(const run_set *r, const int32_t *w, int len)
+{
+    if (!r->k) return 0;
+    uint64_t h = run_hash(w, len);
+    size_t s = (size_t)(h ^ (h >> 31)) & (r->cap - 1);
+    while (r->k[s]) { if (r->k[s] == h) return 1; s = (s + 1) & (r->cap - 1); }
+    return 0;
+}
+
+/* the path a recomposition builds, in the words of another reading */
+static int recomposed_path(const rz_lexicon *from, const rz_silhouette *s, int32_t f1, int32_t f2,
+                           const rz_lexicon *to, int32_t *out)
+{
+    int hole = 0;
+    for (int q = 0; q < s->len; q++) {
+        int32_t w = s->word[q] >= 0 ? s->word[q] : (hole++ ? f2 : f1);
+        out[q] = rz_lexicon_find(to, from->lego[w].s, from->lego[w].len);
+        if (out[q] < 0) return 0;
+    }
+    return 1;
+}
+
+static void say_path(const rz_lexicon *x, const rz_silhouette *s, int32_t f1, int32_t f2, char *out, size_t cap)
+{
+    size_t k = 0;
+    int hole = 0;
+    out[0] = 0;
+    for (int q = 0; q < s->len && k + 2 < cap; q++) {
+        int32_t w = s->word[q];
+        if (w < 0 && f1 == -2) { k += (size_t)snprintf(out + k, cap - k, "%s_", q ? " " : ""); continue; }
+        if (w < 0) w = hole++ ? f2 : f1;
+        k += (size_t)snprintf(out + k, cap - k, "%s%.*s", q ? " " : "", x->lego[w].len, (const char *)x->lego[w].s);
+        if (k >= cap) { out[cap - 1] = 0; return; }
+    }
+}
+
+static int cmd_paths(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+    size_t half = n / 2;
+    while (half < n && t[half] != ' ') half++;
+
+    rz_mind *m1 = malloc(sizeof *m1), *m2 = malloc(sizeof *m2);
+    if (!m1 || !m2 || !t) { free(m1); free(m2); free(t); return 1; }
+    rz_init(m1); rz_init(m2);
+    for (int pass = 0; pass < 2; pass++) { rz_ingest(m1, t, half); rz_ingest(m2, t + half, n - half); }
+    rz_lexicon one, two;
+    rz_lexicon_init(&one); rz_lexicon_init(&two);
+    rz_lexicon_read_words(&one, m1, t, half);
+    rz_lexicon_read_words(&two, m2, t + half, n - half);
+
+    rz_paths p;
+    rz_paths_build(&one, &p);
+    printf("first half: %u silhouettes put together with two or more pairs; %u pairs of mates\n\n", p.ns, p.nm);
+
+    /* the heaviest silhouettes */
+    char a1[200];
+    uint32_t top[12], nt = 0;
+    for (uint32_t i = 0; i < p.ns; i++) {
+        uint32_t j = nt < 12 ? nt++ : 12;
+        if (j == 12) { if (p.s[i].fills <= p.s[top[11]].fills) continue; j = 11; }
+        while (j > 0 && p.s[top[j - 1]].fills < p.s[i].fills) { top[j] = top[j - 1]; j--; }
+        top[j] = i;
+    }
+    printf("the heaviest silhouettes (put together with the most pairs):\n");
+    for (uint32_t i = 0; i < nt; i++) {
+        say_path(&one, &p.s[top[i]], -2, -2, a1, sizeof a1);
+        printf("  %-32s %6u pairs\n", a1, p.s[top[i]].fills);
+    }
+
+    /* glue and content: the share of silhouettes a piece stands fixed in */
+    printf("\nstands fixed most (glue), of pieces in 50+ silhouettes:");
+    int32_t g[12]; uint32_t ng = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        ng = 0;
+        for (uint32_t w = 0; w < one.n; w++) {
+            if (p.filled[w] + p.fixed[w] < 50 || !p.filled[w]) continue;
+            double v = (double)p.fixed[w] / p.filled[w];
+            uint32_t j = ng < 12 ? ng++ : 12;
+            double vl = j == 12 ? (double)p.fixed[g[11]] / p.filled[g[11]] : 0;
+            if (j == 12) { if (pass ? v >= vl : v <= vl) continue; j = 11; }
+            while (j > 0) {
+                double vp = (double)p.fixed[g[j - 1]] / p.filled[g[j - 1]];
+                if (pass ? vp <= v : vp >= v) break;
+                g[j] = g[j - 1]; j--;
+            }
+            g[j] = (int32_t)w;
+        }
+        if (pass) printf("\nfills most (content):");
+        for (uint32_t i = 0; i < ng; i++) {
+            say_lego(&one, g[i], a1, sizeof a1);
+            printf(" %s %.2f", a1, (double)p.fixed[g[i]] / p.filled[g[i]]);
+        }
+    }
+    printf("\n");
+
+    /* put together again, judged by the second half read alone: of the
+       paths it built that the first half never said, how many does the second
+       half say? Blind: the same paths with the mate swapped for the mate of
+       another recomposition */
+    static rz_recomposed rc[200000];
+    uint32_t nr = rz_paths_recompose(&p, rc, 200000);
+    run_set said2;
+    runs_of(&two, &said2);
+    uint32_t tested = 0, found = 0, blind = 0, shown = 0;
+    int32_t w2[5];
+    for (uint32_t i = 0; i < nr; i++) {
+        const rz_silhouette *s = &p.s[rc[i].sil];
+        if (!recomposed_path(&one, s, rc[i].f1, rc[i].f2, &two, w2)) continue;
+        tested++;
+        int hit = run_said(&said2, w2, s->len);
+        found += (uint32_t)hit;
+        /* blind: the piece the mate brought, replaced by the one another
+           recomposition brought */
+        const rz_recomposed *o = &rc[(i * 7919u + 104729u) % nr];
+        int32_t brought = rc[i].f1 == rc[i].from ? rc[i].f2 : rc[i].f1;
+        int32_t other = o->f1 == o->from ? o->f2 : o->f1;
+        int32_t b1 = rc[i].f1 == brought ? other : rc[i].f1, b2 = rc[i].f2 == brought ? other : rc[i].f2;
+        if (recomposed_path(&one, s, b1, b2, &two, w2) && run_said(&said2, w2, s->len)) blind++;
+        if (hit && shown < 12) {
+            say_path(&one, s, rc[i].f1, rc[i].f2, a1, sizeof a1);
+            char fr[80];
+            say_lego(&one, rc[i].from, fr, sizeof fr);
+            printf("%s  built, never said in the first half, said in the second: \"%s\"  (in the place of %s)\n",
+                   shown ? "" : "\n", a1, fr);
+            shown++;
+        }
+    }
+    printf("\nput together again: %u paths; %u in words the second half knows; said there: %u (%.2f%%); blind: %u (%.2f%%)\n",
+           nr, tested, found, tested ? 100.0 * found / tested : 0.0, blind, tested ? 100.0 * blind / tested : 0.0);
+    free(said2.k);
+    rz_paths_free(&p);
+    rz_lexicon_free(&one); rz_lexicon_free(&two);
+    rz_free(m1); rz_free(m2); free(m1); free(m2);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2473,6 +2649,7 @@ int main(int argc, char **argv)
         printf("  razar think [path] [bite]             watch it think out loud\n");
         printf("  razar legos [path] [kinds]            its legos, their kinds, and a game\n");
         printf("  razar asks [path]                     ask every word; the kinds its answers make\n");
+        printf("  razar paths [path]                    silhouettes of paths, taken apart and put together\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2498,6 +2675,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "map"))          return cmd_map(argc - 2, argv + 2);
     if (!strcmp(argv[1], "dominoes"))     return cmd_dominoes(argc - 2, argv + 2);
     if (!strcmp(argv[1], "asks"))         return cmd_asks(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "paths"))        return cmd_paths(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
