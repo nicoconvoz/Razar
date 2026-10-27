@@ -4517,3 +4517,92 @@ int rz_loom_landed(const rz_loom *l, const char *a, const char *b)
                                         spelling_key((const unsigned char *)b, strlen(b)));
     return p && p->count >= 2 && p->landed;
 }
+
+static int by_word64(const void *pa, const void *pb)
+{
+    uint64_t a = *(const uint64_t *)pa, b = *(const uint64_t *)pb;
+    return (a > b) - (a < b);
+}
+
+int rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out)
+{
+    memset(out, 0, sizeof *out);
+    size_t len = strlen(word);
+    if (len > RZ_LEGO_SPAN) return RZ_ERR_MISSING;
+    uint64_t w = spelling_key((const unsigned char *)word, len);
+    if (!loom_spelled(l, w)) return RZ_ERR_MISSING;
+
+    /* its associates, every one; the most shared kept to show */
+    size_t na = 0;
+    for (size_t i = 0; i < l->pair_cap; i++)
+        if (l->pair[i].key && l->pair[i].count >= 2 && (l->pair[i].a == w || l->pair[i].b == w)) na++;
+    uint64_t *who = malloc((na + 1) * sizeof *who);
+    uint32_t *deg = calloc(na + 1, sizeof *deg);
+    if (!who || !deg) { free(who); free(deg); return RZ_ERR_IO; }
+    size_t k = 0;
+    for (size_t i = 0; i < l->pair_cap; i++) {
+        const loom_pair *p = &l->pair[i];
+        if (!p->key || p->count < 2 || (p->a != w && p->b != w)) continue;
+        who[k++] = p->a == w ? p->b : p->a;
+        rz_meaning_assoc e;
+        memset(&e, 0, sizeof e);
+        spell_into(l, p->a == w ? p->b : p->a, e.word, sizeof e.word);
+        e.forms = p->count; e.traveled = p->traveled; e.landed = p->landed;
+        uint32_t j = out->nassoc < 256 ? out->nassoc++ : 256;
+        if (j == 256) { if (e.forms <= out->assoc[255].forms) continue; j = 255; }
+        while (j > 0 && out->assoc[j - 1].forms < e.forms) { out->assoc[j] = out->assoc[j - 1]; j--; }
+        out->assoc[j] = e;
+    }
+    out->assoc_all = (uint32_t)k;
+    /* how many associates each associate has: a word joined to everything
+       says less about this one than a word joined to few */
+    qsort(who, k, sizeof *who, by_word64);
+    for (size_t i = 0; i < l->pair_cap; i++) {
+        const loom_pair *p = &l->pair[i];
+        if (!p->key || p->count < 2) continue;
+        for (int side = 0; side < 2; side++) {
+            uint64_t x = side ? p->b : p->a;
+            size_t lo = 0, hi = k;
+            while (lo < hi) { size_t mid = (lo + hi) / 2; if (who[mid] < x) lo = mid + 1; else hi = mid; }
+            if (lo < k && who[lo] == x) deg[lo]++;
+        }
+    }
+    for (uint32_t i = 0; i < out->nassoc; i++) {
+        uint64_t x = spelling_key((const unsigned char *)out->assoc[i].word, strlen(out->assoc[i].word));
+        size_t lo = 0, hi = k;
+        while (lo < hi) { size_t mid = (lo + hi) / 2; if (who[mid] < x) lo = mid + 1; else hi = mid; }
+        if (lo < k && who[lo] == x) out->assoc[i].others = deg[lo];
+    }
+    free(who);
+    free(deg);
+
+    /* the places it stands in, every one; the most shared kept to show */
+    for (size_t i = 0; i < l->grp_cap; i++) {
+        const loom_group *g = &l->grp[i];
+        if (!g->key || !loom_has(l, g, w)) continue;
+        out->place_all++;
+        rz_meaning_place e;
+        memset(&e, 0, sizeof e);
+        e.company = g->size;
+        say_idea(l, g, w, e.text, sizeof e.text);
+        /* two silhouettes can read the same: "agua , y" with the comma fixed
+           or the comma in a hole. One place, the larger company */
+        int dup = 0;
+        for (uint32_t q = 0; q < out->nplace && !dup; q++) {
+            if (strcmp(out->place[q].text, e.text)) continue;
+            dup = 1;
+            if (out->place[q].company < e.company) {
+                out->place[q].company = e.company;
+                for (uint32_t z = q; z > 0 && out->place[z - 1].company < out->place[z].company; z--) {
+                    rz_meaning_place t0 = out->place[z - 1]; out->place[z - 1] = out->place[z]; out->place[z] = t0;
+                }
+            }
+        }
+        if (dup) continue;
+        uint32_t j = out->nplace < 256 ? out->nplace++ : 256;
+        if (j == 256) { if (e.company <= out->place[255].company) continue; j = 255; }
+        while (j > 0 && out->place[j - 1].company < e.company) { out->place[j] = out->place[j - 1]; j--; }
+        out->place[j] = e;
+    }
+    return RZ_OK;
+}

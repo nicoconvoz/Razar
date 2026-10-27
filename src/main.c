@@ -2764,6 +2764,45 @@ static int cmd_neuron(int argc, char **argv)
     return 0;
 }
 
+/* --- what a word understood (P53) ----------------------------------------- */
+
+static int cmd_meaning(int argc, char **argv)
+{
+    if (argc < 1) { fprintf(stderr, "usage: razar meaning <word>\n"); return 1; }
+    rz_loom *l = rz_loom_new();
+    if (!l || rz_loom_load(l, LOOM) != RZ_OK) {
+        fprintf(stderr, "nothing in the nest: run razar loom [path] first\n");
+        rz_loom_free(l);
+        return 1;
+    }
+    static rz_meaning m;
+    if (rz_loom_meaning(l, argv[0], &m) != RZ_OK) { printf("it never met [%s]\n", argv[0]); rz_loom_free(l); return 0; }
+    printf("[%s] -- what it understood\n\n", argv[0]);
+    printf("it stands in %u places; the most shared:\n", m.place_all);
+    for (uint32_t i = 0; i < m.nplace && i < 15; i++)
+        printf("  \"%s\"   (%u stood there)\n", m.place[i].text, m.place[i].company);
+    printf("\nits associates: %u; the most shared (forms shared / how many associates that one has):\n", m.assoc_all);
+    for (uint32_t i = 0; i < m.nassoc && i < 25; i++)
+        printf("  %-16s %5u / %-6u%s%s\n", m.assoc[i].word, m.assoc[i].forms, m.assoc[i].others,
+               m.assoc[i].landed ? "  landed on what it knew" : "",
+               m.assoc[i].traveled ? "  travelled" : "");
+    /* the associates that say most of it: shared most, joined to fewest */
+    printf("\nthe associates most its own (forms shared, against how many associates each has):\n");
+    uint32_t pick[15], np = 0;
+    for (uint32_t i = 0; i < m.nassoc; i++) {
+        double v = (double)m.assoc[i].forms / (m.assoc[i].others + 1);
+        uint32_t j = np < 15 ? np++ : 15;
+        if (j == 15) { if (v <= (double)m.assoc[pick[14]].forms / (m.assoc[pick[14]].others + 1)) continue; j = 14; }
+        while (j > 0 && (double)m.assoc[pick[j - 1]].forms / (m.assoc[pick[j - 1]].others + 1) < v) { pick[j] = pick[j - 1]; j--; }
+        pick[j] = i;
+    }
+    for (uint32_t i = 0; i < np; i++)
+        printf("  %-16s %5u / %-6u%s\n", m.assoc[pick[i]].word, m.assoc[pick[i]].forms, m.assoc[pick[i]].others,
+               m.assoc[pick[i]].landed ? "  landed on what it knew" : "");
+    rz_loom_free(l);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2784,6 +2823,7 @@ int main(int argc, char **argv)
         printf("  razar paths [path]                    silhouettes of paths, taken apart and put together\n");
         printf("  razar loom [path]                     weave meaning while reading, and see what it foresees\n");
         printf("  razar neuron [word]                   think one depth further (a word starts a new train)\n");
+        printf("  razar meaning <word>                  open a word: the places and associates it understood\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2812,6 +2852,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "paths"))        return cmd_paths(argc - 2, argv + 2);
     if (!strcmp(argv[1], "loom"))         return cmd_loom(argc - 2, argv + 2);
     if (!strcmp(argv[1], "neuron"))       return cmd_neuron(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "meaning"))      return cmd_meaning(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

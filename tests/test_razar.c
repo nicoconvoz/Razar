@@ -4805,6 +4805,28 @@ TEST(a_new_book_enriches_the_meanings_it_already_holds)
     rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
+TEST(a_word_can_be_opened_to_see_what_it_understood)
+{
+    /* The author: what tells the truth is how it understands the meaning of
+       a word -- which paths it has, what it understood */
+    static char a[220000];
+    size_t na = path_world(a, sizeof a, 3000);
+    rz_lexicon *xa = lexicon_of(a, na);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    static rz_meaning m;
+    CHECK_EQ_U(rz_loom_meaning(l, "caballo", &m), RZ_OK);
+    int gato = 0, mammal = 0;
+    for (uint32_t i = 0; i < m.nassoc; i++) gato |= !strcmp(m.assoc[i].word, "gato");
+    for (uint32_t i = 0; i < m.nplace; i++) mammal |= strstr(m.place[i].text, "caballo") != NULL;
+    CHECK(gato);
+    CHECK(mammal);
+    CHECK_EQ_U(rz_loom_meaning(l, "nunca-leída", &m), RZ_ERR_MISSING);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); free(xa);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -5041,6 +5063,7 @@ int main(void)
     RUN(it_thinks_one_depth_at_a_time);
     RUN(what_reality_confirms_becomes_a_travelled_path);
     RUN(a_new_book_enriches_the_meanings_it_already_holds);
+    RUN(a_word_can_be_opened_to_see_what_it_understood);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

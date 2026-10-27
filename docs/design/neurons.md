@@ -86,6 +86,24 @@ and water: 28 confirmations in three million ideas, and in the second half 2
 against 2. The mechanism is there; the test needs books that share what they
 talk about, or many more of them, before travel can show whether it pays.
 
+## What a word understood (2026-10-27)
+
+> You are not seeing the fifth dimension: that tells us nothing. What will
+> tell us the truth is how it understands the meaning, the use of a word —
+> which paths it has, what it understood. — the author
+
+`rz_loom_meaning`; `razar meaning <word>`. A word opened: every place it
+stands in and every associate, nothing filtered, ordered only by how much each
+was shared — and a second order, the associates *most its own*: forms shared
+against how many associates that one has (a word joined to everything says
+little of this one).
+
+Regenerated from zero (NT, then Quiroga), *agua* stands in 1,262 places; the
+most shared are glue (*"agua , y"*, *"de agua ."*). Its associates most its
+own: *candelero*, *césped*, *maná*, *alma*, *cielo*, *altar*, *mar*, *patio*,
+*Jordán*. *amor*: *Reino*, *Espíritu*, *reflejo*, *conocimiento*, *don*,
+*Hijo*, *corazón*, *alma*, *misterio*.
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open

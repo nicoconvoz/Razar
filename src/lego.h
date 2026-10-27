@@ -747,6 +747,34 @@ uint32_t rz_loom_traveled(const rz_loom *l, const char *word, const char *associ
 /* the two are associates now, and their association landed on a meaning held
    before the book that made it (they shared an associate) */
 int      rz_loom_landed(const rz_loom *l, const char *a, const char *b);
+
+/* --- what a word understood (P53) -----------------------------------------
+ *
+ * The author: no figure tells the truth; what tells it is how it understands
+ * the meaning, the use of a word -- which paths it has, what it understood.
+ * A word opened: the places it stands in (the structure with it inside, and
+ * how many others stood there too), its associates with the forms they share,
+ * and for each association whether it landed on a meaning held before and how
+ * travelled it is. Every place and associate is shown, nothing filtered; the
+ * order is only how much each was shared. */
+typedef struct {
+    char     word[RZ_LEGO_SPAN + 1];
+    uint32_t forms, traveled;        /* silhouettes shared; steps of travel */
+    uint32_t others;                 /* how many associates the associate has */
+    uint8_t  landed;
+} rz_meaning_assoc;
+
+typedef struct {
+    char     text[6 * (RZ_LEGO_SPAN + 1)];   /* the structure, with the word inside */
+    uint32_t company;                        /* how many stood in that place */
+} rz_meaning_place;
+
+typedef struct {
+    rz_meaning_assoc assoc[256];  uint32_t nassoc, assoc_all;
+    rz_meaning_place place[256];  uint32_t nplace, place_all;
+} rz_meaning;
+
+int rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out);
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 
