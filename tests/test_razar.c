@@ -4978,8 +4978,9 @@ TEST(what_it_makes_is_fantasy_until_books_say_it)
 
 /* --- the switch of yes and no (P54) ------------------------------------- */
 
-/* dogs and cats that do and do not do things, said again by others, said
-   together, all of them -- and "ya no" */
+/* dogs and cats that do and do not do things -- what follows a no is often
+   another thing ("no ladra sino que corre") -- said again by others, said
+   together, all of them, and "ya no" */
 static size_t switch_world(char *out, size_t cap, int clauses)
 {
     static const char *who[] = { "perro", "gato", "niño", "caballo", "pez" };
@@ -4993,7 +4994,8 @@ static size_t switch_world(char *out, size_t cap, int clauses)
         int w;
         switch ((r >> 58) % 6) {
         case 0:  w = snprintf(out + n, cap - n, "el %s %s %s ", a, v, j); break;
-        case 1:  w = snprintf(out + n, cap - n, "el %s no %s %s ", a, v, j); break;
+        case 1:  w = (r >> 12) % 2 ? snprintf(out + n, cap - n, "el %s no %s %s ", a, v, j)
+                                   : snprintf(out + n, cap - n, "el %s no %s sino que %s %s ", a, v, act[(r >> 8) % 5], j); break;
         case 2:  w = snprintf(out + n, cap - n, "el %s %s , el %s también %s %s ", a, v, b, v, j); break;
         case 3:  w = snprintf(out + n, cap - n, "el %s y el %s %s %s ", a, b, v, j); break;
         case 4:  w = snprintf(out + n, cap - n, "el %s ya no %s %s ", a, v, j); break;
@@ -5014,9 +5016,10 @@ static int in_ids(const int32_t *ids, uint32_t n, int32_t w)
 TEST(it_finds_the_switch_of_no_by_itself)
 {
     /* The author's properties of no: the same construction is said with it
-       and without it; it does not add to something just said, as "también"
-       and "y" do; it is no thing spoken of, as "todos" is; and it stands
-       closest to the verb -- "ya no" */
+       and without it ("y" cannot be taken out); what it does when it appears
+       -- what follows changes ("también" adds the same again); it is no thing
+       spoken of, as "todos" is; and it is the widest door, between the many
+       who stand before it and the many acts behind it ("ya" stands outside) */
     static char t[300000];
     size_t n = switch_world(t, sizeof t, 6000);
     rz_lexicon *x = lexicon_of(t, n);
@@ -5025,8 +5028,8 @@ TEST(it_finds_the_switch_of_no_by_itself)
     int32_t no = lego_of(x, "no"), y = lego_of(x, "y"), tambien = lego_of(x, "también"), ya = lego_of(x, "ya");
     CHECK(in_ids(sw, ns, no));
     CHECK(!in_ids(sw, ns, y));          /* taken out, "el perro el gato" is never said */
-    CHECK(!in_ids(sw, ns, tambien));    /* it comes after the same thing was just said */
-    CHECK(!in_ids(sw, ns, ya));         /* it stands before no */
+    CHECK(!in_ids(sw, ns, tambien));    /* when it appears, what follows is the same */
+    CHECK(!in_ids(sw, ns, ya));         /* it stands outside, before no: a narrow door */
     /* a thing spoken of is no switch: told by the answers each word gets */
     int32_t todos = lego_of(x, "todos");
     rz_answers *ans = calloc(x->n, sizeof *ans);

@@ -824,13 +824,16 @@ const char *rz_loom_book_name(const rz_loom *l, uint32_t book);
  *
  *   it can be taken out and what is left is said too ("el perro no ladra",
  *   "el perro ladra") -- "y" cannot ("pan y vino", "pan vino");
- *   it does not add to what was just said, as "también" and "ni" do: what
- *   follows it was not said closer than usual;
+ *   when it appears, what follows changes ("no ladra, sino que corre");
+ *   "también" adds the same again, and what follows stays;
  *   it is no thing spoken of, as "todos" is (the answers of P50, if given);
- *   it stands closest to what it turns: others stand before it ("ya no").
+ *   it is the widest door, between the many who stand before it and the many
+ *   acts behind it -- the relation is of three, subject, no, verb; "me" and
+ *   "lo" stand inside it ("no me dijo"), "ya" outside ("ya no").
  *
  * Every comparison is against the book itself -- the share any piece is taken
- * out, the usual gap of every piece; the only count is the anecdote rule. */
+ * out, the share for the pieces that can be, where the widths of the doors
+ * part in two; the only count is the anecdote rule. */
 uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t *out, uint32_t cap);
 
 /* how many times lego a stood just before lego b (0: never) */
