@@ -4783,3 +4783,114 @@ uint32_t rz_loom_compose(rz_loom *l, const char *word, const char *const *with, 
     *out = c;
     return k;
 }
+
+/* ===================== the switch of yes and no (P54) ====================== */
+
+static int cmp_dbl(const void *pa, const void *pb)
+{
+    double a = *(const double *)pa, b = *(const double *)pb;
+    return (a > b) - (a < b);
+}
+
+typedef struct { int32_t who; double gap; } switch_gap;
+
+static int by_who_gap(const void *pa, const void *pb)
+{
+    const switch_gap *a = pa, *b = pb;
+    if (a->who != b->who) return a->who < b->who ? -1 : 1;
+    return (a->gap > b->gap) - (a->gap < b->gap);
+}
+
+static uint64_t tri_key(int32_t a, int32_t b, int32_t c)
+{
+    return mix64(((uint64_t)(uint32_t)a * 0x9E3779B97F4A7C15ull) ^ ((uint64_t)(uint32_t)b << 21) ^ (uint64_t)(uint32_t)c);
+}
+
+uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t *out, uint32_t cap)
+{
+    const int32_t *q = x->seq;
+    uint32_t N = x->nseq, W = x->n;
+    if (N < 4 || W == 0) return 0;
+    size_t tcap = 1;
+    while (tcap < (size_t)N * 2) tcap <<= 1;
+    uint64_t *tri = calloc(tcap, sizeof *tri);
+    uint32_t *seen = calloc(W, sizeof *seen), *rem = calloc(W, sizeof *rem), *count = calloc(W, sizeof *count);
+    int64_t *last = malloc(W * sizeof *last);
+    switch_gap *gaps = malloc((size_t)N * sizeof *gaps);
+    double *med = malloc(W * sizeof *med);
+    uint32_t *before = calloc(W, sizeof *before), *after = calloc(W, sizeof *after);
+    uint8_t *cand = calloc(W, 1);
+    uint32_t found = 0;
+    if (!tri || !seen || !rem || !count || !last || !gaps || !med || !before || !after || !cand) goto done;
+
+    /* every construction of three said, and how often each piece is met */
+    for (uint32_t i = 0; i + 2 < N; i++) {
+        if (q[i] < 0 || q[i + 1] < 0 || q[i + 2] < 0) continue;
+        uint64_t k = tri_key(q[i], q[i + 1], q[i + 2]);
+        size_t sl = (size_t)k & (tcap - 1);
+        while (tri[sl] && tri[sl] != k) sl = (sl + 1) & (tcap - 1);
+        tri[sl] = k;
+    }
+    for (uint32_t i = 0; i < N; i++) if (q[i] >= 0) count[q[i]]++;
+
+    /* taken out, is what is left said too? Against how often any piece is */
+    uint64_t all_seen = 0, all_rem = 0;
+    for (uint32_t i = 1; i + 2 < N; i++) {
+        if (q[i - 1] < 0 || q[i] < 0 || q[i + 1] < 0 || q[i + 2] < 0) continue;
+        seen[q[i]]++;
+        all_seen++;
+        uint64_t k = tri_key(q[i - 1], q[i + 1], q[i + 2]);
+        size_t sl = (size_t)k & (tcap - 1);
+        while (tri[sl] && tri[sl] != k) sl = (sl + 1) & (tcap - 1);
+        if (tri[sl]) { rem[q[i]]++; all_rem++; }
+    }
+    double base = all_seen ? (double)all_rem / all_seen : 0.0;
+
+    /* does what follows it come just after it was said (it adds), or as far
+       as it usually comes? The gap, in its own usual gaps: no window chosen */
+    for (uint32_t w = 0; w < W; w++) last[w] = -1;
+    size_t ng = 0;
+    for (uint32_t i = 0; i + 1 < N; i++) {
+        int32_t n = q[i], v = q[i + 1];
+        if (n >= 0 && v >= 0 && last[v] >= 0 && count[v] >= 2) {
+            gaps[ng].who = n;
+            gaps[ng].gap = (double)((int64_t)i + 1 - last[v]) / ((double)N / count[v]);
+            ng++;
+        }
+        if (n >= 0) last[n] = i;
+    }
+    double *allg = malloc((ng + 1) * sizeof *allg);
+    if (!allg) goto done;
+    for (size_t i = 0; i < ng; i++) allg[i] = gaps[i].gap;
+    qsort(allg, ng, sizeof *allg, cmp_dbl);
+    double usual = ng ? allg[ng / 2] : 0.0;
+    free(allg);
+    qsort(gaps, ng, sizeof *gaps, by_who_gap);
+    for (uint32_t w = 0; w < W; w++) med[w] = -1.0;
+    for (size_t i = 0; i < ng; ) {
+        size_t e = i;
+        while (e < ng && gaps[e].who == gaps[i].who) e++;
+        med[gaps[i].who] = gaps[i + (e - i) / 2].gap;
+        i = e;
+    }
+
+    for (uint32_t w = 0; w < W; w++) {
+        if (rem[w] < 2 || (double)rem[w] / seen[w] <= base) continue;   /* said with and without it */
+        if (med[w] < 0 || med[w] < usual) continue;                       /* it adds to what was just said */
+        if (ans && ans[w].of) continue;                                   /* a thing spoken of */
+        cand[w] = 1;
+    }
+    /* closest to what it turns: when two meet, the one that comes last */
+    for (uint32_t i = 0; i + 1 < N; i++) {
+        int32_t a = q[i], b = q[i + 1];
+        if (a < 0 || b < 0 || a == b || !cand[a] || !cand[b]) continue;
+        before[a]++;
+        after[b]++;
+    }
+    for (uint32_t w = 0; w < W && found < cap; w++)
+        if (cand[w] && after[w] >= before[w]) out[found++] = (int32_t)w;
+done:
+    free(tri); free(seen); free(rem); free(count); free(last); free(gaps); free(med);
+    free(before); free(after); free(cand);
+    return found;
+}

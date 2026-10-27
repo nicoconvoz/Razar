@@ -814,6 +814,25 @@ uint32_t rz_loom_compose(rz_loom *l, const char *word, const char *const *with, 
    64 books; returns its number (a name read before keeps its number). */
 uint32_t    rz_loom_book(rz_loom *l, const char *name);
 const char *rz_loom_book_name(const rz_loom *l, uint32_t book);
+/* --- the switch of yes and no (P54) --------------------------------------
+ *
+ * The author: it needs to notice the switch of yes and no, to know if
+ * something is false or true. When the verb is not joined to a negation it is
+ * an affirmation -- "no todos entienden" affirms, the verb is free -- and an
+ * affirmation can also be a negation. Nothing names the no; it is found by
+ * what it does, the author's properties:
+ *
+ *   it can be taken out and what is left is said too ("el perro no ladra",
+ *   "el perro ladra") -- "y" cannot ("pan y vino", "pan vino");
+ *   it does not add to what was just said, as "también" and "ni" do: what
+ *   follows it was not said closer than usual;
+ *   it is no thing spoken of, as "todos" is (the answers of P50, if given);
+ *   it stands closest to what it turns: others stand before it ("ya no").
+ *
+ * Every comparison is against the book itself -- the share any piece is taken
+ * out, the usual gap of every piece; the only count is the anecdote rule. */
+uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t *out, uint32_t cap);
+
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 

@@ -4976,6 +4976,68 @@ TEST(what_it_makes_is_fantasy_until_books_say_it)
     rz_lexicon_free(xa); rz_lexicon_free(xb); rz_lexicon_free(x3); free(xa); free(xb); free(x3);
 }
 
+/* --- the switch of yes and no (P54) ------------------------------------- */
+
+/* dogs and cats that do and do not do things, said again by others, said
+   together, all of them -- and "ya no" */
+static size_t switch_world(char *out, size_t cap, int clauses)
+{
+    static const char *who[] = { "perro", "gato", "niño", "caballo", "pez" };
+    static const char *act[] = { "ladra", "come", "corre", "duerme", "canta" };
+    size_t n = 0;
+    uint64_t r = 23;
+    for (int k = 0; k < clauses; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        const char *a = who[(r >> 20) % 5], *b = who[(r >> 30) % 5], *v = act[(r >> 40) % 5];
+        const char *j = wb_join[(r >> 50) % 6];
+        int w;
+        switch ((r >> 58) % 6) {
+        case 0:  w = snprintf(out + n, cap - n, "el %s %s %s ", a, v, j); break;
+        case 1:  w = snprintf(out + n, cap - n, "el %s no %s %s ", a, v, j); break;
+        case 2:  w = snprintf(out + n, cap - n, "el %s %s , el %s también %s %s ", a, v, b, v, j); break;
+        case 3:  w = snprintf(out + n, cap - n, "el %s y el %s %s %s ", a, b, v, j); break;
+        case 4:  w = snprintf(out + n, cap - n, "el %s ya no %s %s ", a, v, j); break;
+        default: w = snprintf(out + n, cap - n, "todos %s %s ", v, j); break;
+        }
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+static int in_ids(const int32_t *ids, uint32_t n, int32_t w)
+{
+    for (uint32_t i = 0; i < n; i++) if (ids[i] == w) return 1;
+    return 0;
+}
+
+TEST(it_finds_the_switch_of_no_by_itself)
+{
+    /* The author's properties of no: the same construction is said with it
+       and without it; it does not add to something just said, as "también"
+       and "y" do; it is no thing spoken of, as "todos" is; and it stands
+       closest to the verb -- "ya no" */
+    static char t[300000];
+    size_t n = switch_world(t, sizeof t, 6000);
+    rz_lexicon *x = lexicon_of(t, n);
+    int32_t sw[64];
+    uint32_t ns = rz_lexicon_switches(x, NULL, sw, 64);
+    int32_t no = lego_of(x, "no"), y = lego_of(x, "y"), tambien = lego_of(x, "también"), ya = lego_of(x, "ya");
+    CHECK(in_ids(sw, ns, no));
+    CHECK(!in_ids(sw, ns, y));          /* taken out, "el perro el gato" is never said */
+    CHECK(!in_ids(sw, ns, tambien));    /* it comes after the same thing was just said */
+    CHECK(!in_ids(sw, ns, ya));         /* it stands before no */
+    /* a thing spoken of is no switch: told by the answers each word gets */
+    int32_t todos = lego_of(x, "todos");
+    rz_answers *ans = calloc(x->n, sizeof *ans);
+    if (todos >= 0) ans[todos].of = 1;
+    ns = rz_lexicon_switches(x, ans, sw, 64);
+    CHECK(!in_ids(sw, ns, todos));
+    CHECK(in_ids(sw, ns, no));
+    free(ans);
+    rz_lexicon_free(x); free(x);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -5216,6 +5278,7 @@ int main(void)
     RUN(each_association_remembers_the_book_that_brought_it);
     RUN(it_makes_sentences_out_of_its_relations);
     RUN(what_it_makes_is_fantasy_until_books_say_it);
+    RUN(it_finds_the_switch_of_no_by_itself);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
