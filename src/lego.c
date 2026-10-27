@@ -237,6 +237,7 @@ void rz_lexicon_free(rz_lexicon *x)
     free(x->pair);
     free(x->pslot);
     free(x->seq);
+    free(x->closes);
     memset(x, 0, sizeof *x);
 }
 
@@ -481,6 +482,15 @@ static uint32_t walk_words(rz_lexicon *x, const rz_mind *m,
             if (len > RZ_LEGO_SPAN) len = RZ_LEGO_SPAN;
             if (learn) {
                 int32_t id = intern(x, s0, len);
+                if (id >= 0 && part) {
+                    /* a mark that closes a word: where a sentence breaks */
+                    if ((uint32_t)id >= x->ncloses) {
+                        uint32_t nc = x->n + 64;
+                        uint8_t *c = realloc(x->closes, nc);
+                        if (c) { memset(c + x->ncloses, 0, nc - x->ncloses); x->closes = c; x->ncloses = nc; }
+                    }
+                    if ((uint32_t)id < x->ncloses) x->closes[id] = 1;
+                }
                 if (id >= 0 && prev >= 0) count_pair(x, (uint32_t)prev, (uint32_t)id);
                 remember(x, id);
                 prev = id;
@@ -3765,7 +3775,7 @@ typedef struct { uint64_t word; int32_t parent; uint8_t level; } loom_step;
 /* a closed door (P54): a place said with the switch in front of it */
 typedef struct { uint64_t key, sil, partner, word, books; uint32_t denied; uint8_t side; } loom_door;
 /* a question raised by an exception (P54) */
-typedef struct { uint64_t sil, partner, word; uint32_t said, denied, book; uint8_t side, kind; } loom_question;
+typedef struct { uint64_t sil, partner, word; uint32_t said, denied, book, ctx_first, ctx_n; uint8_t side, kind; } loom_question;
 typedef struct { uint64_t key; } loom_asked;
 /* an associate of a word, gathered to walk or to compare */
 typedef struct { uint64_t word; uint64_t other; } loom_edge;
@@ -3792,6 +3802,7 @@ struct rz_loom {
     loom_reading *reading;               /* while a book is read */
     loom_door   *door;  size_t door_cap, door_n;
     loom_question *ask; size_t ask_n, ask_cap;
+    uint64_t    *ctx;   size_t ctx_n, ctx_cap;   /* what stood near each question */
     loom_asked  *asked; size_t asked_cap, asked_n;
     uint64_t    *sw;    uint32_t nsw;            /* the switches, by spelling */
     char         book[64][64];           /* the books read, by name */
@@ -4058,7 +4069,7 @@ void rz_loom_free(rz_loom *l)
     if (!l) return;
     free(l->sil); free(l->grp); free(l->mem); free(l->pair); free(l->word);
     free(l->shape); free(l->idea); free(l->trail);
-    free(l->door); free(l->ask); free(l->asked); free(l->sw);
+    free(l->door); free(l->ask); free(l->asked); free(l->sw); free(l->ctx);
     free(l);
 }
 
@@ -4439,12 +4450,13 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   7u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+#define LOOM_VER   8u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
                                             3: travelled branches, and the branch each idea came by.
                                             4: associations that landed on a meaning held before.
                                             5: the books, and which book brought each place and pair.
                                             6: the story of every idea: the books that said it, and could have.
-                                            7: closed doors, the switches, the questions, how often a place was said */
+                                            7: closed doors, the switches, the questions, how often a place was said.
+                                            8: what stood near each question */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4504,7 +4516,7 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->trail_n; i++)
         ok = put64(f, l->trail[i].word) && put64(f, (uint64_t)(uint32_t)l->trail[i].parent)
              && put64(f, l->trail[i].level);
-    ok = ok && put64(f, l->door_n) && put64(f, l->ask_n) && put64(f, l->nsw);
+    ok = ok && put64(f, l->door_n) && put64(f, l->ask_n) && put64(f, l->nsw) && put64(f, l->ctx_n);
     for (size_t i = 0; ok && i < l->door_cap; i++) {
         const loom_door *d = &l->door[i];
         if (d->key) ok = put64(f, d->key) && put64(f, d->sil) && put64(f, d->partner) && put64(f, d->word)
@@ -4513,9 +4525,11 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->ask_n; i++) {
         const loom_question *q = &l->ask[i];
         ok = put64(f, q->sil) && put64(f, q->partner) && put64(f, q->word) && put64(f, q->said)
-             && put64(f, q->denied) && put64(f, q->book) && put64(f, q->side) && put64(f, q->kind);
+             && put64(f, q->denied) && put64(f, q->book) && put64(f, q->side) && put64(f, q->kind)
+             && put64(f, q->ctx_first) && put64(f, q->ctx_n);
     }
     for (uint32_t i = 0; ok && i < l->nsw; i++) ok = put64(f, l->sw[i]);
+    for (size_t i = 0; ok && i < l->ctx_n; i++) ok = put64(f, l->ctx[i]);
     if (fclose(f) != 0) ok = 0;
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -4594,8 +4608,8 @@ int rz_loom_load(rz_loom *l, const char *path)
         ok = get64(f, &w) && get64(f, &parent) && get64(f, &level) && loom_trail_push(l, w, (int32_t)(uint32_t)parent, (uint8_t)level);
     }
     l->front = (size_t)front;
-    uint64_t nd = 0, nq = 0, nsw = 0;
-    ok = ok && get64(f, &nd) && get64(f, &nq) && get64(f, &nsw);
+    uint64_t nd = 0, nq = 0, nsw = 0, nctx = 0;
+    ok = ok && get64(f, &nd) && get64(f, &nq) && get64(f, &nsw) && get64(f, &nctx);
     for (uint64_t i = 0; ok && i < nd; i++) {
         uint64_t k, sil, partner, word, books, denied, side;
         ok = get64(f, &k) && get64(f, &sil) && get64(f, &partner) && get64(f, &word) && get64(f, &books)
@@ -4606,19 +4620,28 @@ int rz_loom_load(rz_loom *l, const char *path)
         d->sil = sil; d->partner = partner; d->word = word; d->books = books; d->denied = (uint32_t)denied; d->side = (uint8_t)side;
     }
     for (uint64_t i = 0; ok && i < nq; i++) {
-        uint64_t sil, partner, word, said, denied, book, side, kind;
+        uint64_t sil, partner, word, said, denied, book, side, kind, cfirst, cn;
         ok = get64(f, &sil) && get64(f, &partner) && get64(f, &word) && get64(f, &said) && get64(f, &denied)
-             && get64(f, &book) && get64(f, &side) && get64(f, &kind);
+             && get64(f, &book) && get64(f, &side) && get64(f, &kind) && get64(f, &cfirst) && get64(f, &cn);
         if (!ok) break;
         rz_loom_report scratch;
         memset(&scratch, 0, sizeof scratch);
         loom_ask(l, sil, (int)side, partner, word, (int)kind, (uint32_t)said, (uint32_t)denied, &scratch);
-        if (l->ask_n) l->ask[l->ask_n - 1].book = (uint32_t)book;
+        if (l->ask_n) {
+            l->ask[l->ask_n - 1].book = (uint32_t)book;
+            l->ask[l->ask_n - 1].ctx_first = (uint32_t)cfirst;
+            l->ask[l->ask_n - 1].ctx_n = (uint32_t)cn;
+        }
     }
     if (ok && nsw) {
         uint64_t *sw = malloc(nsw * sizeof *sw);
         for (uint64_t i = 0; sw && ok && i < nsw; i++) ok = get64(f, &sw[i]);
         if (sw && ok) { free(l->sw); l->sw = sw; l->nsw = (uint32_t)nsw; } else free(sw);
+    }
+    if (ok && nctx) {
+        uint64_t *c = malloc(nctx * sizeof *c);
+        for (uint64_t i = 0; c && ok && i < nctx; i++) ok = get64(f, &c[i]);
+        if (c && ok) { free(l->ctx); l->ctx = c; l->ctx_n = l->ctx_cap = (size_t)nctx; } else free(c);
     }
     fclose(f);
     return ok ? RZ_OK : RZ_ERR_IO;
@@ -5033,7 +5056,43 @@ static void loom_ask(rz_loom *l, uint64_t sil, int side, uint64_t partner, uint6
     loom_question *q = &l->ask[l->ask_n++];
     q->sil = sil; q->side = (uint8_t)side; q->partner = partner; q->word = w;
     q->kind = (uint8_t)kind; q->said = said; q->denied = denied; q->book = loom_book_index(l);
+    q->ctx_first = (uint32_t)l->ctx_n;
+    q->ctx_n = 0;
     out->asked++;
+    /* what stood near it: its sentence and the one on each side, cut where the
+       book's own marks break them (P33). "Near" as one sentence each side is a
+       criterion, not a measurement: the author asked for the sentences near */
+    const loom_reading *rd = l->reading;
+    if (!rd || !rd->x->closes) return;
+    const rz_lexicon *x = rd->x;
+    int32_t lo = (int32_t)rd->at, hi = (int32_t)rd->at;
+    for (int breaks = 0; lo > 0 && breaks < 2; ) {
+        int32_t id = x->seq[lo - 1];
+        if (id < 0) break;
+        if ((uint32_t)id < x->ncloses && x->closes[id]) breaks++;
+        if (breaks < 2) lo--;
+    }
+    for (int breaks = 0; hi + 1 < (int32_t)x->nseq && breaks < 2; ) {
+        int32_t id = x->seq[hi + 1];
+        if (id < 0) break;
+        if ((uint32_t)id < x->ncloses && x->closes[id]) breaks++;
+        hi++;
+    }
+    for (int32_t j = lo; j <= hi; j++) {
+        int32_t id = x->seq[j];
+        if (id < 0 || ((uint32_t)id < x->ncloses && x->closes[id])) continue;
+        if (l->ctx_n == l->ctx_cap) {
+            size_t cap = l->ctx_cap ? l->ctx_cap * 2 : 1024;
+            uint64_t *c = realloc(l->ctx, cap * sizeof *c);
+            if (!c) return;
+            l->ctx = c;
+            l->ctx_cap = cap;
+        }
+        l->ctx[l->ctx_n++] = rd->h[id];
+        loom_spell(l, rd->h[id], x->lego[id].s, x->lego[id].len);
+        q = &l->ask[l->ask_n - 1];
+        q->ctx_n++;
+    }
 }
 
 /* said open: if the place is mostly a closed door for it, why this time yes? */
@@ -5116,11 +5175,61 @@ void rz_loom_switches(rz_loom *l, const char *const *spellings, uint32_t n)
     }
 }
 
+typedef struct { uint64_t word, other; uint32_t forms; } loom_tie;
+
+static int tie_order(const void *pa, const void *pb)
+{
+    const loom_tie *a = pa, *b = pb;
+    if (a->word != b->word) return a->word < b->word ? -1 : 1;
+    return (a->other > b->other) - (a->other < b->other);
+}
+
+static int dbl_order(const void *pa, const void *pb)
+{
+    double a = *(const double *)pa, b = *(const double *)pb;
+    return (a > b) - (a < b);
+}
+
+/* the usual company of a word: the high side of its own associates' forms,
+   where they part -- each word its own cut (the author: nothing rigid). A
+   word joined to the whole book, as "Jesús" is, keeps only what it shares
+   most; met twice is not usual company */
+static double usual_cut(const loom_tie *t, size_t lo, size_t hi)
+{
+    size_t n = hi - lo;
+    if (n < 2) return -HUGE_VAL;
+    double *v = malloc(n * sizeof *v);
+    if (!v) return -HUGE_VAL;
+    for (size_t i = 0; i < n; i++) v[i] = t[lo + i].forms;
+    qsort(v, n, sizeof *v, dbl_order);
+    double S = 0, s0 = 0, best = 0, mid = -HUGE_VAL;
+    for (size_t i = 0; i < n; i++) S += v[i];
+    for (size_t i = 0; i + 1 < n; i++) {
+        s0 += v[i];
+        if (v[i + 1] <= v[i]) continue;
+        double w0 = i + 1, w1 = n - w0, d = s0 / w0 - (S - s0) / w1, bt = w0 * w1 * d * d;
+        if (bt > best) { best = bt; mid = (v[i] + v[i + 1]) / 2; }
+    }
+    free(v);
+    return mid;
+}
+
 uint32_t rz_loom_questions(const rz_loom *l, rz_question **out)
 {
     *out = NULL;
     rz_question *q = calloc(l->ask_n + 1, sizeof *q);
     if (!q) return 0;
+    /* every association, gathered by word, to tell each word's usual company */
+    size_t nt = 0;
+    for (size_t p = 0; p < l->pair_cap; p++) if (l->pair[p].key && l->pair[p].count >= 2) nt += 2;
+    loom_tie *tie = malloc((nt + 1) * sizeof *tie);
+    size_t k = 0;
+    for (size_t p = 0; tie && p < l->pair_cap; p++) {
+        if (!l->pair[p].key || l->pair[p].count < 2) continue;
+        tie[k++] = (loom_tie){ l->pair[p].a, l->pair[p].b, l->pair[p].count };
+        tie[k++] = (loom_tie){ l->pair[p].b, l->pair[p].a, l->pair[p].count };
+    }
+    if (tie) qsort(tie, k, sizeof *tie, tie_order);
     for (size_t i = 0; i < l->ask_n; i++) {
         const loom_question *a = &l->ask[i];
         q[i].kind = a->kind;
@@ -5132,7 +5241,47 @@ uint32_t rz_loom_questions(const rz_loom *l, rz_question **out)
         memset(&g, 0, sizeof g);
         g.sil = a->sil; g.side = a->side; g.partner = a->partner;
         say_idea(l, &g, a->word, q[i].text, sizeof q[i].text);
+        /* the pieces of the place itself are not an answer */
+        uint64_t own[7];
+        int nown = 0;
+        own[nown++] = a->word;
+        own[nown++] = a->partner;
+        if (l->shape_cap) {
+            size_t sc;
+            LOOM_SLOT(l->shape, l->shape_cap, a->sil, sc);
+            if (l->shape[sc].key) for (int z = 0; z < 5; z++) if (l->shape[sc].path[z]) own[nown++] = l->shape[sc].path[z];
+        }
+        /* the word's associates, and where its usual company begins */
+        size_t lo = 0, hi = k;
+        while (tie && lo < hi) { size_t mid = (lo + hi) / 2; if (tie[mid].word < a->word) lo = mid + 1; else hi = mid; }
+        size_t end = lo;
+        while (tie && end < k && tie[end].word == a->word) end++;
+        double cut = tie ? usual_cut(tie, lo, end) : -HUGE_VAL;
+        q[i].clue = calloc(a->ctx_n + 1, sizeof *q[i].clue);
+        for (uint32_t c = 0; q[i].clue && c < a->ctx_n; c++) {
+            uint64_t v = l->ctx[a->ctx_first + c];
+            int skip = loom_is_switch(l, v);
+            if (!skip && tie) {
+                size_t a0 = lo, a1 = end;
+                while (a0 < a1) { size_t mid = (a0 + a1) / 2; if (tie[mid].other < v) a0 = mid + 1; else a1 = mid; }
+                if (a0 < end && tie[a0].other == v && tie[a0].forms > cut) skip = 1;   /* its usual company */
+            }
+            for (int z = 0; z < nown && !skip; z++) skip = own[z] == v;
+            for (uint32_t d = 0; d < q[i].nclue && !skip; d++) {
+                char sp[RZ_LEGO_SPAN + 1];
+                spell_into(l, v, sp, sizeof sp);
+                skip = !strcmp(sp, q[i].clue[d]);
+            }
+            if (!skip) spell_into(l, v, q[i].clue[q[i].nclue++], RZ_LEGO_SPAN + 1);
+        }
     }
+    free(tie);
     *out = q;
     return (uint32_t)l->ask_n;
+}
+
+void rz_questions_free(rz_question *q, uint32_t n)
+{
+    for (uint32_t i = 0; q && i < n; i++) free(q[i].clue);
+    free(q);
 }

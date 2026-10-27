@@ -66,6 +66,10 @@ typedef struct {
     uint64_t     *follow;            /* kinds x kinds: kind a before kind b */
     int32_t      *seq;               /* every lego read, in order; -1 between reads */
     uint32_t      nseq, seqcap;
+    /* the legos read as marks that close a word (P33): where a sentence
+       breaks. Derived while reading, never saved; NULL after a load */
+    uint8_t      *closes;
+    uint32_t      ncloses;
     /* derived, rebuilt by sort and load: never saved */
     uint32_t     *out_start;         /* n + 1 offsets into out_pair */
     uint32_t     *out_pair;          /* pair indices, grouped by the lego before */
@@ -860,11 +864,16 @@ typedef struct {
     char     text[6 * (RZ_LEGO_SPAN + 1)];/* the place, with it inside */
     uint32_t said, denied;                /* the two counts, when it was asked */
     uint32_t book;
+    /* the answer looked for near it (the author): what stood in the sentences
+       around it that is no usual company of the word -- what this time had */
+    char   (*clue)[RZ_LEGO_SPAN + 1];
+    uint32_t nclue;
 } rz_question;
 
 /* the switches it knows, added to (a switch found in one book serves the next) */
 void     rz_loom_switches(rz_loom *l, const char *const *spellings, uint32_t n);
-uint32_t rz_loom_questions(const rz_loom *l, rz_question **out);   /* the caller frees */
+uint32_t rz_loom_questions(const rz_loom *l, rz_question **out);
+void     rz_questions_free(rz_question *q, uint32_t n);
 
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);

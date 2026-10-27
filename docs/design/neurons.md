@@ -228,6 +228,29 @@ no? (the silence before his judges); *"El que cree"* — said 5, denied once;
 *"es digno"* — denied 3, said once: why this time yes? Most of the strongest
 are glue (*", para que"*): runs that cross from one clause to the next.
 
+### Looking for the why near it (2026-10-27)
+
+> Let it look for the answer in the associations and the structures near
+> that sentence. — the author
+
+Every question keeps what stood near it: its sentence and the one on each
+side, cut where the book's own marks break them (P33 — the lexicon now keeps
+which legos it read as marks). "One sentence each side" is a criterion, not a
+measurement: the author asked for the sentences near. The answer looked for is
+what stood there that is **not the word's usual company** — and usual company
+is each word's own cut, the high side of its associates' forms: a word joined
+to the whole book, as *Jesús* is, keeps only what it shares most.
+
+On the NT:
+
+- *"El que cree"* — said 5 times, denied once. Near it, not its usual
+  company: … **mentiroso** … — *"el que no cree a Dios lo hace pasar por
+  mentiroso"*.
+- *"Jesús le respondió"* — said 26 times, denied once. Near it: *Le hizo
+  muchas preguntas, pero … nada* — Herod questioning him.
+
+The answers still come mixed with glue (*pero*, *en*, *de*).
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open

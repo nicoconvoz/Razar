@@ -3044,6 +3044,7 @@ static int cmd_why(int argc, char **argv)
         int dup = 0;
         for (uint32_t j = 0; j < k && !dup; j++) dup = q[j].kind == q[i].kind && !strcmp(q[j].text, q[i].text);
         if (!dup) q[k++] = q[i];
+        else free(q[i].clue);
     }
     n = k;
     uint32_t yes = 0, no = 0;
@@ -3071,11 +3072,16 @@ static int cmd_why(int argc, char **argv)
             if (strength <= cut) continue;
             fprintf(o, "  \"%s\"   [%s] -- said %u, denied %u   (%s)\n", q[i].text, q[i].word, q[i].said, q[i].denied,
                     rz_loom_book_name(l, q[i].book));
+            if (q[i].nclue) {
+                fprintf(o, "      near it, and not its usual company:");
+                for (uint32_t c = 0; c < q[i].nclue; c++) fprintf(o, " [%s]", q[i].clue[c]);
+                fprintf(o, "\n");
+            }
         }
         fprintf(o, "\n");
     }
     if (o != stdout) { fclose(o); printf("every question written to %s\n", fname); }
-    free(q);
+    rz_questions_free(q, n);
     rz_loom_free(l);
     return 0;
 }

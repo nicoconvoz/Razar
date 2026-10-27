@@ -5065,7 +5065,7 @@ static int asks(const rz_loom *l, const char *word, int kind, const char *place)
     int found = 0;
     for (uint32_t i = 0; i < n && !found; i++)
         found = q[i].kind == kind && !strcmp(q[i].word, word) && !strcmp(q[i].text, place);
-    free(q);
+    rz_questions_free(q, n);
     return found;
 }
 
@@ -5099,6 +5099,67 @@ TEST(a_closed_door_asks_why_this_time_it_was_different)
     CHECK(asks(back, "gato", RZ_ASK_WHY_NOT, "el gato maúlla"));
     remove("test_doors.tmp");
     rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(x); free(x);
+}
+
+/* the cat always miaows; the one time it does not, it was asleep -- each
+   sentence closed by ";" */
+static size_t sleep_world(char *out, size_t cap, int clauses)
+{
+    size_t n = said_world(out, cap, clauses);
+    uint64_t r = 77;
+    for (int k = 0; k < clauses / 2; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w = (r >> 33) % 2 ? snprintf(out + n, cap - n, "el gato maúlla ; %s ", wb_join[(r >> 20) % 6])
+                              : snprintf(out + n, cap - n, "el perro come carne ; %s ", wb_join[(r >> 20) % 6]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    int w = snprintf(out + n, cap - n, "el gato estaba dormido ; el gato no maúlla ; then ");
+    if (w > 0) n += (size_t)w;
+    return n;
+}
+
+TEST(why_is_looked_for_in_what_stood_near)
+{
+    /* The author: let it look for the answer in the associations and the
+       structures near that sentence. The cat miaows every time; the one time
+       it does not, the sentence before says it was asleep -- what stood near
+       that is no usual company of the cat */
+    static char t[600000];
+    size_t n = sleep_world(t, sizeof t, 6000);
+    rz_lexicon *x = lexicon_of(t, n);
+    /* a world this small is no book: P33 learns no mark from it (on the New
+       Testament it does, and there it was measured). The test hands it the
+       one mark, to look at what is measured here: the answer found near */
+    int32_t semi = lego_of(x, ";");
+    CHECK(semi >= 0);
+    if (semi >= 0) {
+        x->closes = calloc(x->n, 1);
+        x->ncloses = x->n;
+        x->closes[semi] = 1;
+    }
+    rz_loom *l = rz_loom_new();
+    const char *sw[] = { "no" };
+    rz_loom_switches(l, sw, 1);
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(l, x, &r), RZ_OK);
+    rz_question *q = NULL;
+    uint32_t nq = rz_loom_questions(l, &q);
+    int asked = 0, asleep = 0, usual = 0;
+    for (uint32_t i = 0; i < nq; i++) {
+        if (q[i].kind != RZ_ASK_WHY_NOT || strcmp(q[i].word, "gato") || strcmp(q[i].text, "el gato maúlla")) continue;
+        asked = 1;
+        for (uint32_t c = 0; c < q[i].nclue; c++) {
+            asleep |= !strcmp(q[i].clue[c], "dormido");
+            usual |= !strcmp(q[i].clue[c], "perro");     /* the cat's company every day: no clue */
+        }
+    }
+    CHECK(asked);
+    CHECK(asleep);
+    CHECK(!usual);
+    rz_questions_free(q, nq);
     rz_loom_free(l);
     rz_lexicon_free(x); free(x);
 }
@@ -5345,6 +5406,7 @@ int main(void)
     RUN(what_it_makes_is_fantasy_until_books_say_it);
     RUN(it_finds_the_switch_of_no_by_itself);
     RUN(a_closed_door_asks_why_this_time_it_was_different);
+    RUN(why_is_looked_for_in_what_stood_near);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);
