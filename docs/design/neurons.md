@@ -204,6 +204,30 @@ Asked first which words are things (P50), it fails (*la*): in the map *no*
 stands as something spoken of, so that filter goes against it. On Quiroga
 (24,475 words) it finds none: one novel is not enough to tell the door.
 
+### Closed doors, and why this time (2026-10-27)
+
+> Each time it finds something denied, let it ask why in that case it was
+> different — unless it is a general rule, and then it should only ask when it
+> finds the contrary, the affirmation of what in most cases is denied. — the
+> author. And the scope: by situation, then by story, then by book, then as a
+> general rule if there are more books.
+
+`rz_loom_switches`, `rz_loom_questions`; `razar why [all]`. `razar loom`
+finds the switches of each book (P54) and adds them to the memory, so a switch
+found in one book serves the next. Every place said with a switch in front is
+kept as a closed door — the same place, said denied — with one hole on each
+side of the switch (the relation is of three). A denial of what is mostly said
+asks *why this time no?*; an affirmation of what is mostly denied asks *why
+this time yes?*. The rule is the majority of the two counts; nothing else.
+Book and rule are built; situation and story are not yet (D125).
+
+On the NT: its switch, *no*, found alone; 38,442 closed doors; Quiroga, with no
+switch of its own, read with the NT's: 3,936 closed doors. Among the
+questions: *"Jesús le respondió"* — said 26 times, denied once: why this time
+no? (the silence before his judges); *"El que cree"* — said 5, denied once;
+*"es digno"* — denied 3, said once: why this time yes? Most of the strongest
+are glue (*", para que"*): runs that cross from one clause to the next.
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open
@@ -212,6 +236,8 @@ stands as something spoken of, so that filter goes against it. On Quiroga
   P44) are not built.
 - **D120** — the memory's weight: 416 MB regenerated from zero, without ideas.
 - **D123** — words glued across Quiroga's line breaks, and a broken byte.
+- **D125** — the scope below the book: situation and story, found from the
+  text; and closed doors read across clause breaks (glue questions).
 - **D124** — the switch is found on the NT (*no*, alone) but not on Quiroga;
   the P50 thing filter works against it; a verb that carries the no inside
   (*negó*) is not looked for yet; questions (¿ ?) are not a mode yet; the

@@ -3753,7 +3753,7 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
    all of them. */
 typedef struct { uint64_t key, f1, f2; uint8_t born; } loom_sil;
 typedef struct { uint64_t key, sil, partner; int32_t head; uint32_t size; uint8_t side; } loom_group;
-typedef struct { uint64_t word, books; int32_t next; } loom_member;
+typedef struct { uint64_t word, books; int32_t next; uint32_t said; } loom_member;
 typedef struct { uint64_t key, last, a, b, books; uint32_t count, traveled; uint8_t landed; } loom_pair;
 typedef struct { uint64_t key; uint8_t len; unsigned char s[RZ_LEGO_SPAN]; } loom_word;
 /* the shape of a born silhouette, to say its paths: the fixed pieces, holes 0 */
@@ -3762,6 +3762,11 @@ typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_sha
 typedef struct { uint64_t key, word, group, via, said_by, chances; uint32_t traveled; uint8_t level, blind, confirmed; } loom_idea;
 /* the cache of each path walked (P53): a word, and who reached it */
 typedef struct { uint64_t word; int32_t parent; uint8_t level; } loom_step;
+/* a closed door (P54): a place said with the switch in front of it */
+typedef struct { uint64_t key, sil, partner, word, books; uint32_t denied; uint8_t side; } loom_door;
+/* a question raised by an exception (P54) */
+typedef struct { uint64_t sil, partner, word; uint32_t said, denied, book; uint8_t side, kind; } loom_question;
+typedef struct { uint64_t key; } loom_asked;
 /* an associate of a word, gathered to walk or to compare */
 typedef struct { uint64_t word; uint64_t other; } loom_edge;
 /* what a read needs to judge enrichment: the meanings held before the book */
@@ -3785,12 +3790,21 @@ struct rz_loom {
     loom_step   *trail; size_t trail_n, trail_cap, front;   /* front: where the last depth begins */
     uint64_t     rng;
     loom_reading *reading;               /* while a book is read */
+    loom_door   *door;  size_t door_cap, door_n;
+    loom_question *ask; size_t ask_n, ask_cap;
+    loom_asked  *asked; size_t asked_cap, asked_n;
+    uint64_t    *sw;    uint32_t nsw;            /* the switches, by spelling */
     char         book[64][64];           /* the books read, by name */
     uint32_t     nbook;
     uint64_t     reading_book;           /* the bit of the book being read; 0: unnamed */
 };
 
 static void loom_enrich(rz_loom *l, uint64_t a, uint64_t b, loom_pair *p);
+static void loom_affirmed(rz_loom *l, const loom_group *g, uint64_t w, int32_t member, rz_loom_report *out);
+static void loom_read_denial(rz_loom *l, const rz_lexicon *x, const uint64_t *h, uint32_t i, rz_loom_report *out);
+static int  loom_is_switch(const rz_loom *l, uint64_t w);
+static void loom_ask(rz_loom *l, uint64_t sil, int side, uint64_t partner, uint64_t w,
+                     int kind, uint32_t said, uint32_t denied, rz_loom_report *out);
 static int edge_order(const void *pa, const void *pb);
 static int by_word64(const void *pa, const void *pb);
 
@@ -3984,6 +3998,7 @@ static uint64_t loom_idea_key(uint64_t group, uint64_t word, int blind)
 static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_loom_report *out)
 {
     int32_t was = loom_member_of(l, g, w);
+    if (out) loom_affirmed(l, g, w, was, out);
     if (was >= 0) {
         l->mem[was].books |= l->reading_book;                         /* there again, in this book too */
         if (out && l->idea_cap) {
@@ -3995,6 +4010,7 @@ static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_lo
     }
     for (int32_t m = g->head; m >= 0; m = l->mem[m].next) loom_associate(l, w, l->mem[m].word, sil);
     loom_add_member(l, g, w, l->reading_book);
+    if (out) l->mem[g->head].said = 1;
     if (!l->idea_cap || !out) return;
     for (int blind = 0; blind < 2; blind++) {
         size_t s;
@@ -4042,6 +4058,7 @@ void rz_loom_free(rz_loom *l)
     if (!l) return;
     free(l->sil); free(l->grp); free(l->mem); free(l->pair); free(l->word);
     free(l->shape); free(l->idea); free(l->trail);
+    free(l->door); free(l->ask); free(l->asked); free(l->sw);
     free(l);
 }
 
@@ -4087,6 +4104,7 @@ int rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out)
     uint64_t run[RUN_MAX];
     for (uint32_t i = 0; i < x->nseq; i++) {
         rd.at = i;
+        if (l->nsw && x->seq[i] >= 0 && loom_is_switch(l, h[x->seq[i]])) loom_read_denial(l, x, h, i, out);
         /* every run that ends with the piece just read */
         for (int len = RUN_MIN; len <= RUN_MAX && (uint32_t)len <= i + 1; len++) {
             const int32_t *ids = x->seq + i + 1 - len;
@@ -4421,11 +4439,12 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   6u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+#define LOOM_VER   7u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
                                             3: travelled branches, and the branch each idea came by.
                                             4: associations that landed on a meaning held before.
                                             5: the books, and which book brought each place and pair.
-                                            6: the story of every idea: the books that said it, and could have */
+                                            6: the story of every idea: the books that said it, and could have.
+                                            7: closed doors, the switches, the questions, how often a place was said */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4452,8 +4471,11 @@ int rz_loom_save(const rz_loom *l, const char *path)
         uint64_t *mb = malloc(((size_t)g->size + 1) * sizeof *mb);
         if (!mb) { free(ms); ok = 0; break; }
         uint32_t k = g->size;
-        for (int32_t m = g->head; m >= 0 && k; m = l->mem[m].next) { --k; ms[k] = l->mem[m].word; mb[k] = l->mem[m].books; }
-        for (uint32_t q = 0; ok && q < g->size; q++) ok = put64(f, ms[q]) && put64(f, mb[q]);
+        uint64_t *mt = malloc(((size_t)g->size + 1) * sizeof *mt);
+        if (!mt) { free(ms); free(mb); ok = 0; break; }
+        for (int32_t m = g->head; m >= 0 && k; m = l->mem[m].next) { --k; ms[k] = l->mem[m].word; mb[k] = l->mem[m].books; mt[k] = l->mem[m].said; }
+        for (uint32_t q = 0; ok && q < g->size; q++) ok = put64(f, ms[q]) && put64(f, mb[q]) && put64(f, mt[q]);
+        free(mt);
         free(ms);
         free(mb);
     }
@@ -4482,6 +4504,18 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->trail_n; i++)
         ok = put64(f, l->trail[i].word) && put64(f, (uint64_t)(uint32_t)l->trail[i].parent)
              && put64(f, l->trail[i].level);
+    ok = ok && put64(f, l->door_n) && put64(f, l->ask_n) && put64(f, l->nsw);
+    for (size_t i = 0; ok && i < l->door_cap; i++) {
+        const loom_door *d = &l->door[i];
+        if (d->key) ok = put64(f, d->key) && put64(f, d->sil) && put64(f, d->partner) && put64(f, d->word)
+                         && put64(f, d->books) && put64(f, d->denied) && put64(f, d->side);
+    }
+    for (size_t i = 0; ok && i < l->ask_n; i++) {
+        const loom_question *q = &l->ask[i];
+        ok = put64(f, q->sil) && put64(f, q->partner) && put64(f, q->word) && put64(f, q->said)
+             && put64(f, q->denied) && put64(f, q->book) && put64(f, q->side) && put64(f, q->kind);
+    }
+    for (uint32_t i = 0; ok && i < l->nsw; i++) ok = put64(f, l->sw[i]);
     if (fclose(f) != 0) ok = 0;
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -4511,9 +4545,9 @@ int rz_loom_load(rz_loom *l, const char *path)
         for (uint64_t q = 0; ok && q < size; q++) {
             uint64_t w;
             ok = get64(f, &w);
-            uint64_t books = 0;
-            ok = ok && get64(f, &books);
-            if (ok && !loom_has(l, g, w)) loom_add_member(l, g, w, books);
+            uint64_t books = 0, said = 0;
+            ok = ok && get64(f, &books) && get64(f, &said);
+            if (ok && !loom_has(l, g, w)) { loom_add_member(l, g, w, books); l->mem[g->head].said = (uint32_t)said; }
         }
     }
     for (uint64_t i = 0; ok && i < np; i++) {
@@ -4560,6 +4594,32 @@ int rz_loom_load(rz_loom *l, const char *path)
         ok = get64(f, &w) && get64(f, &parent) && get64(f, &level) && loom_trail_push(l, w, (int32_t)(uint32_t)parent, (uint8_t)level);
     }
     l->front = (size_t)front;
+    uint64_t nd = 0, nq = 0, nsw = 0;
+    ok = ok && get64(f, &nd) && get64(f, &nq) && get64(f, &nsw);
+    for (uint64_t i = 0; ok && i < nd; i++) {
+        uint64_t k, sil, partner, word, books, denied, side;
+        ok = get64(f, &k) && get64(f, &sil) && get64(f, &partner) && get64(f, &word) && get64(f, &books)
+             && get64(f, &denied) && get64(f, &side);
+        loom_door *d; int fresh;
+        if (ok) { LOOM_AT(l, l->door, l->door_cap, l->door_n, k, d, fresh); (void)fresh; } else d = NULL;
+        if (!d) { ok = 0; break; }
+        d->sil = sil; d->partner = partner; d->word = word; d->books = books; d->denied = (uint32_t)denied; d->side = (uint8_t)side;
+    }
+    for (uint64_t i = 0; ok && i < nq; i++) {
+        uint64_t sil, partner, word, said, denied, book, side, kind;
+        ok = get64(f, &sil) && get64(f, &partner) && get64(f, &word) && get64(f, &said) && get64(f, &denied)
+             && get64(f, &book) && get64(f, &side) && get64(f, &kind);
+        if (!ok) break;
+        rz_loom_report scratch;
+        memset(&scratch, 0, sizeof scratch);
+        loom_ask(l, sil, (int)side, partner, word, (int)kind, (uint32_t)said, (uint32_t)denied, &scratch);
+        if (l->ask_n) l->ask[l->ask_n - 1].book = (uint32_t)book;
+    }
+    if (ok && nsw) {
+        uint64_t *sw = malloc(nsw * sizeof *sw);
+        for (uint64_t i = 0; sw && ok && i < nsw; i++) ok = get64(f, &sw[i]);
+        if (sw && ok) { free(l->sw); l->sw = sw; l->nsw = (uint32_t)nsw; } else free(sw);
+    }
     fclose(f);
     return ok ? RZ_OK : RZ_ERR_IO;
 }
@@ -4934,4 +4994,145 @@ uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t
 done:
     free(tri); free(seen); free(rem); free(same); free(tot); free(front); free(behind); free(cand); free(door);
     return found;
+}
+
+/* --- closed doors (P54) ---------------------------------------------------- */
+
+static uint64_t loom_door_key(uint64_t group, uint64_t word)
+{
+    return mix64(group * 0xD6E8FEB86659FD93ull ^ mix64(word ^ 0xA5A5A5A5u));
+}
+
+static int loom_is_switch(const rz_loom *l, uint64_t w)
+{
+    for (uint32_t i = 0; i < l->nsw; i++) if (l->sw[i] == w) return 1;
+    return 0;
+}
+
+static uint32_t loom_book_index(const rz_loom *l)
+{
+    for (uint32_t b = 0; b < 64; b++) if (l->reading_book >> b & 1) return b;
+    return 64;
+}
+
+/* one question per place, word and kind */
+static void loom_ask(rz_loom *l, uint64_t sil, int side, uint64_t partner, uint64_t w,
+                     int kind, uint32_t said, uint32_t denied, rz_loom_report *out)
+{
+    uint64_t key = mix64(loom_door_key(loom_group_key(sil, side, partner), w) + (uint64_t)kind);
+    loom_asked *a; int fresh;
+    LOOM_AT(l, l->asked, l->asked_cap, l->asked_n, key, a, fresh);
+    if (!a || !fresh) return;
+    if (l->ask_n == l->ask_cap) {
+        size_t cap = l->ask_cap ? l->ask_cap * 2 : 64;
+        loom_question *q = realloc(l->ask, cap * sizeof *q);
+        if (!q) return;
+        l->ask = q;
+        l->ask_cap = cap;
+    }
+    loom_question *q = &l->ask[l->ask_n++];
+    q->sil = sil; q->side = (uint8_t)side; q->partner = partner; q->word = w;
+    q->kind = (uint8_t)kind; q->said = said; q->denied = denied; q->book = loom_book_index(l);
+    out->asked++;
+}
+
+/* said open: if the place is mostly a closed door for it, why this time yes? */
+static void loom_affirmed(rz_loom *l, const loom_group *g, uint64_t w, int32_t member, rz_loom_report *out)
+{
+    if (member >= 0) l->mem[member].said++;
+    if (!l->door_cap) return;
+    size_t s;
+    LOOM_SLOT(l->door, l->door_cap, loom_door_key(g->key, w), s);
+    if (!l->door[s].key) return;
+    uint32_t said = member >= 0 ? l->mem[member].said : 1;
+    if (l->door[s].denied > said)
+        loom_ask(l, g->sil, g->side, g->partner, w, RZ_ASK_WHY_YES, said, l->door[s].denied, out);
+}
+
+/* said with a switch in front: the place is a closed door for it this time.
+   If it is mostly said open there, why this time no? */
+static void loom_denied(rz_loom *l, uint64_t sil, int side, uint64_t partner, uint64_t w, rz_loom_report *out)
+{
+    uint64_t gkey = loom_group_key(sil, side, partner);
+    loom_door *d; int fresh;
+    LOOM_AT(l, l->door, l->door_cap, l->door_n, loom_door_key(gkey, w), d, fresh);
+    if (!d) return;
+    if (fresh) { d->sil = sil; d->side = (uint8_t)side; d->partner = partner; d->word = w; }
+    d->denied++;
+    d->books |= loom_book_bit(l);
+    out->denied++;
+    const loom_group *g = loom_group_find(l, gkey);
+    int32_t m = g ? loom_member_of(l, g, w) : -1;
+    if (m >= 0 && l->mem[m].said > d->denied)
+        loom_ask(l, sil, side, partner, w, RZ_ASK_WHY_NOT, l->mem[m].said, d->denied, out);
+}
+
+/* every run that holds the pieces on both sides of a switch, read with the
+   switch taken out: those places were said closed */
+static void loom_read_denial(rz_loom *l, const rz_lexicon *x, const uint64_t *h, uint32_t i, rz_loom_report *out)
+{
+    uint64_t arr[2 * RUN_MAX];
+    int n = 0, gap;
+    int32_t from = (int32_t)i - (RUN_MAX - 1);
+    if (from < 0) from = 0;
+    for (int32_t j = from; j < (int32_t)i; j++) {
+        if (x->seq[j] < 0) { n = 0; continue; }
+        arr[n++] = h[x->seq[j]];
+    }
+    gap = n;
+    for (uint32_t j = i + 1; j < x->nseq && j <= i + RUN_MAX - 1; j++) {
+        if (x->seq[j] < 0) break;
+        arr[n++] = h[x->seq[j]];
+    }
+    if (gap == 0 || n == gap) return;
+    for (int len = RUN_MIN; len <= RUN_MAX; len++)
+        for (int st = gap - len + 1; st <= gap - 1; st++) {
+            if (st < 0 || st + len > n) continue;
+            const uint64_t *run = arr + st;
+            /* the relation is of three (the author): who on one side of the
+               switch, the act on the other -- one hole on each side */
+            for (int h1 = 0; h1 < len && st + h1 < gap; h1++)
+                for (int h2 = gap - st > h1 + 1 ? gap - st : h1 + 1; h2 < len; h2++) {
+                    uint64_t key = loom_path_key(run, len, h1, h2);
+                    size_t sl;
+                    if (!l->sil_cap) continue;
+                    LOOM_SLOT(l->sil, l->sil_cap, key, sl);
+                    if (!l->sil[sl].key || !l->sil[sl].born) continue;   /* a structure it knows */
+                    loom_denied(l, key, 0, run[h2], run[h1], out);
+                    loom_denied(l, key, 1, run[h1], run[h2], out);
+                }
+        }
+}
+
+void rz_loom_switches(rz_loom *l, const char *const *spellings, uint32_t n)
+{
+    /* added to the ones it knows: a switch found in one book serves the next */
+    uint64_t *sw = realloc(l->sw, (l->nsw + n + 1) * sizeof *sw);
+    if (!sw) return;
+    l->sw = sw;
+    for (uint32_t i = 0; i < n; i++) {
+        uint64_t k = spelling_key((const unsigned char *)spellings[i], strlen(spellings[i]));
+        if (!loom_is_switch(l, k)) sw[l->nsw++] = k;
+    }
+}
+
+uint32_t rz_loom_questions(const rz_loom *l, rz_question **out)
+{
+    *out = NULL;
+    rz_question *q = calloc(l->ask_n + 1, sizeof *q);
+    if (!q) return 0;
+    for (size_t i = 0; i < l->ask_n; i++) {
+        const loom_question *a = &l->ask[i];
+        q[i].kind = a->kind;
+        q[i].said = a->said;
+        q[i].denied = a->denied;
+        q[i].book = a->book;
+        spell_into(l, a->word, q[i].word, sizeof q[i].word);
+        loom_group g;
+        memset(&g, 0, sizeof g);
+        g.sil = a->sil; g.side = a->side; g.partner = a->partner;
+        say_idea(l, &g, a->word, q[i].text, sizeof q[i].text);
+    }
+    *out = q;
+    return (uint32_t)l->ask_n;
 }

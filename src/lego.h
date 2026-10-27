@@ -690,6 +690,8 @@ typedef struct {
        against the same word with a blind partner from this book */
     uint64_t    known_new, landed;
     uint64_t    blind_new, blind_landed;
+    uint64_t    denied;                  /* places this book said with the switch: closed doors */
+    uint64_t    asked;                   /* questions this book raised */
 } rz_loom_report;
 
 /* The loom lives in the AMMC (the author: the conceptual design of meaning is
@@ -835,6 +837,34 @@ const char *rz_loom_book_name(const rz_loom *l, uint32_t book);
  * out, the share for the pieces that can be, where the widths of the doors
  * part in two; the only count is the anecdote rule. */
 uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t *out, uint32_t cap);
+
+/* --- closed doors, and why this time (P54) --------------------------------
+ *
+ * The author: no gives the meaning of a closed door to that act, thing or
+ * person -- the path is not possible, in that case or as a general rule, seen
+ * across cases. Each time something is denied, ask why in that case it was
+ * different; unless denying it is the rule -- then ask only when the contrary
+ * comes, the affirmation of what is mostly denied.
+ *
+ * Given the switches (found by rz_lexicon_switches), a reading takes every
+ * place said with a switch in front of it out of the open places and keeps it
+ * as a closed door: the same place, said denied. A place is the rule's when it
+ * was denied more times than it was said; no number decides it but the two
+ * counts. A denial against what is mostly said, and an affirmation against
+ * what is mostly denied, raise a question, kept in the memory. */
+enum { RZ_ASK_WHY_NOT = 1, RZ_ASK_WHY_YES = 2 };
+
+typedef struct {
+    int      kind;                        /* RZ_ASK_WHY_NOT, RZ_ASK_WHY_YES */
+    char     word[RZ_LEGO_SPAN + 1];      /* who, or what, was different this time */
+    char     text[6 * (RZ_LEGO_SPAN + 1)];/* the place, with it inside */
+    uint32_t said, denied;                /* the two counts, when it was asked */
+    uint32_t book;
+} rz_question;
+
+/* the switches it knows, added to (a switch found in one book serves the next) */
+void     rz_loom_switches(rz_loom *l, const char *const *spellings, uint32_t n);
+uint32_t rz_loom_questions(const rz_loom *l, rz_question **out);   /* the caller frees */
 
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);

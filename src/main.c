@@ -2693,6 +2693,20 @@ static int cmd_loom(int argc, char **argv)
         const char *base = path;
         for (const char *c = path; *c; c++) if (*c == '/' || *c == '\\') base = c + 1;
         rz_loom_book(l, base);
+        /* the switch of yes and no, found in this book by what it does (P54);
+           added to the ones the nest already knows */
+        int32_t sw[64];
+        uint32_t ns = rz_lexicon_switches(&x, NULL, sw, 64);
+        const char *names[64];
+        static char spelled[64][RZ_LEGO_SPAN + 1];
+        for (uint32_t i = 0; i < ns; i++) {
+            snprintf(spelled[i], sizeof spelled[i], "%.*s", x.lego[sw[i]].len, (const char *)x.lego[sw[i]].s);
+            names[i] = spelled[i];
+        }
+        rz_loom_switches(l, names, ns);
+        printf("switches of yes and no found in this book: %u", ns);
+        for (uint32_t i = 0; i < ns; i++) printf(" [%s]", spelled[i]);
+        printf("\n");
     }
     static rz_loom_report r;
     if (!l || rz_loom_read(l, &x, &r) != RZ_OK) {
@@ -2715,6 +2729,9 @@ static int cmd_loom(int argc, char **argv)
                (unsigned long long)r.known_new, (unsigned long long)r.landed, 100.0 * r.landed / r.known_new,
                (unsigned long long)r.blind_landed, (unsigned long long)r.blind_new,
                r.blind_new ? 100.0 * r.blind_landed / r.blind_new : 0.0);
+    if (r.denied)
+        printf("closed doors: %llu places said with a switch in front; %llu questions raised (razar why)\n\n",
+               (unsigned long long)r.denied, (unsigned long long)r.asked);
     if (r.thoughts_confirmed || r.blind_confirmed)
         printf("ideas thought before, said by this book: %llu; blind ideas said: %llu\n\n",
                (unsigned long long)r.thoughts_confirmed, (unsigned long long)r.blind_confirmed);
@@ -2999,6 +3016,70 @@ static int cmd_speak(int argc, char **argv)
     return 0;
 }
 
+/* --- why this time (P54) --------------------------------------------------- */
+
+static int stronger_question(const void *pa, const void *pb)
+{
+    const rz_question *a = pa, *b = pb;
+    uint32_t va = a->said > a->denied ? a->said : a->denied, vb = b->said > b->denied ? b->said : b->denied;
+    if (va != vb) return va > vb ? -1 : 1;
+    return strcmp(a->text, b->text);
+}
+
+static int cmd_why(int argc, char **argv)
+{
+    int all = argc > 0 && !strcmp(argv[0], "all");
+    rz_loom *l = rz_loom_new();
+    if (!l || rz_loom_load(l, LOOM) != RZ_OK) {
+        fprintf(stderr, "nothing in the nest: run razar loom [path] first\n");
+        rz_loom_free(l);
+        return 1;
+    }
+    rz_question *q = NULL;
+    uint32_t n = rz_loom_questions(l, &q);
+    qsort(q, n, sizeof *q, stronger_question);
+    /* one question per place as it reads */
+    uint32_t k = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        int dup = 0;
+        for (uint32_t j = 0; j < k && !dup; j++) dup = q[j].kind == q[i].kind && !strcmp(q[j].text, q[i].text);
+        if (!dup) q[k++] = q[i];
+    }
+    n = k;
+    uint32_t yes = 0, no = 0;
+    for (uint32_t i = 0; i < n; i++) { yes += q[i].kind == RZ_ASK_WHY_YES; no += q[i].kind == RZ_ASK_WHY_NOT; }
+    char fname[160];
+    FILE *o = stdout;
+    if (all) {
+        snprintf(fname, sizeof fname, NEST "/why.txt");
+        o = fopen(fname, "wb");
+        if (!o) o = stdout;
+    }
+    fprintf(o, "%u questions: %u why this time no (said, and denied this once), %u why this time yes (denied as a rule, said this once)\n\n",
+            n, no, yes);
+    /* on screen, the questions against the strongest rule, where their
+       strengths part in two */
+    double *v = malloc((n + 1) * sizeof *v);
+    for (uint32_t i = 0; v && i < n; i++) v[i] = q[i].said > q[i].denied ? q[i].said : q[i].denied;
+    double cut = all || !v ? -HUGE_VAL : parting(v, n);
+    free(v);
+    for (int kind = RZ_ASK_WHY_NOT; kind <= RZ_ASK_WHY_YES; kind++) {
+        fprintf(o, "%s\n", kind == RZ_ASK_WHY_NOT ? "why this time no?" : "why this time yes?");
+        for (uint32_t i = 0; i < n; i++) {
+            if (q[i].kind != kind) continue;
+            double strength = q[i].said > q[i].denied ? q[i].said : q[i].denied;
+            if (strength <= cut) continue;
+            fprintf(o, "  \"%s\"   [%s] -- said %u, denied %u   (%s)\n", q[i].text, q[i].word, q[i].said, q[i].denied,
+                    rz_loom_book_name(l, q[i].book));
+        }
+        fprintf(o, "\n");
+    }
+    if (o != stdout) { fclose(o); printf("every question written to %s\n", fname); }
+    free(q);
+    rz_loom_free(l);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -3021,6 +3102,7 @@ int main(int argc, char **argv)
         printf("  razar neuron [word]                   think one depth further (a word starts a new train)\n");
         printf("  razar meaning <word> [all]            open a word: its places and associates, and which book brought them\n");
         printf("  razar speak <word> [all]              sentences out of its relations, even of different things\n");
+        printf("  razar why [all]                       the questions its closed doors raised: why this time no, why yes\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -3051,6 +3133,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "neuron"))       return cmd_neuron(argc - 2, argv + 2);
     if (!strcmp(argv[1], "meaning"))      return cmd_meaning(argc - 2, argv + 2);
     if (!strcmp(argv[1], "speak"))        return cmd_speak(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "why"))          return cmd_why(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

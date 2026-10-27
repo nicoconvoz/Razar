@@ -5041,6 +5041,68 @@ TEST(it_finds_the_switch_of_no_by_itself)
     rz_lexicon_free(x); free(x);
 }
 
+/* cats miaow and dogs do not -- once a dog does, once a cat does not */
+static size_t door_world(char *out, size_t cap, int clauses)
+{
+    size_t n = path_world(out, cap, clauses);
+    uint64_t r = 41;
+    for (int k = 0; k < clauses / 2; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w = (r >> 33) % 2 ? snprintf(out + n, cap - n, "el gato maúlla %s ", wb_join[(r >> 20) % 6])
+                              : snprintf(out + n, cap - n, "el perro no maúlla %s ", wb_join[(r >> 20) % 6]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    int w = snprintf(out + n, cap - n, "el perro maúlla then el gato no maúlla then ");
+    if (w > 0) n += (size_t)w;
+    return n;
+}
+
+static int asks(const rz_loom *l, const char *word, int kind, const char *place)
+{
+    rz_question *q = NULL;
+    uint32_t n = rz_loom_questions(l, &q);
+    int found = 0;
+    for (uint32_t i = 0; i < n && !found; i++)
+        found = q[i].kind == kind && !strcmp(q[i].word, word) && !strcmp(q[i].text, place);
+    free(q);
+    return found;
+}
+
+TEST(a_closed_door_asks_why_this_time_it_was_different)
+{
+    /* The author: what is said with no in front of the verb is a closed door.
+       Each time something is denied, ask why in that case it was different --
+       unless denying it is the rule; then ask only when the contrary comes,
+       the affirmation of what is mostly denied */
+    static char t[400000];
+    size_t n = door_world(t, sizeof t, 3000);
+    rz_lexicon *x = lexicon_of(t, n);
+    rz_loom *l = rz_loom_new();
+    const char *sw[] = { "no" };
+    rz_loom_switches(l, sw, 1);
+    static rz_loom_report r;
+    rz_loom_book(l, "uno");
+    CHECK_EQ_U(rz_loom_read(l, x, &r), RZ_OK);
+    CHECK(r.denied > 0);
+    /* the dog does not miaow, as a rule: denying it asks nothing -- but the
+       one time it miaows asks why this time yes */
+    CHECK(asks(l, "perro", RZ_ASK_WHY_YES, "el perro maúlla"));
+    CHECK(!asks(l, "perro", RZ_ASK_WHY_NOT, "el perro maúlla"));
+    /* the cat miaows: the one time it does not asks why this time no */
+    CHECK(asks(l, "gato", RZ_ASK_WHY_NOT, "el gato maúlla"));
+    CHECK(!asks(l, "gato", RZ_ASK_WHY_YES, "el gato maúlla"));
+    /* the closed doors and the questions stay in the memory */
+    CHECK_EQ_U(rz_loom_save(l, "test_doors.tmp"), RZ_OK);
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_doors.tmp"), RZ_OK);
+    CHECK(asks(back, "gato", RZ_ASK_WHY_NOT, "el gato maúlla"));
+    remove("test_doors.tmp");
+    rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(x); free(x);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -5282,6 +5344,7 @@ int main(void)
     RUN(it_makes_sentences_out_of_its_relations);
     RUN(what_it_makes_is_fantasy_until_books_say_it);
     RUN(it_finds_the_switch_of_no_by_itself);
+    RUN(a_closed_door_asks_why_this_time_it_was_different);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

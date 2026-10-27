@@ -136,6 +136,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Think one depth further (a word starts a new train) | `./razar neuron [word]` |
 | Open a word: its places and associates, and which book brought them | `./razar meaning <word> [all]` |
 | Sentences out of its relations, even of different things | `./razar speak <word> [all]` |
+| The questions its closed doors raised: why this time no, why yes | `./razar why [all]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 
