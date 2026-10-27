@@ -3754,12 +3754,12 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
 typedef struct { uint64_t key, f1, f2; uint8_t born; } loom_sil;
 typedef struct { uint64_t key, sil, partner; int32_t head; uint32_t size; uint8_t side; } loom_group;
 typedef struct { uint64_t word; int32_t next; } loom_member;
-typedef struct { uint64_t key, last, a, b; uint32_t count; } loom_pair;
+typedef struct { uint64_t key, last, a, b; uint32_t count, traveled; } loom_pair;
 typedef struct { uint64_t key; uint8_t len; unsigned char s[RZ_LEGO_SPAN]; } loom_word;
 /* the shape of a born silhouette, to say its paths: the fixed pieces, holes 0 */
 typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_shape;
 /* an idea (P53): a word that could stand in a group; blind twins apart */
-typedef struct { uint64_t key, word, group; uint8_t level, blind, confirmed; } loom_idea;
+typedef struct { uint64_t key, word, group, via; uint32_t traveled; uint8_t level, blind, confirmed; } loom_idea;
 /* the cache of each path walked (P53): a word, and who reached it */
 typedef struct { uint64_t word; int32_t parent; uint8_t level; } loom_step;
 
@@ -3881,6 +3881,15 @@ static uint64_t loom_pair_key(uint64_t a, uint64_t b)
     return mix64(a * 0x9E3779B97F4A7C15ull ^ mix64(b));
 }
 
+static loom_pair *loom_pair_find(const rz_loom *l, uint64_t a, uint64_t b)
+{
+    if (!l->pair_cap) return NULL;
+    uint64_t key = loom_pair_key(a, b);
+    size_t s;
+    LOOM_SLOT(l->pair, l->pair_cap, key, s);
+    return l->pair[s].key ? &l->pair[s] : NULL;
+}
+
 static uint32_t loom_shared(const rz_loom *l, uint64_t a, uint64_t b)
 {
     if (!l->pair_cap) return 0;
@@ -3952,8 +3961,14 @@ static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_lo
         LOOM_SLOT(l->idea, l->idea_cap, k, s);
         if (!l->idea[s].key || l->idea[s].confirmed) continue;
         l->idea[s].confirmed = 1;
-        if (blind) out->blind_confirmed++;
-        else out->thoughts_confirmed++;
+        if (blind) { out->blind_confirmed++; continue; }
+        out->thoughts_confirmed++;
+        if (l->idea[s].traveled) out->said_traveled++;
+        else out->said_untraveled++;
+        /* the branch that thought it is travelled one step more (the author:
+           what reality confirms becomes a more travelled path) */
+        loom_pair *p = loom_pair_find(l, l->idea[s].word, l->idea[s].via);
+        if (p) p->traveled++;
     }
 }
 
@@ -3998,6 +4013,15 @@ int rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out)
     uint64_t *h = malloc(((size_t)x->n + 1) * sizeof *h);
     if (!h) return RZ_ERR_IO;           /* out of memory: nothing was read */
     for (uint32_t w = 0; w < x->n; w++) h[w] = spelling_key(x->lego[w].s, x->lego[w].len);
+
+    /* the ideas open when the book begins: the denominators of the bar */
+    for (size_t s = 0; s < l->idea_cap; s++) {
+        const loom_idea *d = &l->idea[s];
+        if (!d->key || d->confirmed) continue;
+        if (d->blind) out->open_blind++;
+        else if (d->traveled) out->open_traveled++;
+        else out->open_untraveled++;
+    }
 
     uint64_t rng = 0x9E3779B97F4A7C15ull;
     uint64_t run[RUN_MAX];
@@ -4220,8 +4244,11 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
                 LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, loom_idea_key(g->key, w, 0), idea, fresh);
                 if (!idea) continue;
                 g = loom_group_find(l, in[q].other);
+                const loom_pair *branch = loom_pair_find(l, w, a);
+                uint32_t tr = branch ? branch->traveled : 0;
                 if (fresh) {
                     idea->word = w; idea->group = g->key; idea->level = level;
+                    idea->via = a; idea->traveled = tr;
                     (*made)++;
                     /* its blind twin: a word met somewhere, in the same place */
                     for (int tries = 0; tries < 64 && l->word_cap; tries++) {
@@ -4231,7 +4258,7 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
                         loom_idea *bi; int bf;
                         uint64_t bkey = bw->key, gkey = g->key;
                         LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, loom_idea_key(gkey, bkey, 1), bi, bf);
-                        if (bi && bf) { bi->word = bkey; bi->group = gkey; bi->level = level; bi->blind = 1; }
+                        if (bi && bf) { bi->word = bkey; bi->group = gkey; bi->level = level; bi->blind = 1; bi->traveled = tr; }
                         g = loom_group_find(l, gkey);
                         break;
                     }
@@ -4241,6 +4268,7 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
                 if (reported < cap) {
                     rz_idea *o = &out[reported++];
                     o->level = level;
+                    o->traveled = tr;
                     spell_into(l, w, o->word, sizeof o->word);
                     spell_into(l, a, o->via, sizeof o->via);
                     say_idea(l, g, w, o->text, sizeof o->text);
@@ -4263,7 +4291,8 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   2u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache */
+#define LOOM_VER   3u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+                                            3: travelled branches, and the branch each idea came by */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4294,7 +4323,7 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->pair_cap; i++)
         if (l->pair[i].key)
             ok = put64(f, l->pair[i].key) && put64(f, l->pair[i].last) && put64(f, l->pair[i].a)
-                 && put64(f, l->pair[i].b) && put64(f, l->pair[i].count);
+                 && put64(f, l->pair[i].b) && put64(f, l->pair[i].count) && put64(f, l->pair[i].traveled);
     for (size_t i = 0; ok && i < l->word_cap; i++)
         if (l->word[i].key)
             ok = put64(f, l->word[i].key) && fwrite(&l->word[i].len, 1, 1, f) == 1 &&
@@ -4308,7 +4337,7 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->idea_cap; i++) {
         const loom_idea *d = &l->idea[i];
         if (!d->key) continue;
-        ok = put64(f, d->key) && put64(f, d->word) && put64(f, d->group)
+        ok = put64(f, d->key) && put64(f, d->word) && put64(f, d->group) && put64(f, d->via) && put64(f, d->traveled)
              && put64(f, (uint64_t)d->level | (uint64_t)d->blind << 8 | (uint64_t)d->confirmed << 16);
     }
     for (size_t i = 0; ok && i < l->trail_n; i++)
@@ -4346,14 +4375,14 @@ int rz_loom_load(rz_loom *l, const char *path)
         }
     }
     for (uint64_t i = 0; ok && i < np; i++) {
-        uint64_t k, last, a, b, count;
-        ok = get64(f, &k) && get64(f, &last) && get64(f, &a) && get64(f, &b) && get64(f, &count);
+        uint64_t k, last, a, b, count, traveled;
+        ok = get64(f, &k) && get64(f, &last) && get64(f, &a) && get64(f, &b) && get64(f, &count) && get64(f, &traveled);
         if (!ok) break;
         loom_pair *p; int fresh;
         LOOM_AT(l, l->pair, l->pair_cap, l->pair_n, k, p, fresh);
         (void)fresh;
         if (!p) { ok = 0; break; }
-        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count;
+        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count; p->traveled = (uint32_t)traveled;
     }
     for (uint64_t i = 0; ok && i < nw; i++) {
         uint64_t k;
@@ -4372,12 +4401,12 @@ int rz_loom_load(rz_loom *l, const char *path)
         for (int q = 0; ok && q < 5; q++) ok = get64(f, &s->path[q]);
     }
     for (uint64_t i = 0; ok && i < ni; i++) {
-        uint64_t k, word, group, packed;
-        ok = get64(f, &k) && get64(f, &word) && get64(f, &group) && get64(f, &packed);
+        uint64_t k, word, group, via, traveled, packed;
+        ok = get64(f, &k) && get64(f, &word) && get64(f, &group) && get64(f, &via) && get64(f, &traveled) && get64(f, &packed);
         loom_idea *d; int fresh;
         if (ok) { LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, k, d, fresh); (void)fresh; } else d = NULL;
         if (!d) { ok = 0; break; }
-        d->word = word; d->group = group;
+        d->word = word; d->group = group; d->via = via; d->traveled = (uint32_t)traveled;
         d->level = (uint8_t)packed; d->blind = (uint8_t)(packed >> 8); d->confirmed = (uint8_t)(packed >> 16);
     }
     l->trail_n = 0;
@@ -4388,4 +4417,12 @@ int rz_loom_load(rz_loom *l, const char *path)
     l->front = (size_t)front;
     fclose(f);
     return ok ? RZ_OK : RZ_ERR_IO;
+}
+
+uint32_t rz_loom_traveled(const rz_loom *l, const char *word, const char *associate)
+{
+    size_t lw = strlen(word), la = strlen(associate);
+    const loom_pair *p = loom_pair_find(l, spelling_key((const unsigned char *)word, lw),
+                                        spelling_key((const unsigned char *)associate, la));
+    return p ? p->traveled : 0;
 }

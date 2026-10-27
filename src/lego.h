@@ -678,6 +678,11 @@ typedef struct {
     uint32_t    nseen;
     uint64_t    thoughts_confirmed;      /* thoughts this book said */
     uint64_t    blind_confirmed;         /* blind thoughts this book said */
+    /* the bar of experience (P53): the ideas open when the book began, by
+       whether the branch that thought them had been travelled, and how many
+       of each the book said */
+    uint64_t    open_traveled, open_untraveled, open_blind;
+    uint64_t    said_traveled, said_untraveled;
 } rz_loom_report;
 
 /* The loom lives in the AMMC (the author: the conceptual design of meaning is
@@ -720,6 +725,7 @@ typedef struct {
     char     via[RZ_LEGO_SPAN + 1];  /* the associate that stood there */
     char     text[6 * (RZ_LEGO_SPAN + 1)];   /* the path thought */
     char     trail[4 * (RZ_LEGO_SPAN + 1)];  /* the path walked to it, from the start */
+    uint32_t traveled;               /* how travelled the branch it came by was */
 } rz_idea;
 
 /* begin a train of thought at a word (the cache starts over) */
@@ -727,6 +733,10 @@ int      rz_loom_think_from(rz_loom *l, const char *word);
 /* one depth further, from the cache. Returns the ideas reported (up to cap);
    *made, every idea new to the memory. */
 uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made);
+/* The author: no rules for the branches -- what real data confirms becomes a
+   more travelled path. Each idea a book says gives one step of travel to the
+   branch that thought it (the word and the associate it came by). */
+uint32_t rz_loom_traveled(const rz_loom *l, const char *word, const char *associate);
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 

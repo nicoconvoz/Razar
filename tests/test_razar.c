@@ -4690,6 +4690,64 @@ TEST(it_thinks_one_depth_at_a_time)
     rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
+TEST(what_reality_confirms_becomes_a_travelled_path)
+{
+    /* The author: no rules for the branches; let them form their own way, and
+       when put to the test with real data, what favoured understanding becomes
+       a more travelled path. A book confirms "caballo es un animal": the
+       branch that thought it is travelled, the others are not */
+    static char a[220000], b[300000];
+    size_t na = path_world(a, sizeof a, 3000);
+    size_t nb = said_world(b, sizeof b, 6000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(b + nb, sizeof b - nb, "el caballo es un animal %s ", wb_join[k % 6]);
+        if (w > 0) nb += (size_t)w;
+    }
+    rz_lexicon *xa = lexicon_of(a, na), *xb = lexicon_of(b, nb);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    static rz_idea th[40000];
+    uint32_t made;
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    CHECK_EQ_U(rz_loom_think_from(l, "caballo"), RZ_OK);
+    uint32_t n1 = rz_loom_step(l, th, 40000, &made);
+    int fresh = 1;
+    for (uint32_t i = 0; i < n1; i++) fresh &= th[i].traveled == 0;
+    CHECK(fresh);                                   /* nothing walked yet */
+
+    CHECK_EQ_U(rz_loom_read(l, xb, &r), RZ_OK);
+    CHECK(r.thoughts_confirmed > 0);
+    CHECK(r.open_untraveled > 0);                   /* the ideas it could have said */
+    /* the branches whose ideas were said are travelled now; branches whose
+       ideas the book never said are not */
+    uint32_t walked = 0, idle = 0;
+    for (uint32_t i = 0; i < n1; i++) {
+        uint32_t tr = rz_loom_traveled(l, th[i].word, th[i].via);
+        if (strstr(th[i].text, "caballo es un animal")) walked += tr > 0;
+        idle += tr == 0;
+    }
+    CHECK(walked > 0);
+    CHECK(idle > 0);
+    /* thinking again, the ideas carry the travel of the branch they came by */
+    CHECK_EQ_U(rz_loom_think_from(l, "caballo"), RZ_OK);
+    uint32_t n2 = rz_loom_step(l, th, 40000, &made);
+    int some = 0, none = 0;
+    for (uint32_t i = 0; i < n2; i++) { some |= th[i].traveled > 0; none |= th[i].traveled == 0; }
+    CHECK(some && none);
+    /* and it survives the disk */
+    CHECK_EQ_U(rz_loom_save(l, "test_travel.tmp"), RZ_OK);
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_travel.tmp"), RZ_OK);
+    int same = 1;
+    for (uint32_t i = 0; i < n1; i++)
+        same &= rz_loom_traveled(back, th[i].word, th[i].via) == rz_loom_traveled(l, th[i].word, th[i].via);
+    CHECK(same);
+    remove("test_travel.tmp");
+    rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4924,6 +4982,7 @@ int main(void)
     RUN(meaning_is_woven_while_reading);
     RUN(what_was_woven_stays_in_the_memory);
     RUN(it_thinks_one_depth_at_a_time);
+    RUN(what_reality_confirms_becomes_a_travelled_path);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

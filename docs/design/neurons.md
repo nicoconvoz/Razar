@@ -52,11 +52,44 @@ One step from *pan*, with the whole NT woven:
 - **The memory on disk**: 197 MB for the NT woven, 313 MB with the
   associations' new fields, 462 MB after one step of thought and Quiroga.
 
+## Travelled paths (2026-10-27)
+
+> No: let the branches form their own way — the idea is to give it no rules
+> and explain nothing; it must discover the relations between structure and
+> words, and when we put it to the test with real data, incorporate as more
+> travelled paths, of better reading and memory, what turned out favourable to
+> learning and understanding according to the associations. — the author,
+> answering D121
+
+No branch is pruned or filtered. When a book says an idea, the branch that
+thought it — the word and the associate it came by — is travelled one step
+more (`rz_loom_traveled`). Every idea remembers how travelled its branch was
+when it was thought, and the report splits what a book says by that.
+
+In the little world a book that says *caballo es un animal* travels the
+branches that thought it and leaves the others untouched; thinking again, the
+ideas carry the travel of their branch.
+
+On real data — NT woven; one step from *pan* and *agua*; Quiroga's first half;
+the same step again; Quiroga's second half:
+
+| | Open ideas | Said by the book |
+| --- | --- | --- |
+| first half — new branches | 3,177,230 | 28 |
+| first half — blind | 3,177,140 | 1 |
+| second half — travelled branches | 2,921 | 0 |
+| second half — new branches | 3,391,745 | 2 |
+| second half — blind | 3,394,598 | 2 |
+
+**It cannot tell yet.** Quiroga says almost nothing the NT taught about bread
+and water: 28 confirmations in three million ideas, and in the second half 2
+against 2. The mechanism is there; the test needs books that share what they
+talk about, or many more of them, before travel can show whether it pays.
+
 ## Open
 
-- **D121** — one step from one word is 1.5 million ideas: an associate said
-  twice is too weak a branch, and glue makes it a flood. What makes a branch
-  worth walking, found by the text and not set by eye.
+- **D121** — answered by the author: no rules; travelled paths (above). Open
+  within it: a test with books that share their subject, enough to measure.
 - **D122** — the use and variant branches (where and with whom; *perro*/*perra*,
   P44) are not built.
 - **D120** — the memory's weight, now 462 MB.
