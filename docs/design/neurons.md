@@ -176,6 +176,34 @@ pieces that slip into pairs said without them (327 pairs), and what follows
 it changes (18 % as before, against 37–53 % for *también*, *todos*) — but
 *que* and *y* do the same. It does not yet tell turning from joining (D124).
 
+## The switch of yes and no (P54, 2026-10-27)
+
+`rz_lexicon_switches`. The author's properties of NO, each measured against
+the book itself, nothing named:
+
+1. **Taken out, what is left is said too** ("el perro no ladra" / "el perro
+   ladra"); "y" cannot be taken out ("pan y vino" / "pan vino").
+2. **When it appears, what follows changes** ("no ladra, sino que corre");
+   "también" adds the same again and what follows stays — the author: what
+   matters is what the word does when it appears, not when it is absent.
+3. **The widest door**: the relation is of three, subject, no, verb; many who
+   stand before it and many acts behind it.
+4. **Mostly the door**: a connector ("y") is a door now and then and joins
+   everything else; of what the switch does, most is the door.
+5. **Not inside another door**: "no la envió", "no lo dijo", "no me dijo" —
+   *la*, *lo*, *me* stand inside the no's door; *ya* and *y* stand outside it
+   ("ya no", "y no").
+
+On the way, four measures failed and were dropped: the door at the level of
+neighbouring words; the door of three in the map, mixed and separated (the
+book negates doors that exist: *Jesús no respondió*, *Jesús respondió*);
+aggregation by the gap to what was last said.
+
+**On the New Testament, read by Razar with its own pieces: one switch, *no*.**
+Asked first which words are things (P50), it fails (*la*): in the map *no*
+stands as something spoken of, so that filter goes against it. On Quiroga
+(24,475 words) it finds none: one novel is not enough to tell the door.
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open
@@ -184,9 +212,10 @@ it changes (18 % as before, against 37–53 % for *también*, *todos*) — but
   P44) are not built.
 - **D120** — the memory's weight: 416 MB regenerated from zero, without ideas.
 - **D123** — words glued across Quiroga's line breaks, and a broken byte.
-- **D124** — the switch of yes and no: *no* found among the pieces that slip
-  in and change what follows, but not yet told apart from *que* and *y*; a
-  verb that carries the no inside (*negó*) is not looked for yet.
+- **D124** — the switch is found on the NT (*no*, alone) but not on Quiroga;
+  the P50 thing filter works against it; a verb that carries the no inside
+  (*negó*) is not looked for yet; questions (¿ ?) are not a mode yet; the
+  switch is not yet wired to the reality grade (said with the no = denied).
 - Fixed numbers still in the loom, by eye until measured: the mates' table
   size, the 200,000 paths `razar paths` builds, 64 books, the ring of 64
   foreseen, runs of 3 to 5 pieces.

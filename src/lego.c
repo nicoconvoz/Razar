@@ -4853,10 +4853,10 @@ uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t
     for (uint32_t i = 0; i < x->npair; i++) {
         const rz_lego_pair *pr = &x->pair[i];
         int32_t pa = (int32_t)pr->a, pb = (int32_t)pr->b;
-        if (pa == pb || pr->count < 2) continue;
+        if (pa == pb || pr->count < 2 || !cand[pa] || !cand[pb]) continue;   /* both take part in turning */
         if (rz_lexicon_pair_count(x, pb, pa) >= pr->count) continue;
-        if (cand[pb]) front[pb]++;
-        if (cand[pa]) behind[pa]++;
+        front[pb]++;
+        behind[pa]++;
     }
     uint32_t nd = 0;
     for (uint32_t w = 0; w < W; w++)
@@ -4874,11 +4874,63 @@ uint32_t rz_lexicon_switches(const rz_lexicon *x, const rz_answers *ans, int32_t
             if (bt > best) { best = bt; cut = (door[i] + door[i + 1]) / 2; }
         }
     }
-    for (uint32_t w = 0; w < W && found < cap; w++) {
+    /* the wide doors */
+    uint8_t *wide = calloc(W, 1);
+    if (!wide) goto done;
+    for (uint32_t w = 0; w < W; w++) {
         if (!cand[w]) continue;
         double width = front[w] < behind[w] ? front[w] : behind[w];
-        if (width > 0 && width > cut) out[found++] = (int32_t)w;
+        /* nothing to compare with -- one width only: none is left out, as
+           one height makes every lego a word in the word cut */
+        wide[w] = cut == -HUGE_VAL || (width > 0 && width > cut);
     }
+    /* how much of what it does is the door: the times it stands with one of
+       those before it and one of those behind it, over every time it stands.
+       A connector ("y") is a door now and then and joins everything else the
+       rest of the time; the switch is mostly the door (the author) */
+    uint32_t *at_door = calloc(W, sizeof *at_door);
+    if (!at_door) { free(wide); goto done; }
+    for (uint32_t i = 1; i + 1 < N; i++) {
+        int32_t pv = q[i - 1], w = q[i], nx = q[i + 1];
+        if (pv < 0 || w < 0 || nx < 0 || !wide[w] || !cand[pv] || !cand[nx]) continue;
+        uint32_t in = rz_lexicon_pair_count(x, pv, w), out_ = rz_lexicon_pair_count(x, w, nx);
+        if (in >= 2 && rz_lexicon_pair_count(x, w, pv) < in && out_ >= 2 && rz_lexicon_pair_count(x, nx, w) < out_) at_door[w]++;
+    }
+    /* the high side of that share, where the wide doors' shares part */
+    double share[64];
+    uint32_t nsh = 0;
+    for (uint32_t w = 0; w < W && nsh < 64; w++) if (wide[w] && seen[w]) share[nsh++] = (double)at_door[w] / seen[w];
+    double scut = -HUGE_VAL;
+    if (nsh >= 2) {
+        qsort(share, nsh, sizeof *share, cmp_dbl);
+        double S = 0, s0 = 0, best = 0;
+        for (uint32_t i = 0; i < nsh; i++) S += share[i];
+        for (uint32_t i = 0; i + 1 < nsh; i++) {
+            s0 += share[i];
+            if (share[i + 1] <= share[i]) continue;
+            double w0 = i + 1, w1 = nsh - w0, d = s0 / w0 - (S - s0) / w1, bt = w0 * w1 * d * d;
+            if (bt > best) { best = bt; scut = (share[i] + share[i + 1]) / 2; }
+        }
+    }
+    for (uint32_t w = 0; w < W; w++)
+        if (wide[w] && (!seen[w] || (double)at_door[w] / seen[w] <= scut)) wide[w] = 0;
+    /* inside another door: a switch stands before it, in that order ("no la
+       envió", "no lo dijo") -- it is what is turned, not what turns */
+    uint8_t *inside = calloc(W, 1);
+    if (!inside) { free(at_door); free(wide); goto done; }
+    for (uint32_t v = 0; v < W; v++) {
+        if (!wide[v]) continue;
+        for (uint32_t w = 0; w < W; w++) {
+            if (!wide[w] || v == w) continue;
+            uint32_t vw = rz_lexicon_pair_count(x, (int32_t)v, (int32_t)w);
+            if (vw >= 2 && rz_lexicon_pair_count(x, (int32_t)w, (int32_t)v) < vw) inside[w] = 1;
+        }
+    }
+    for (uint32_t w = 0; w < W && found < cap; w++)
+        if (wide[w] && !inside[w]) out[found++] = (int32_t)w;
+    free(inside);
+    free(at_door);
+    free(wide);
 done:
     free(tri); free(seen); free(rem); free(same); free(tot); free(front); free(behind); free(cand); free(door);
     return found;
