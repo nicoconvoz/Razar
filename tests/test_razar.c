@@ -4611,6 +4611,85 @@ TEST(what_was_woven_stays_in_the_memory)
     rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
+/* --- the neuron that thinks one step at a time (P53) --------------------- */
+
+static int idea_says(const rz_idea *th, uint32_t n, const char *text, uint8_t level)
+{
+    for (uint32_t i = 0; i < n; i++) if (th[i].level == level && strstr(th[i].text, text)) return 1;
+    return 0;
+}
+
+TEST(it_thinks_one_depth_at_a_time)
+{
+    /* The author: branches in many directions, like neurons, with the woven
+       structures and the meanings of every word -- one depth at a time, as if
+       it were thinking, carrying a cache of the path walked: nothing it builds
+       is lost. From "caballo", one step: its associates ("gato") stand in
+       places the horse never stood in */
+    static char a[220000], b[300000];
+    size_t na = path_world(a, sizeof a, 3000);
+    rz_lexicon *xa = lexicon_of(a, na);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+
+    static rz_idea th[40000];
+    uint32_t made = 0;
+    CHECK_EQ_U(rz_loom_think_from(l, "caballo"), RZ_OK);
+    uint32_t n1 = rz_loom_step(l, th, 40000, &made);
+    CHECK(n1 > 0 && made > 0);       /* an idea may come by two associates: reported twice, made once */
+    CHECK(idea_says(th, n1, "caballo es un animal", 1));
+    int only_one = 1;
+    for (uint32_t i = 0; i < n1; i++) only_one &= th[i].level == 1;
+    CHECK(only_one);                                    /* one step only */
+    CHECK(strncmp(th[0].trail, "caballo", 7) == 0);    /* the path walked */
+
+    /* the next step goes on from the cache: one depth further, its trail
+       still starting at the horse */
+    uint32_t n2 = rz_loom_step(l, th, 40000, &made);
+    int deeper = n2 > 0, from_horse = 1;
+    for (uint32_t i = 0; i < n2; i++) {
+        deeper &= th[i].level == 2;
+        from_horse &= strncmp(th[i].trail, "caballo", 7) == 0;
+    }
+    CHECK(deeper);
+    CHECK(from_horse);
+
+
+    /* nothing is lost: saved and loaded, the next step is the third */
+    CHECK_EQ_U(rz_loom_save(l, "test_think.tmp"), RZ_OK);
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_think.tmp"), RZ_OK);
+    uint32_t n3 = rz_loom_step(back, th, 40000, &made);
+    int third = n3 > 0;
+    for (uint32_t i = 0; i < n3; i++) third &= th[i].level == 3;
+    CHECK(third);
+    /* the cache belongs to each path (the author: it can vary and find other
+       ways to circulate): by the third step one word is reached by two paths
+       ("caballo > gato > perro", "caballo > ratón > perro") and thinks from
+       both, each with its own trail */
+    int two_ways = 0;
+    for (uint32_t i = 0; i < n3 && !two_ways; i++)
+        for (uint32_t j = i + 1; j < n3 && !two_ways; j++)
+            if (!strcmp(th[i].word, th[j].word) && strcmp(th[i].trail, th[j].trail)) two_ways = 1;
+    CHECK(two_ways);
+
+    /* and a book read later confirms what it thought: it says, for the first
+       time, that the horse is an animal */
+    size_t nb = said_world(b, sizeof b, 6000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(b + nb, sizeof b - nb, "el caballo es un animal %s ", wb_join[k % 6]);
+        if (w > 0) nb += (size_t)w;
+    }
+    rz_lexicon *xb = lexicon_of(b, nb);
+    CHECK_EQ_U(rz_loom_read(back, xb, &r), RZ_OK);
+    CHECK(r.thoughts_confirmed > 0);
+    remove("test_think.tmp");
+    rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4844,6 +4923,7 @@ int main(void)
     RUN(a_path_is_taken_apart_and_put_together_with_other_pieces);
     RUN(meaning_is_woven_while_reading);
     RUN(what_was_woven_stays_in_the_memory);
+    RUN(it_thinks_one_depth_at_a_time);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

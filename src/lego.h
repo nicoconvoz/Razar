@@ -676,6 +676,8 @@ typedef struct {
     uint64_t    blind_events, blind_foreseen;
     rz_foreseen seen[64];                /* the last foreseen, to show (a ring) */
     uint32_t    nseen;
+    uint64_t    thoughts_confirmed;      /* thoughts this book said */
+    uint64_t    blind_confirmed;         /* blind thoughts this book said */
 } rz_loom_report;
 
 /* The loom lives in the AMMC (the author: the conceptual design of meaning is
@@ -690,6 +692,41 @@ int      rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out);
 int      rz_loom_save(const rz_loom *l, const char *path);
 int      rz_loom_load(rz_loom *l, const char *path);
 
+/* --- the neuron that thinks one step at a time (P53) ----------------------
+ *
+ * The author: multidimensional branches making paths in many directions,
+ * like neurons, with the woven structures and the meanings of every word, its
+ * use and its variants -- learning and generating on its own; one depth at a
+ * time, as if it were thinking; and that depth carries a cache of the path
+ * walked: nothing it builds is lost.
+ *
+ * Every word is a neuron. Its branches: the places it stands in (a structure,
+ * beside a partner) and its associates (meaning). One step of thought, from
+ * the words the last step reached: their associates stand in places they
+ * never stood in, and they could stand there too -- an idea. The words the
+ * step reaches are the next step's. Nothing is searched in depth; each step
+ * only looks beside it.
+ *
+ * The cache belongs to each path (the author: a path can vary and find other
+ * ways to circulate): a word reached by two paths is two entries, each with
+ * its own trail, and thinks again from each; a path only never walks back
+ * onto itself. The cache and every idea stay in the memory with the rest of
+ * the loom, apart from what was read. Each idea
+ * has a blind twin (a word picked at random, in the same place). A book read
+ * later that says an idea confirms it: the bar of thinking. */
+typedef struct {
+    uint8_t  level;                  /* the step of thought it came from */
+    char     word[RZ_LEGO_SPAN + 1]; /* who could stand there */
+    char     via[RZ_LEGO_SPAN + 1];  /* the associate that stood there */
+    char     text[6 * (RZ_LEGO_SPAN + 1)];   /* the path thought */
+    char     trail[4 * (RZ_LEGO_SPAN + 1)];  /* the path walked to it, from the start */
+} rz_idea;
+
+/* begin a train of thought at a word (the cache starts over) */
+int      rz_loom_think_from(rz_loom *l, const char *word);
+/* one depth further, from the cache. Returns the ideas reported (up to cap);
+   *made, every idea new to the memory. */
+uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made);
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 

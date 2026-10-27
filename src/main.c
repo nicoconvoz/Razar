@@ -2702,6 +2702,9 @@ static int cmd_loom(int argc, char **argv)
     printf("  blind, a word picked from what was read: %llu of %llu (%.2f%%)\n\n",
            (unsigned long long)r.blind_foreseen, (unsigned long long)r.blind_events,
            r.blind_events ? 100.0 * r.blind_foreseen / r.blind_events : 0.0);
+    if (r.thoughts_confirmed || r.blind_confirmed)
+        printf("ideas thought before, said by this book: %llu; blind ideas said: %llu\n\n",
+               (unsigned long long)r.thoughts_confirmed, (unsigned long long)r.blind_confirmed);
     printf("the last foreseen:\n");
     char a1[80], w[80];
     for (uint32_t i = 0; i < r.nseen && i < 16; i++) {
@@ -2717,6 +2720,41 @@ static int cmd_loom(int argc, char **argv)
     rz_free(m);
     free(m);
     free(t);
+    return 0;
+}
+
+/* --- the neuron that thinks one step at a time (P53) ---------------------- */
+
+static int cmd_neuron(int argc, char **argv)
+{
+    rz_loom *l = rz_loom_new();
+    if (!l || rz_loom_load(l, LOOM) != RZ_OK) {
+        fprintf(stderr, "nothing in the nest to think with: run razar loom [path] first\n");
+        rz_loom_free(l);
+        return 1;
+    }
+    if (argc > 0) {
+        if (rz_loom_think_from(l, argv[0]) != RZ_OK) {
+            fprintf(stderr, "it never met %s\n", argv[0]);
+            rz_loom_free(l);
+            return 1;
+        }
+        printf("a train of thought begins at [%s]\n", argv[0]);
+    }
+    static rz_idea ideas[100000];
+    uint32_t made = 0;
+    uint32_t n = rz_loom_step(l, ideas, 100000, &made);
+    if (!n && !made) printf("nothing more to think along these paths\n");
+    else {
+        printf("one depth further (step %u): %u ideas along the paths, %u new to the memory\n",
+               n ? ideas[0].level : 0, n, made);
+        /* one idea per stretch of the report, so different paths show */
+        uint32_t every = n > 20 ? n / 20 : 1;
+        for (uint32_t i = 0; i < n; i += every)
+            printf("  [%s]  \"%s\"   (where [%s] stood)\n", ideas[i].trail, ideas[i].text, ideas[i].via);
+    }
+    if (rz_loom_save(l, LOOM) == RZ_OK) printf("\nthe path and its ideas remembered in %s\n", LOOM);
+    rz_loom_free(l);
     return 0;
 }
 
@@ -2739,6 +2777,7 @@ int main(int argc, char **argv)
         printf("  razar asks [path]                     ask every word; the kinds its answers make\n");
         printf("  razar paths [path]                    silhouettes of paths, taken apart and put together\n");
         printf("  razar loom [path]                     weave meaning while reading, and see what it foresees\n");
+        printf("  razar neuron [word]                   think one depth further (a word starts a new train)\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2766,6 +2805,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "asks"))         return cmd_asks(argc - 2, argv + 2);
     if (!strcmp(argv[1], "paths"))        return cmd_paths(argc - 2, argv + 2);
     if (!strcmp(argv[1], "loom"))         return cmd_loom(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "neuron"))       return cmd_neuron(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
