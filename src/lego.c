@@ -3759,7 +3759,7 @@ typedef struct { uint64_t key; uint8_t len; unsigned char s[RZ_LEGO_SPAN]; } loo
 /* the shape of a born silhouette, to say its paths: the fixed pieces, holes 0 */
 typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_shape;
 /* an idea (P53): a word that could stand in a group; blind twins apart */
-typedef struct { uint64_t key, word, group, via; uint32_t traveled; uint8_t level, blind, confirmed; } loom_idea;
+typedef struct { uint64_t key, word, group, via, said_by, chances; uint32_t traveled; uint8_t level, blind, confirmed; } loom_idea;
 /* the cache of each path walked (P53): a word, and who reached it */
 typedef struct { uint64_t word; int32_t parent; uint8_t level; } loom_step;
 /* an associate of a word, gathered to walk or to compare */
@@ -3792,6 +3792,7 @@ struct rz_loom {
 
 static void loom_enrich(rz_loom *l, uint64_t a, uint64_t b, loom_pair *p);
 static int edge_order(const void *pa, const void *pb);
+static int by_word64(const void *pa, const void *pb);
 
 static uint64_t mix64(uint64_t v)
 {
@@ -3968,6 +3969,11 @@ static void loom_add_member(rz_loom *l, loom_group *g, uint64_t w, uint64_t book
     g->size++;
 }
 
+static uint64_t loom_book_bit(const rz_loom *l)
+{
+    return l->reading_book ? l->reading_book : 1ull << 63;
+}
+
 static uint64_t loom_idea_key(uint64_t group, uint64_t word, int blind)
 {
     return mix64(group * 0x9E3779B97F4A7C15ull ^ mix64(word) ^ (uint64_t)blind);
@@ -3978,7 +3984,15 @@ static uint64_t loom_idea_key(uint64_t group, uint64_t word, int blind)
 static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_loom_report *out)
 {
     int32_t was = loom_member_of(l, g, w);
-    if (was >= 0) { l->mem[was].books |= l->reading_book; return; }   /* there again, in this book too */
+    if (was >= 0) {
+        l->mem[was].books |= l->reading_book;                         /* there again, in this book too */
+        if (out && l->idea_cap) {
+            size_t s0;
+            LOOM_SLOT(l->idea, l->idea_cap, loom_idea_key(g->key, w, 0), s0);
+            if (l->idea[s0].key) l->idea[s0].said_by |= loom_book_bit(l);
+        }
+        return;
+    }
     for (int32_t m = g->head; m >= 0; m = l->mem[m].next) loom_associate(l, w, l->mem[m].word, sil);
     loom_add_member(l, g, w, l->reading_book);
     if (!l->idea_cap || !out) return;
@@ -3986,7 +4000,9 @@ static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_lo
         size_t s;
         uint64_t k = loom_idea_key(g->key, w, blind);
         LOOM_SLOT(l->idea, l->idea_cap, k, s);
-        if (!l->idea[s].key || l->idea[s].confirmed) continue;
+        if (!l->idea[s].key) continue;
+        if (!blind) l->idea[s].said_by |= loom_book_bit(l);
+        if (l->idea[s].confirmed) continue;
         l->idea[s].confirmed = 1;
         if (blind) { out->blind_confirmed++; continue; }
         out->thoughts_confirmed++;
@@ -4138,6 +4154,28 @@ int rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out)
         }
     }
     for (size_t s = 0; s < l->pair_cap; s++) if (l->pair[s].key && l->pair[s].count >= 2) out->associates++;
+    /* the ideas this book could have said: it knew both their words */
+    if (l->idea_n) {
+        uint64_t *known = malloc(((size_t)x->n + 1) * sizeof *known);
+        if (known) {
+            memcpy(known, h, (size_t)x->n * sizeof *known);
+            qsort(known, x->n, sizeof *known, by_word64);
+            uint64_t bit = loom_book_bit(l);
+            for (size_t s = 0; s < l->idea_cap; s++) {
+                loom_idea *d = &l->idea[s];
+                if (!d->key || d->blind) continue;
+                int has_w = 0, has_v = 0;
+                size_t lo = 0, hi = x->n;
+                while (lo < hi) { size_t mid = (lo + hi) / 2; if (known[mid] < d->word) lo = mid + 1; else hi = mid; }
+                has_w = lo < x->n && known[lo] == d->word;
+                lo = 0; hi = x->n;
+                while (lo < hi) { size_t mid = (lo + hi) / 2; if (known[mid] < d->via) lo = mid + 1; else hi = mid; }
+                has_v = lo < x->n && known[lo] == d->via;
+                if ((has_w && has_v) || (d->said_by & bit)) d->chances |= bit;
+            }
+            free(known);
+        }
+    }
     l->reading = NULL;
     free(rd.held);
     free(h);
@@ -4383,10 +4421,11 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   5u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+#define LOOM_VER   6u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
                                             3: travelled branches, and the branch each idea came by.
                                             4: associations that landed on a meaning held before.
-                                            5: the books, and which book brought each place and pair */
+                                            5: the books, and which book brought each place and pair.
+                                            6: the story of every idea: the books that said it, and could have */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4437,6 +4476,7 @@ int rz_loom_save(const rz_loom *l, const char *path)
         const loom_idea *d = &l->idea[i];
         if (!d->key) continue;
         ok = put64(f, d->key) && put64(f, d->word) && put64(f, d->group) && put64(f, d->via) && put64(f, d->traveled)
+             && put64(f, d->said_by) && put64(f, d->chances)
              && put64(f, (uint64_t)d->level | (uint64_t)d->blind << 8 | (uint64_t)d->confirmed << 16);
     }
     for (size_t i = 0; ok && i < l->trail_n; i++)
@@ -4504,12 +4544,14 @@ int rz_loom_load(rz_loom *l, const char *path)
         for (int q = 0; ok && q < 5; q++) ok = get64(f, &s->path[q]);
     }
     for (uint64_t i = 0; ok && i < ni; i++) {
-        uint64_t k, word, group, via, traveled, packed;
-        ok = get64(f, &k) && get64(f, &word) && get64(f, &group) && get64(f, &via) && get64(f, &traveled) && get64(f, &packed);
+        uint64_t k, word, group, via, traveled, said_by, chances, packed;
+        ok = get64(f, &k) && get64(f, &word) && get64(f, &group) && get64(f, &via) && get64(f, &traveled)
+             && get64(f, &said_by) && get64(f, &chances) && get64(f, &packed);
         loom_idea *d; int fresh;
         if (ok) { LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, k, d, fresh); (void)fresh; } else d = NULL;
         if (!d) { ok = 0; break; }
         d->word = word; d->group = group; d->via = via; d->traveled = (uint32_t)traveled;
+        d->said_by = said_by; d->chances = chances;
         d->level = (uint8_t)packed; d->blind = (uint8_t)(packed >> 8); d->confirmed = (uint8_t)(packed >> 16);
     }
     l->trail_n = 0;
@@ -4673,7 +4715,14 @@ const char *rz_loom_book_name(const rz_loom *l, uint32_t book)
     return book < l->nbook ? l->book[book] : "";
 }
 
-uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
+static uint32_t bits(uint64_t v)
+{
+    uint32_t n = 0;
+    while (v) { v &= v - 1; n++; }
+    return n;
+}
+
+uint32_t rz_loom_compose(rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
                          rz_composed **out)
 {
     *out = NULL;
@@ -4689,11 +4738,8 @@ uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *
     }
     /* counted first, so the room fits what comes out */
     size_t n = 0;
-    for (size_t g = 0; g < l->grp_cap; g++) {
-        const loom_group *gr = &l->grp[g];
-        if (!gr->key || !loom_has(l, gr, w)) continue;
-        for (uint32_t i = 0; i < nwith; i++) n += !loom_has(l, gr, aw[i]);
-    }
+    for (size_t g = 0; g < l->grp_cap; g++)
+        if (l->grp[g].key && loom_has(l, &l->grp[g], w)) n += nwith;
     rz_composed *c = calloc(n + 1, sizeof *c);
     if (!c) { free(aw); free(ab); return 0; }
     uint32_t k = 0;
@@ -4702,6 +4748,7 @@ uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *
         if (!gr->key) continue;
         int32_t me = loom_member_of(l, gr, w);
         if (me < 0) continue;
+        uint64_t gkey = gr->key, place_books = l->mem[me].books;
         uint32_t plen = 0;
         size_t sc;
         if (l->shape_cap) {
@@ -4709,13 +4756,26 @@ uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *
             if (l->shape[sc].key) plen = l->shape[sc].len;
         }
         for (uint32_t i = 0; i < nwith; i++) {
-            if (loom_has(l, gr, aw[i])) continue;        /* it stood there: said, not made */
+            uint64_t key = loom_idea_key(gkey, aw[i], 0);
+            size_t si = 0;
+            int made = 0;
+            if (l->idea_cap) { LOOM_SLOT(l->idea, l->idea_cap, key, si); made = l->idea[si].key != 0; }
+            /* it stood there, and nobody made it: a book said it, not it */
+            if (loom_has(l, &l->grp[g], aw[i]) && !made) continue;
+            loom_idea *d;
+            int fresh;
+            LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, key, d, fresh);
+            if (!d) continue;
+            if (fresh) { d->word = aw[i]; d->group = gkey; d->via = w; d->level = 0; }
             rz_composed *e = &c[k++];
-            say_idea(l, gr, aw[i], e->text, sizeof e->text);
+            say_idea(l, loom_group_find(l, gkey), aw[i], e->text, sizeof e->text);
             snprintf(e->via, sizeof e->via, "%s", with[i]);
             e->len = plen;
-            e->place_books = l->mem[me].books;
+            e->place_books = place_books;
             e->assoc_books = ab[i];
+            e->said_by = d->said_by;
+            e->chances = d->chances | d->said_by;
+            e->reality = e->chances ? (double)bits(d->said_by) / bits(e->chances) : 0.0;
         }
     }
     free(aw);

@@ -4897,6 +4897,85 @@ TEST(it_makes_sentences_out_of_its_relations)
     rz_lexicon_free(xa); free(xa);
 }
 
+static const rz_composed *sentence_of(const rz_composed *c, uint32_t n, const char *text)
+{
+    for (uint32_t i = 0; i < n; i++) if (strstr(c[i].text, text)) return &c[i];
+    return NULL;
+}
+
+TEST(what_it_makes_is_fantasy_until_books_say_it)
+{
+    /* The author: creativity must not be lost, only labelled real or fantasy
+       -- and not a rigid label: it can change with experience and knowledge.
+       What it makes is kept; each book that says it adds to its story, and
+       the label is read from that story, never written down */
+    static char a[220000], b[300000], c3[300000];
+    size_t na = path_world(a, sizeof a, 3000);
+    rz_lexicon *xa = lexicon_of(a, na);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    rz_loom_book(l, "uno");
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    const char *with[] = { "gato" };
+    rz_composed *c = NULL;
+    uint32_t n = rz_loom_compose(l, "caballo", with, 1, &c);
+    const rz_composed *s1 = sentence_of(c, n, "el gato come pasto");
+    CHECK(s1 != NULL);
+    if (s1) {
+        CHECK_EQ_U(s1->said_by, 0u);                    /* fantasy: no book said it */
+        CHECK_EQ_U(s1->chances, 0u);                    /* and none could have, yet */
+        CHECK_NEAR(s1->reality, 0.0, 1e-9);
+    }
+    free(c);
+
+    /* kept in the memory, a book says it: now real, said by that book */
+    CHECK_EQ_U(rz_loom_save(l, "test_fantasy.tmp"), RZ_OK);
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_fantasy.tmp"), RZ_OK);
+    size_t nb = said_world(b, sizeof b, 3000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(b + nb, sizeof b - nb, "el gato come pasto %s ", wb_join[k % 6]);
+        if (w > 0) nb += (size_t)w;
+    }
+    rz_lexicon *xb = lexicon_of(b, nb);
+    uint32_t dos = rz_loom_book(back, "dos");
+    CHECK_EQ_U(rz_loom_read(back, xb, &r), RZ_OK);
+    n = rz_loom_compose(back, "caballo", with, 1, &c);
+    const rz_composed *s2 = sentence_of(c, n, "el gato come pasto");
+    CHECK(s2 != NULL);
+    if (s2) { CHECK_EQ_U(s2->said_by, 1ull << dos); CHECK_NEAR(s2->reality, 1.0, 1e-9); }
+    free(c);
+
+    /* another book says it too: its story grows, the label with it */
+    size_t n3 = said_world(c3, sizeof c3, 2000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(c3 + n3, sizeof c3 - n3, "el gato come pasto %s ", wb_join[(k + 3) % 6]);
+        if (w > 0) n3 += (size_t)w;
+    }
+    rz_lexicon *x3 = lexicon_of(c3, n3);
+    uint32_t tres = rz_loom_book(back, "tres");
+    CHECK_EQ_U(rz_loom_read(back, x3, &r), RZ_OK);
+    n = rz_loom_compose(back, "caballo", with, 1, &c);
+    const rz_composed *s3 = sentence_of(c, n, "el gato come pasto");
+    CHECK(s3 != NULL);
+    if (s3) { CHECK_EQ_U(s3->said_by, (1ull << dos) | (1ull << tres)); CHECK_NEAR(s3->reality, 1.0, 1e-9); }
+    free(c);
+
+    /* a fourth book knows the cat and the grass, and does not say it: the
+       grade moves between the two ends -- two of three books that could */
+    rz_loom_book(back, "cuatro");
+    CHECK_EQ_U(rz_loom_read(back, xa, &r), RZ_OK);
+    n = rz_loom_compose(back, "caballo", with, 1, &c);
+    const rz_composed *s4 = sentence_of(c, n, "el gato come pasto");
+    CHECK(s4 != NULL);
+    if (s4) CHECK_NEAR(s4->reality, 2.0 / 3.0, 1e-9);
+    free(c);
+    remove("test_fantasy.tmp");
+    rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); rz_lexicon_free(xb); rz_lexicon_free(x3); free(xa); free(xb); free(x3);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -5136,6 +5215,7 @@ int main(void)
     RUN(a_word_can_be_opened_to_see_what_it_understood);
     RUN(each_association_remembers_the_book_that_brought_it);
     RUN(it_makes_sentences_out_of_its_relations);
+    RUN(what_it_makes_is_fantasy_until_books_say_it);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

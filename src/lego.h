@@ -795,9 +795,19 @@ typedef struct {
     char     via[RZ_LEGO_SPAN + 1];      /* the associate put in the word's hole */
     uint32_t len;                        /* pieces in the path */
     uint64_t place_books, assoc_books;
+    uint64_t said_by;                    /* the books that said it since it was made */
+    uint64_t chances;                    /* the books read since, that knew its words */
+    double   reality;                    /* said_by over chances: 0 fantasy .. 1 every book said it */
 } rz_composed;
 
-uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
+/* What it makes is kept in the memory (the author: creativity must not be
+   lost), and every book that later says it adds to its story. Real or
+   fantasy is read from that story when asked, never written: it changes with
+   experience (the author: a grade from 0 to 1 through infinite middle points).
+   reality = the books that said it / the books, read after it was made, that
+   knew its words and so could have said it. Never tested, it is fantasy: 0.
+   A sentence made once and said later is still shown. */
+uint32_t rz_loom_compose(rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
                          rz_composed **out);
 
 /* The book about to be read, by name: what it brings is marked with it. Up to

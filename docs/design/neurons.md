@@ -147,6 +147,35 @@ not: *"Jesús salió del yogurt"*, *"El camarero que yo le"*. It has no way to
 tell one from the other: nothing in it is true or false yet (the author's
 next step, the switch of yes and no).
 
+## Real or fantasy, a grade (2026-10-27)
+
+> We need it to notice the switch of yes and no, to know whether something
+> is false or true… I don't want creativity lost, only labelled real or
+> fantasy — and not a rigid label: it can change with experience and
+> knowledge. Make a grade from 0 to 1, through infinite middle points, to
+> value reality or fantasy. — the author
+
+Nothing it makes is weakened or thrown away. Every sentence `razar speak`
+makes is kept as an idea; every book read afterwards adds to its story — the
+books that said it, and the books that could have (they knew both its words).
+The label is never written: it is read from the story when asked,
+
+  **reality = books that said it / books that could have said it**,
+
+0 when every book that could stayed silent (or none could yet), 1 when every
+book that could said it, any point between with more books. No number is set.
+
+NT woven alone, *agua* made 106,395 sentences. Then Quiroga: it knew the words
+of 10,502 of them; it said 14 (reality 1.00) — *"en el alma"*, *"con el
+cielo"*, *"el infierno de"*, *"al patio ."*, *"sin querer ,"* — and was
+silent on 10,488 (0.00). 146,517 remain untested. With one book the grade can
+only be 0 or 1; the middle needs more books.
+
+The switch of yes and no is not found yet: *no* comes out second among the
+pieces that slip into pairs said without them (327 pairs), and what follows
+it changes (18 % as before, against 37–53 % for *también*, *todos*) — but
+*que* and *y* do the same. It does not yet tell turning from joining (D124).
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open
@@ -155,6 +184,9 @@ next step, the switch of yes and no).
   P44) are not built.
 - **D120** — the memory's weight: 416 MB regenerated from zero, without ideas.
 - **D123** — words glued across Quiroga's line breaks, and a broken byte.
+- **D124** — the switch of yes and no: *no* found among the pieces that slip
+  in and change what follows, but not yet told apart from *que* and *y*; a
+  verb that carries the no inside (*negó*) is not looked for yet.
 - Fixed numbers still in the loom, by eye until measured: the mates' table
   size, the 200,000 paths `razar paths` builds, 64 books, the ring of 64
   foreseen, runs of 3 to 5 pieces.

@@ -2962,14 +2962,17 @@ static int cmd_speak(int argc, char **argv)
         if (!o) o = stdout;
     }
     fprintf(o, "[%s]: its places, with one of its %u associates most its own in its hole\n", argv[0], nw);
-    fprintf(o, "%u sentences no book said; %u join different things (the associate from a book the place is not from)\n\n",
-           n, mixed);
+    uint32_t tested = 0, said = 0;
+    for (uint32_t i = 0; i < n; i++) { tested += c[i].chances != 0; said += c[i].said_by != 0; }
+    fprintf(o, "%u sentences it made; %u join different things (the associate from a book the place is not from)\n", n, mixed);
+    fprintf(o, "reality, from 0 (fantasy) to 1 (every book that could, said it): %u tested by a later book, %u said by one\n\n",
+            tested, said);
     char pb[256], ab[256];
     for (uint32_t i = 0; i < n; i++) {
         int joins = (c[i].place_books & c[i].assoc_books) != c[i].assoc_books;
-        /* on screen, the sentences that join different things -- one for each
-           associate, the longest path it was put in, so every associate shows */
-        if (!all) {
+        /* on screen, what a book said, and the sentences that join different
+           things -- one for each associate, the longest path it was put in */
+        if (!all && !c[i].said_by) {
             if (!joins) continue;
             int earlier = 0;
             for (uint32_t j = 0; j < i && !earlier; j++)
@@ -2978,10 +2981,16 @@ static int cmd_speak(int argc, char **argv)
         }
         say_books(l, c[i].place_books, pb, sizeof pb);
         say_books(l, c[i].assoc_books, ab, sizeof ab);
-        fprintf(o, "  \"%s\"   ([%s] where [%s] stood; the place from %s, %s from %s)\n",
-                c[i].text, c[i].via, argv[0], pb, c[i].via, ab);
+        if (c[i].chances)
+            fprintf(o, "  %.2f  \"%s\"   ([%s] where [%s] stood; the place from %s, %s from %s)\n",
+                    c[i].reality, c[i].text, c[i].via, argv[0], pb, c[i].via, ab);
+        else
+            fprintf(o, "  ----  \"%s\"   ([%s] where [%s] stood; the place from %s, %s from %s; untested)\n",
+                    c[i].text, c[i].via, argv[0], pb, c[i].via, ab);
     }
     if (o != stdout) { fclose(o); printf("every sentence about [%s] written to %s\n", argv[0], fname); }
+    /* what it made stays: creativity is not lost, and the books to come grade it */
+    if (rz_loom_save(l, LOOM) == RZ_OK && !all) printf("\nwhat it made is kept in %s, for the books to come to grade\n", LOOM);
     free(c);
     free(with);
     free(own);
