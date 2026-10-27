@@ -30,6 +30,7 @@
 #define FEED_DIR  "feed"
 #define LEXICON   NEST "/lexicon.dat"
 #define MELODY    NEST "/melody.dat"
+#define LOOM      NEST "/loom.dat"
 
 static int is_dir(const char *path)
 {
@@ -2683,9 +2684,17 @@ static int cmd_loom(int argc, char **argv)
     rz_lexicon_init(&x);
     rz_lexicon_read_words(&x, m, t, n);
 
+    /* the loom lives in the nest: what earlier books wove is there */
+    rz_loom *l = rz_loom_new();
+    int had = l && rz_loom_load(l, LOOM) == RZ_OK;
     static rz_loom_report r;
-    if (rz_loom_read(&x, &r) != RZ_OK) { fprintf(stderr, "out of memory\n"); rz_lexicon_free(&x); rz_free(m); free(m); free(t); return 1; }
-    printf("read once, left to right: %u words; %u silhouettes born; %u pairs of associates\n\n",
+    if (!l || rz_loom_read(l, &x, &r) != RZ_OK) {
+        fprintf(stderr, "out of memory\n");
+        rz_loom_free(l); rz_lexicon_free(&x); rz_free(m); free(m); free(t);
+        return 1;
+    }
+    printf("%s\nread once, left to right: %u words; %u silhouettes born in it; %u pairs of associates in memory\n\n",
+           had ? "woven on top of what the nest remembers (" LOOM ")" : "nothing in the nest yet: woven from nothing",
            x.nseq, r.structures, r.associates);
     printf("the word just read, in a place it never stood in: %llu times\n", (unsigned long long)r.events);
     printf("  its associates were already there (foreseen): %llu (%.2f%%)\n",
@@ -2694,15 +2703,16 @@ static int cmd_loom(int argc, char **argv)
            (unsigned long long)r.blind_foreseen, (unsigned long long)r.blind_events,
            r.blind_events ? 100.0 * r.blind_foreseen / r.blind_events : 0.0);
     printf("the last foreseen:\n");
-    char a1[80], a2[80], w[80];
+    char a1[80], w[80];
     for (uint32_t i = 0; i < r.nseen && i < 16; i++) {
         const rz_foreseen *e = &r.seen[(r.foreseen - 1 - i) % 64];
         printf("  \"");
         for (int q = 0; q < e->len; q++) { say_lego(&x, e->path[q], w, sizeof w); printf("%s%.*s", q ? " " : "", (int)strlen(w) - 2, w + 1); }
         say_lego(&x, e->word, a1, sizeof a1);
-        say_lego(&x, e->associate, a2, sizeof a2);
-        printf("\"   %s was expected: %s stood there\n", a1, a2);
+        printf("\"   %s was expected: [%s] stood there\n", a1, e->associate);
     }
+    if (rz_loom_save(l, LOOM) == RZ_OK) printf("\nremembered in %s\n", LOOM);
+    rz_loom_free(l);
     rz_lexicon_free(&x);
     rz_free(m);
     free(m);

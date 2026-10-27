@@ -663,20 +663,32 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
  * stood in, were its associates there before it? Against a word picked blind
  * from what was already read. Nothing in the bar is learned from it. */
 typedef struct {
-    int32_t  word, associate;        /* the word just read, the associate already there */
+    int32_t  word;                   /* the word just read */
+    char     associate[RZ_LEGO_SPAN + 1];  /* the associate already there, spelled:
+                                        it may come from another book */
     uint8_t  len;
     int32_t  path[5];                /* the path it stands in, holes filled */
 } rz_foreseen;
 
 typedef struct {
-    uint32_t    structures, associates;  /* silhouettes born; pairs of associates */
+    uint32_t    structures, associates;  /* silhouettes born in this read; pairs of associates in memory */
     uint64_t    events, foreseen;        /* new places for the word just read; foreseen */
     uint64_t    blind_events, blind_foreseen;
     rz_foreseen seen[64];                /* the last foreseen, to show (a ring) */
     uint32_t    nseen;
 } rz_loom_report;
 
-int rz_loom_read(const rz_lexicon *x, rz_loom_report *out);
+/* The loom lives in the AMMC (the author: the conceptual design of meaning is
+   built as it is seen, and the connections stay in the memory -- melody and
+   meaning, the associations). Words are known by their spelling, so what one
+   book wove is there when the next is read; a new book is woven on top. */
+typedef struct rz_loom rz_loom;
+
+rz_loom *rz_loom_new(void);
+void     rz_loom_free(rz_loom *l);
+int      rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out);
+int      rz_loom_save(const rz_loom *l, const char *path);
+int      rz_loom_load(rz_loom *l, const char *path);
 
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);

@@ -4517,6 +4517,28 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
 
 /* --- weaving meaning while reading (P52) -------------------------------- */
 
+/* "animal", the word just read, foreseen beside the horse because its
+   associate "mamífero" already stood there */
+static int horse_foreseen(const rz_loom_report *r, const rz_lexicon *x)
+{
+    int32_t caballo = lego_of(x, "caballo"), animal = lego_of(x, "animal");
+    for (uint32_t i = 0; i < r->nseen; i++) {
+        const rz_foreseen *e = &r->seen[i];
+        if (e->word != animal || strcmp(e->associate, "mamífero") != 0) continue;
+        for (int q = 0; q < e->len; q++) if (e->path[q] == caballo) return 1;
+    }
+    return 0;
+}
+
+static rz_lexicon *lexicon_of(const char *t, size_t n)
+{
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon *x = malloc(sizeof *x);
+    rz_lexicon_init(x);
+    rz_lexicon_read_words(x, m, (const unsigned char *)t, n);
+    return x;
+}
+
 TEST(meaning_is_woven_while_reading)
 {
     /* the little world of paths, and only at the end, said for the first
@@ -4528,13 +4550,10 @@ TEST(meaning_is_woven_while_reading)
         int w = snprintf(t + n, sizeof t - n, "el caballo es un animal %s ", wb_join[k % 6]);
         if (w > 0) n += (size_t)w;
     }
-    rz_mind *m = world_mind(t, n);
-    rz_lexicon x;
-    rz_lexicon_init(&x);
-    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
-
-    rz_loom_report r;
-    CHECK_EQ_U(rz_loom_read(&x, &r), RZ_OK);
+    rz_lexicon *x = lexicon_of(t, n);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(l, x, &r), RZ_OK);
     CHECK(r.structures > 0);
     CHECK(r.events > 0 && r.blind_events > 0);
     /* reading, the woven meaning foresees the new places better than a word
@@ -4543,16 +4562,53 @@ TEST(meaning_is_woven_while_reading)
     /* reading "el caballo es un animal" for the first time, "animal" -- the
        word just read -- was foreseen beside the horse: its associate
        "mamífero" already stood there ("el caballo es un mamífero") */
-    int32_t caballo = lego_of(&x, "caballo"), animal = lego_of(&x, "animal");
-    int32_t mamifero = lego_of(&x, "mamífero");
-    int horse = 0;
-    for (uint32_t i = 0; i < r.nseen; i++) {
-        const rz_foreseen *e = &r.seen[i];
-        if (e->word != animal || e->associate != mamifero) continue;
-        for (int q = 0; q < e->len; q++) if (e->path[q] == caballo) horse = 1;
+    CHECK(horse_foreseen(&r, x));
+    rz_loom_free(l);
+    rz_lexicon_free(x);
+    free(x);
+}
+
+TEST(what_was_woven_stays_in_the_memory)
+{
+    /* The author: the AMMC builds the meaning as it sees it, and the
+       connections stay in the memory -- melody and meaning, the associations.
+       One book teaches that the horse stands where the cat stands, and that
+       horse and cat are mammals. Another book, read later, says once that
+       the horse is an animal, and nothing about mammals or horses before. */
+    static char a[220000], b[300000];
+    size_t na = path_world(a, sizeof a, 3000);
+    size_t nb = said_world(b, sizeof b, 6000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(b + nb, sizeof b - nb, "el caballo es un animal %s ", wb_join[k % 6]);
+        if (w > 0) nb += (size_t)w;
     }
-    CHECK(horse);
-    rz_lexicon_free(&x);
+    rz_lexicon *xa = lexicon_of(a, na), *xb = lexicon_of(b, nb);
+    static rz_loom_report r;
+
+    /* read alone, the second book cannot foresee it */
+    rz_loom *fresh = rz_loom_new();
+    CHECK_EQ_U(rz_loom_read(fresh, xb, &r), RZ_OK);
+    CHECK(!horse_foreseen(&r, xb));
+    rz_loom_free(fresh);
+
+    /* read after the first, it can: the associations stayed */
+    rz_loom *l = rz_loom_new();
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    CHECK_EQ_U(rz_loom_save(l, "test_loom.tmp"), RZ_OK);
+    CHECK_EQ_U(rz_loom_read(l, xb, &r), RZ_OK);
+    CHECK(horse_foreseen(&r, xb));
+    uint64_t kept = r.foreseen;
+    rz_loom_free(l);
+
+    /* and they stay on disk: loaded into a new memory, the same */
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_loom.tmp"), RZ_OK);
+    CHECK_EQ_U(rz_loom_read(back, xb, &r), RZ_OK);
+    CHECK(horse_foreseen(&r, xb));
+    CHECK_EQ_U(r.foreseen, kept);
+    rz_loom_free(back);
+    remove("test_loom.tmp");
+    rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
 /* --- the melody of the path (P48) ---------------------------------------- */
@@ -4787,6 +4843,7 @@ int main(void)
     RUN(the_child_asks_about_every_word);
     RUN(a_path_is_taken_apart_and_put_together_with_other_pieces);
     RUN(meaning_is_woven_while_reading);
+    RUN(what_was_woven_stays_in_the_memory);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

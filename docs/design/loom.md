@@ -54,10 +54,46 @@ pairs of associates.
 Glue is part of it: the blind word is often glue too, and glue has
 associates everywhere, which is why blind already reaches 32 %.
 
+## The loom lives in the memory (2026-10-27)
+
+> That is what the AMMC is for: build the conceptual design of meaning as it
+> sees it, and the connections stay in the memory. We keep the melody — the
+> silhouette — and the meaning. — the author. And: the associations are what
+> we need.
+
+`rz_loom_new`, `rz_loom_save`, `rz_loom_load`; `razar loom` loads and saves
+`nido/loom.dat`. Every piece is known by the hash of its spelling, so what one
+book wove is there for the next one: silhouettes (born and heard once), the
+places each word filled, and the associations with their count of forms.
+Everything is saved, so the memory comes back exactly (round trip tested);
+forgetting what was heard once is a decision of its own.
+
+In the little world: a book that never says anything of mammals or horses,
+read alone, cannot foresee *animal* beside *caballo*; read after the path
+world — in memory or loaded from disk — it does.
+
+Quiroga, read from nothing and read with the New Testament in memory:
+
+| Quiroga | New places | Foreseen | Blind |
+| --- | --- | --- | --- |
+| from nothing | 49,133 | 9,612 — **19.56 %** | 13.34 % (1.47×) |
+| with the NT remembered | 66,101 | 20,600 — **31.16 %** | 26.71 % (1.17×) |
+
+The memory foresees twice as many places, but the blind word gains as much:
+the NT brings associations for every frequent word, so it lifts everything,
+and the margin over chance shrinks. What carries between books is mostly
+glue so far.
+
+**The cost**: the NT alone makes a 197 MB `nido/loom.dat` (the nest is not in
+the repository). Most of it is silhouettes heard once and pairs that are not
+yet associates.
+
 ## Open
 
 - **D118** — the structure here is the silhouette, not the sticker (P51): the
   stickers need a fixed point over the whole text, and reading live has only
   what was read so far. Whether stickers can be woven live too.
+- **D120** — the loom's memory is 197 MB for one book; what to forget (heard
+  once, never associated) without losing what a later book needs.
 - **D119** — what was foreseen is not used yet: the meaning is woven and
   measured, but Razar does not yet bet with it while reading (PENZAR, P45).
