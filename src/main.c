@@ -3047,6 +3047,9 @@ static int cmd_why(int argc, char **argv)
         else free(q[i].clue);
     }
     n = k;
+    /* the answers rebuilt from the clues, in structures of the map; it
+       chooses, and not always the same */
+    rz_loom_answers(l, q, n);
     uint32_t yes = 0, no = 0;
     for (uint32_t i = 0; i < n; i++) { yes += q[i].kind == RZ_ASK_WHY_YES; no += q[i].kind == RZ_ASK_WHY_NOT; }
     char fname[160];
@@ -3077,10 +3080,18 @@ static int cmd_why(int argc, char **argv)
                 for (uint32_t c = 0; c < q[i].nclue; c++) fprintf(o, " [%s]", q[i].clue[c]);
                 fprintf(o, "\n");
             }
+            for (uint32_t a = 0; a < q[i].nanswer; a++) {
+                const rz_composed *e = &q[i].answer[a];
+                if (!all && !e->chosen) continue;
+                fprintf(o, "      %s \"%s\"   ([%s]; a silhouette of %u forms, %s)\n", e->chosen ? "it says:" : "        ",
+                        e->text, e->via, e->forms, e->known ? "the map had it" : "made new");
+            }
         }
         fprintf(o, "\n");
     }
     if (o != stdout) { fclose(o); printf("every question written to %s\n", fname); }
+    /* what it said is kept, and its coin moved on: next time it may choose another path */
+    if (rz_loom_save(l, LOOM) == RZ_OK) printf("what it said is kept in %s, for the books to come to grade\n", LOOM);
     rz_questions_free(q, n);
     rz_loom_free(l);
     return 0;

@@ -5233,6 +5233,7 @@ uint32_t rz_loom_questions(const rz_loom *l, rz_question **out)
     for (size_t i = 0; i < l->ask_n; i++) {
         const loom_question *a = &l->ask[i];
         q[i].kind = a->kind;
+        q[i].ask = (uint32_t)i;
         q[i].said = a->said;
         q[i].denied = a->denied;
         q[i].book = a->book;
@@ -5282,6 +5283,214 @@ uint32_t rz_loom_questions(const rz_loom *l, rz_question **out)
 
 void rz_questions_free(rz_question *q, uint32_t n)
 {
-    for (uint32_t i = 0; q && i < n; i++) free(q[i].clue);
+    for (uint32_t i = 0; q && i < n; i++) { free(q[i].clue); free(q[i].answer); }
     free(q);
+}
+
+/* where a piece stood: a hole of a silhouette, beside a partner */
+typedef struct { uint64_t word, sil, partner; uint8_t hole; } loom_stand;
+
+static int stand_order(const void *pa, const void *pb)
+{
+    const loom_stand *a = pa, *b = pb;
+    if (a->word != b->word) return a->word < b->word ? -1 : 1;
+    if (a->sil != b->sil) return a->sil < b->sil ? -1 : 1;
+    if (a->hole != b->hole) return a->hole < b->hole ? -1 : 1;
+    return (a->partner > b->partner) - (a->partner < b->partner);
+}
+
+typedef struct { uint64_t sil; uint32_t forms; } loom_silforms;
+
+static int silforms_order(const void *pa, const void *pb)
+{
+    const loom_silforms *a = pa, *b = pb;
+    return (a->sil > b->sil) - (a->sil < b->sil);
+}
+
+static int in_set(const uint64_t *set, size_t n, uint64_t v)
+{
+    size_t lo = 0, hi = n;
+    while (lo < hi) { size_t mid = (lo + hi) / 2; if (set[mid] < v) lo = mid + 1; else hi = mid; }
+    return lo < n && set[lo] == v;
+}
+
+static size_t stand_first(const loom_stand *st, size_t n, uint64_t w)
+{
+    size_t lo = 0, hi = n;
+    while (lo < hi) { size_t mid = (lo + hi) / 2; if (st[mid].word < w) lo = mid + 1; else hi = mid; }
+    return lo;
+}
+
+/* the memory's own coin: it moves on with every choice, and is saved */
+static double loom_coin(rz_loom *l)
+{
+    l->rng ^= l->rng << 13; l->rng ^= l->rng >> 7; l->rng ^= l->rng << 17;
+    return (double)(l->rng >> 11) / 9007199254740992.0;
+}
+
+/* the pieces of what was denied, no switch among them */
+static uint32_t answer_pieces(const rz_loom *l, const loom_question *a, uint64_t *own)
+{
+    uint64_t cand[7];
+    int nc = 0;
+    uint32_t n = 0;
+    cand[nc++] = a->word;
+    cand[nc++] = a->partner;
+    if (l->shape_cap) {
+        size_t sc;
+        LOOM_SLOT(l->shape, l->shape_cap, a->sil, sc);
+        if (l->shape[sc].key) for (int z = 0; z < 5; z++) if (l->shape[sc].path[z]) cand[nc++] = l->shape[sc].path[z];
+    }
+    for (int z = 0; z < nc; z++) {
+        int dup = loom_is_switch(l, cand[z]);
+        for (uint32_t y = 0; y < n && !dup; y++) dup = own[y] == cand[z];
+        if (!dup) own[n++] = cand[z];
+    }
+    return n;
+}
+
+/* one answer for a piece p and a clue v: every silhouette where the two stand
+   on opposite holes, weighed by its forms, and one drawn. 0: none fits */
+static int answer_one(rz_loom *l, const loom_stand *st, size_t k, const loom_silforms *sf, size_t nf,
+                      uint64_t p, uint64_t v, rz_composed *e, uint64_t *gkey)
+{
+    size_t p0 = stand_first(st, k, p), v0 = stand_first(st, k, v);
+    double total = 0, pick = 0, run = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        if (pass) { if (total <= 0) return 0; pick = loom_coin(l) * total; }
+        size_t a = p0, b = v0;
+        while (a < k && st[a].word == p && b < k && st[b].word == v) {
+            if (st[a].sil != st[b].sil) { if (st[a].sil < st[b].sil) a++; else b++; continue; }
+            uint64_t S = st[a].sil;
+            size_t a1 = a, b1 = b;
+            while (a1 < k && st[a1].word == p && st[a1].sil == S) a1++;
+            while (b1 < k && st[b1].word == v && st[b1].sil == S) b1++;
+            loom_silforms key = { S, 0 };
+            const loom_silforms *hit = bsearch(&key, sf, nf, sizeof *sf, silforms_order);
+            double w = hit ? hit->forms : 0;
+            for (int x = 0; x < 2; x++) {
+                int ph = 0, vh = 0, known = 0;
+                for (size_t y = a; y < a1; y++) if (st[y].hole == x) { ph = 1; known |= st[y].partner == v; }
+                for (size_t y = b; y < b1; y++) vh |= st[y].hole == 1 - x;
+                if (!ph || !(vh || known) || w <= 0) continue;
+                if (!pass) { total += w; continue; }
+                run += w;
+                if (run < pick) continue;
+                loom_group g;
+                memset(&g, 0, sizeof g);
+                g.sil = S; g.side = (uint8_t)x; g.partner = v;
+                say_idea(l, &g, p, e->text, sizeof e->text);
+                e->forms = hit->forms;
+                e->known = (uint8_t)known;
+                size_t sc;
+                LOOM_SLOT(l->shape, l->shape_cap, S, sc);
+                e->len = l->shape[sc].key ? l->shape[sc].len : 0;
+                *gkey = loom_group_key(S, x, v);
+                return 1;
+            }
+            a = a1; b = b1;
+        }
+    }
+    return 0;
+}
+
+void rz_loom_answers(rz_loom *l, rz_question *q, uint32_t n)
+{
+    /* every piece and clue asked about, to gather only where those stood */
+    size_t ni = 0, cap = 0;
+    for (uint32_t i = 0; i < n; i++) cap += 7 + q[i].nclue;
+    uint64_t *set = malloc((cap + 1) * sizeof *set);
+    if (!set) return;
+    for (uint32_t i = 0; i < n; i++) {
+        if (q[i].ask >= l->ask_n) continue;
+        ni += answer_pieces(l, &l->ask[q[i].ask], set + ni);
+        for (uint32_t c = 0; c < q[i].nclue; c++)
+            set[ni++] = spelling_key((const unsigned char *)q[i].clue[c], strlen(q[i].clue[c]));
+    }
+    qsort(set, ni, sizeof *set, by_word64);
+    size_t u = 0;
+    for (size_t i = 0; i < ni; i++) if (!u || set[u - 1] != set[i]) set[u++] = set[i];
+    ni = u;
+    /* where each of them stood: counted first, so the room fits */
+    size_t ns = 0;
+    for (size_t g = 0; g < l->grp_cap; g++) {
+        if (!l->grp[g].key) continue;
+        for (int32_t m = l->grp[g].head; m >= 0; m = l->mem[m].next) ns += in_set(set, ni, l->mem[m].word);
+    }
+    loom_stand *st = malloc((ns + 1) * sizeof *st);
+    loom_silforms *sf = malloc((ns + 1) * sizeof *sf);
+    if (!st || !sf) { free(st); free(sf); free(set); return; }
+    size_t k = 0;
+    for (size_t g = 0; g < l->grp_cap; g++) {
+        const loom_group *gr = &l->grp[g];
+        if (!gr->key) continue;
+        for (int32_t m = gr->head; m >= 0; m = l->mem[m].next)
+            if (in_set(set, ni, l->mem[m].word)) st[k++] = (loom_stand){ l->mem[m].word, gr->sil, gr->partner, gr->side };
+    }
+    qsort(st, k, sizeof *st, stand_order);
+    /* the forms each of those silhouettes collected: what it lived there */
+    size_t nf = 0;
+    for (size_t i = 0; i < k; i++) if (!nf || sf[nf - 1].sil != st[i].sil) sf[nf++] = (loom_silforms){ st[i].sil, 0 };
+    qsort(sf, nf, sizeof *sf, silforms_order);
+    u = 0;
+    for (size_t i = 0; i < nf; i++) if (!u || sf[u - 1].sil != sf[i].sil) sf[u++] = sf[i];
+    nf = u;
+    for (size_t g = 0; g < l->grp_cap; g++) {
+        if (!l->grp[g].key) continue;
+        loom_silforms key = { l->grp[g].sil, 0 };
+        loom_silforms *hit = bsearch(&key, sf, nf, sizeof *sf, silforms_order);
+        if (hit) hit->forms += l->grp[g].size;
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        free(q[i].answer);
+        q[i].answer = NULL;
+        q[i].nanswer = 0;
+        if (q[i].ask >= l->ask_n) continue;
+        uint64_t own[7];
+        uint32_t no = answer_pieces(l, &l->ask[q[i].ask], own);
+        size_t room = (size_t)no * q[i].nclue;
+        q[i].answer = calloc(room + 1, sizeof *q[i].answer);
+        uint64_t *gk = calloc(room + 1, sizeof *gk), *pw = calloc(room + 1, sizeof *pw);
+        if (!q[i].answer || !gk || !pw) { free(gk); free(pw); continue; }
+        for (uint32_t z = 0; z < no; z++)
+            for (uint32_t c = 0; c < q[i].nclue; c++) {
+                uint64_t v = spelling_key((const unsigned char *)q[i].clue[c], strlen(q[i].clue[c]));
+                if (own[z] == v) continue;
+                rz_composed *e = &q[i].answer[q[i].nanswer];
+                if (!answer_one(l, st, k, sf, nf, own[z], v, e, &gk[q[i].nanswer])) continue;
+                snprintf(e->via, sizeof e->via, "%s", q[i].clue[c]);
+                pw[q[i].nanswer++] = own[z];
+            }
+        /* the one it says, drawn the same way among them */
+        double total = 0, run = 0;
+        for (uint32_t a = 0; a < q[i].nanswer; a++) total += q[i].answer[a].forms;
+        if (total > 0) {
+            double pick = loom_coin(l) * total;
+            uint32_t said = q[i].nanswer - 1;
+            for (uint32_t a = 0; a < q[i].nanswer; a++) { run += q[i].answer[a].forms; if (run >= pick) { said = a; break; } }
+            rz_composed *e = &q[i].answer[said];
+            e->chosen = 1;
+            if (e->known) { e->said_by = e->chances = 1; e->reality = 1.0; }
+            else {
+                /* what it said is kept, and the books to come grade it */
+                loom_idea *d;
+                int fresh;
+                LOOM_AT(l, l->idea, l->idea_cap, l->idea_n, loom_idea_key(gk[said], pw[said], 0), d, fresh);
+                if (d) {
+                    if (fresh) {
+                        d->word = pw[said]; d->group = gk[said]; d->level = 0;
+                        d->via = spelling_key((const unsigned char *)e->via, strlen(e->via));
+                    }
+                    e->said_by = d->said_by;
+                    e->chances = d->chances | d->said_by;
+                    e->reality = e->chances ? (double)bits(d->said_by) / bits(e->chances) : 0.0;
+                }
+            }
+        }
+        free(gk);
+        free(pw);
+    }
+    free(st);
+    free(sf);
+    free(set);
 }

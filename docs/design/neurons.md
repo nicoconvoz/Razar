@@ -251,6 +251,36 @@ On the NT:
 
 The answers still come mixed with glue (*pero*, *en*, *de*).
 
+### The answer rebuilt, and chosen by it (2026-10-27)
+
+The author: rebuild the structures with the answer found, in a structure fit to
+answer -- new from the associations, or known: the map is there. Then: let it
+choose, do not impose it; it chooses its paths, and they will not always be
+the same.
+
+`rz_loom_answers` puts each piece of what was denied (switches aside) and each
+clue in every silhouette where the two stand on opposite holes. When a book
+already joined them there, the map had it; otherwise it is made new. For each
+piece and clue it draws one silhouette, then draws the one answer it says.
+Each draw is weighed by the distinct forms the silhouette collected (what it
+lived). The coin is the loom's own `rng`, saved, so the next call can choose
+another path. What it says, if new, is kept as an idea and the books to come
+grade it.
+
+Measured on the New Testament (`razar why`, 294 questions):
+
+- "El que cree", denied once: one call says ", cree mentiroso", the next
+  "El tiene ,". The right pair is joined (cree with mentiroso), but in a
+  three-piece structure.
+- "Jesús le respondió": ", respondió muchas", then ", muchas le".
+- 27 of 294 answers use a structure the map already had; the rest are new.
+
+What is still wrong: the weight is the silhouette's forms, so the widest
+silhouettes win -- short ones made of a comma and a hole, which fit almost
+anything. The answer comes out in glue structures, not in the structure of
+the sentence near it. The weight is a criterion, not a measurement; whether
+reality (the books that later say an answer) should weigh it is open.
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open

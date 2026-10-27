@@ -804,6 +804,10 @@ typedef struct {
     uint64_t said_by;                    /* the books that said it since it was made */
     uint64_t chances;                    /* the books read since, that knew its words */
     double   reality;                    /* said_by over chances: 0 fantasy .. 1 every book said it */
+    /* for an answer (P54): the forms its silhouette collected, whether the
+       map already said it, and whether it is the one it chose */
+    uint32_t forms;
+    uint8_t  known, chosen;
 } rz_composed;
 
 /* What it makes is kept in the memory (the author: creativity must not be
@@ -868,12 +872,30 @@ typedef struct {
        around it that is no usual company of the word -- what this time had */
     char   (*clue)[RZ_LEGO_SPAN + 1];
     uint32_t nclue;
+    /* the answers rebuilt from them (rz_loom_answers) */
+    rz_composed *answer;
+    uint32_t     nanswer;
+    uint32_t     ask;                     /* which question of the memory it is */
 } rz_question;
 
 /* the switches it knows, added to (a switch found in one book serves the next) */
 void     rz_loom_switches(rz_loom *l, const char *const *spellings, uint32_t n);
 uint32_t rz_loom_questions(const rz_loom *l, rz_question **out);
 void     rz_questions_free(rz_question *q, uint32_t n);
+
+/* The author: rebuild the structures with the answer found, in a structure
+   fit to answer the question -- use the associations to make new structures,
+   or known ones: the map is there. And let it choose; do not impose it.
+   For every question, each piece of what was denied and each clue are put in
+   every silhouette of the map where the two can stand on opposite holes:
+   known when a book already joined them there, new when each stood there
+   only with others. It chooses its paths, and they are not always the same
+   (the author): for each piece and clue it draws one silhouette, and then the
+   one answer it says, each weighed by what it lived -- the distinct forms the
+   silhouette collected -- so the most travelled comes out most often, never
+   always. The coin is the memory's own and moves on with every choice. What
+   it says, if new, is kept as an idea, and the books to come grade it (P53). */
+void     rz_loom_answers(rz_loom *l, rz_question *q, uint32_t n);
 
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);

@@ -5159,6 +5159,43 @@ TEST(why_is_looked_for_in_what_stood_near)
     CHECK(asked);
     CHECK(asleep);
     CHECK(!usual);
+
+    /* The author: let it rebuild the structures with the answer found, in a
+       structure fit to answer -- known or new, from the map -- and let it
+       choose, not imposed. Every answer joins a piece of what was denied with
+       a clue, in a silhouette both can stand in */
+    rz_loom_answers(l, q, nq);
+    int joined = 0, chose = 0, apart = 1;
+    for (uint32_t i = 0; i < nq; i++) {
+        if (q[i].kind != RZ_ASK_WHY_NOT || strcmp(q[i].text, "el gato maúlla")) continue;
+        for (uint32_t a = 0; a < q[i].nanswer; a++) {
+            const rz_composed *e = &q[i].answer[a];
+            joined |= strstr(e->text, "gato") && strstr(e->text, "dormido");
+            chose |= e->chosen;
+            apart &= e->forms > 0;
+        }
+    }
+    printf("    [answers] joined gato+dormido %d, chose %d\n", joined, chose);
+    CHECK(joined);
+    CHECK(chose);
+    CHECK(apart);
+    /* the author: it chooses its paths, and they will not always be the same */
+    char first[6 * (RZ_LEGO_SPAN + 1)] = "";
+    int many = 0, varied = 0;
+    for (int round = 0; round < 32; round++) {
+        rz_loom_answers(l, q, nq);
+        for (uint32_t i = 0; i < nq; i++) {
+            if (q[i].kind != RZ_ASK_WHY_NOT || strcmp(q[i].text, "el gato maúlla")) continue;
+            many |= q[i].nanswer > 1;
+            for (uint32_t a = 0; a < q[i].nanswer; a++) {
+                if (!q[i].answer[a].chosen) continue;
+                if (!first[0]) snprintf(first, sizeof first, "%s", q[i].answer[a].text);
+                else varied |= strcmp(first, q[i].answer[a].text) != 0;
+            }
+        }
+    }
+    CHECK(many);
+    CHECK(varied);
     rz_questions_free(q, nq);
     rz_loom_free(l);
     rz_lexicon_free(x); free(x);
