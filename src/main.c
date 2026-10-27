@@ -2596,9 +2596,11 @@ static int cmd_paths(int argc, char **argv)
        another recomposition */
     static rz_recomposed rc[200000];
     uint32_t nr = rz_paths_recompose(&p, rc, 200000);
-    run_set said2;
+    run_set said1, said2;
+    runs_of(&one, &said1);
     runs_of(&two, &said2);
-    uint32_t tested = 0, found = 0, blind = 0, shown = 0;
+    uint32_t tested = 0, found = 0, btested = 0, blind = 0, shown = 0;
+    int32_t w1[5];
     int32_t w2[5];
     for (uint32_t i = 0; i < nr; i++) {
         const rz_silhouette *s = &p.s[rc[i].sil];
@@ -2609,10 +2611,16 @@ static int cmd_paths(int argc, char **argv)
         /* blind: the piece the mate brought, replaced by the one another
            recomposition brought */
         const rz_recomposed *o = &rc[(i * 7919u + 104729u) % nr];
-        int32_t brought = rc[i].f1 == rc[i].from ? rc[i].f2 : rc[i].f1;
-        int32_t other = o->f1 == o->from ? o->f2 : o->f1;
-        int32_t b1 = rc[i].f1 == brought ? other : rc[i].f1, b2 = rc[i].f2 == brought ? other : rc[i].f2;
-        if (recomposed_path(&one, s, b1, b2, &two, w2) && run_said(&said2, w2, s->len)) blind++;
+        int32_t other = o->hole ? o->f2 : o->f1;
+        int32_t b1 = rc[i].hole ? rc[i].f1 : other, b2 = rc[i].hole ? other : rc[i].f2;
+        /* blind paths must be new to the first half too: unfiltered, they
+           were mostly common paths it had already said, and those the second
+           half says again -- the bar crowned the blind (3.94% against 1.95%) */
+        if (recomposed_path(&one, s, b1, b2, &one, w1) && !run_said(&said1, w1, s->len) &&
+            recomposed_path(&one, s, b1, b2, &two, w2)) {
+            btested++;
+            blind += (uint32_t)run_said(&said2, w2, s->len);
+        }
         if (hit && shown < 12) {
             say_path(&one, s, rc[i].f1, rc[i].f2, a1, sizeof a1);
             char fr[80];
@@ -2622,8 +2630,11 @@ static int cmd_paths(int argc, char **argv)
             shown++;
         }
     }
-    printf("\nput together again: %u paths; %u in words the second half knows; said there: %u (%.2f%%); blind: %u (%.2f%%)\n",
-           nr, tested, found, tested ? 100.0 * found / tested : 0.0, blind, tested ? 100.0 * blind / tested : 0.0);
+    printf("\nput together again: %u paths; %u in words the second half knows; said there: %u (%.2f%%)\n"
+           "blind, as new to the first half: %u tested, said there: %u (%.2f%%)\n",
+           nr, tested, found, tested ? 100.0 * found / tested : 0.0,
+           btested, blind, btested ? 100.0 * blind / btested : 0.0);
+    free(said1.k);
     free(said2.k);
     rz_paths_free(&p);
     rz_lexicon_free(&one); rz_lexicon_free(&two);

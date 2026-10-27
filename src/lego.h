@@ -628,7 +628,7 @@ typedef struct {
 
 typedef struct { int32_t f1, f2; uint32_t said; } rz_fill;
 typedef struct { int32_t a, b; uint32_t frames; } rz_mates;
-typedef struct { uint32_t sil; int32_t f1, f2; int32_t from; } rz_recomposed;
+typedef struct { uint32_t sil; int32_t f1, f2; int32_t from; uint32_t forms; uint8_t hole; } rz_recomposed;
 
 typedef struct {
     rz_silhouette *s;  uint32_t ns;
@@ -640,7 +640,8 @@ typedef struct {
 
 uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p);
 void     rz_paths_free(rz_paths *p);
-/* paths never said, put together from said ones by a mate; from = the mate replaced */
+/* paths never said, put together from said ones by a mate: from = the piece replaced,
+   hole = which hole the mate went into, forms = the forms the two mates collected */
 uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap);
 
 /* how many times lego a stood just before lego b (0: never) */

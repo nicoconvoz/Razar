@@ -3360,7 +3360,7 @@ static void mate_add(mate_slot *t, uint32_t *used, int32_t a, int32_t b, uint32_
         (*used)++;
         t[s].a = a; t[s].b = b;
     } else if (t[s].stamp == stamp) {
-        return;                       /* once per silhouette and partner */
+        return;                       /* once per silhouette */
     }
     t[s].frames++;
     t[s].stamp = stamp;
@@ -3383,7 +3383,7 @@ static int by_f2(const void *pa, const void *pb)
 /* the mates in one silhouette: fills that share the piece in the other hole.
    side 0: the partner is the first hole, the mates fill the second */
 static void mates_in(const rz_fill *f, uint32_t n, int side, mate_slot *t, uint32_t *used,
-                     uint32_t *stamp, rz_fill *tmp)
+                     const uint32_t *stamp, rz_fill *tmp)
 {
     memcpy(tmp, f, n * sizeof *f);
     qsort(tmp, n, sizeof *tmp, side ? by_f2 : by_f1);
@@ -3391,7 +3391,6 @@ static void mates_in(const rz_fill *f, uint32_t n, int side, mate_slot *t, uint3
         int32_t partner = side ? tmp[i].f2 : tmp[i].f1;
         uint32_t e = i;
         while (e < n && (side ? tmp[e].f2 : tmp[e].f1) == partner) e++;
-        (*stamp)++;
         for (uint32_t a = i; a < e; a++)
             for (uint32_t b = a + 1; b < e; b++)
                 mate_add(t, used, side ? tmp[a].f1 : tmp[a].f2, side ? tmp[b].f1 : tmp[b].f2, *stamp);
@@ -3495,6 +3494,11 @@ uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
         uint32_t used = 0, stamp = 0;
         for (uint32_t i = 0; i < p->ns; i++) {
             const rz_fill *f = p->fill + p->s[i].first;
+            /* one stamp per silhouette: a form counts once, however many
+               partners or times made the two mates in it (the author:
+               collect different forms, not the same one heard more). Counted
+               per partner, el _ , _ gave glue thousands of frames */
+            stamp++;
             mates_in(f, p->s[i].count, 0, t, &used, &stamp, tmp);
             mates_in(f, p->s[i].count, 1, t, &used, &stamp, tmp);
         }
@@ -3530,57 +3534,70 @@ static int fill_said(const rz_fill *f, uint32_t n, int32_t f1, int32_t f2)
     return lo < n && f[lo].f1 == f1 && f[lo].f2 == f2;
 }
 
-static const rz_silhouette *sil_weights;
-
-static int heavier(const void *pa, const void *pb)
+static int stronger(const void *pa, const void *pb)
 {
-    uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
-    if (sil_weights[a].fills != sil_weights[b].fills) return sil_weights[a].fills > sil_weights[b].fills ? -1 : 1;
-    return (a > b) - (a < b);
+    const rz_mates *a = pa, *b = pb;
+    if (a->frames != b->frames) return a->frames > b->frames ? -1 : 1;
+    if (a->a != b->a) return a->a < b->a ? -1 : 1;
+    return (a->b > b->b) - (a->b < b->b);
 }
+
+typedef struct { uint32_t sil, fill; uint8_t side; } fill_at;
 
 uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
 {
-    /* each piece's mates, gathered */
+    /* The association that collected the most different forms puts paths
+       together first (the author); weighing by the silhouette crowned glue,
+       "_ , _" put together with thousands of pairs. Every place a piece
+       filled, gathered by piece */
     uint32_t *start = calloc((size_t)p->nwords + 1, sizeof *start);
-    uint32_t *at = malloc(((size_t)p->nwords + 1) * sizeof *at);
-    int32_t *mate = malloc(((size_t)p->nm * 2 + 1) * sizeof *mate);
-    if (!start || !at || !mate) { free(start); free(at); free(mate); return 0; }
-    for (uint32_t i = 0; i < p->nm; i++) { start[p->m[i].a + 1]++; start[p->m[i].b + 1]++; }
+    fill_at *at = malloc(((size_t)p->nfill * 2 + 1) * sizeof *at);
+    uint32_t *pos = malloc(((size_t)p->nwords + 1) * sizeof *pos);
+    rz_mates *m = malloc(((size_t)p->nm + 1) * sizeof *m);
+    size_t hcap = 1;
+    while (hcap < (size_t)cap * 2 + 2) hcap <<= 1;
+    uint64_t *made = calloc(hcap, sizeof *made);
+    if (!start || !at || !pos || !m || !made) { free(start); free(at); free(pos); free(m); free(made); return 0; }
+    for (uint32_t s = 0; s < p->ns; s++)
+        for (uint32_t i = 0; i < p->s[s].count; i++) {
+            const rz_fill *f = &p->fill[p->s[s].first + i];
+            start[f->f1 + 1]++;
+            start[f->f2 + 1]++;
+        }
     for (uint32_t w = 0; w < p->nwords; w++) start[w + 1] += start[w];
-    memcpy(at, start, ((size_t)p->nwords + 1) * sizeof *at);
-    for (uint32_t i = 0; i < p->nm; i++) { mate[at[p->m[i].a]++] = p->m[i].b; mate[at[p->m[i].b]++] = p->m[i].a; }
-    free(at);
-
-    /* the silhouette gives weight (the author): the one put together with
-       the most pairs is put together again first */
-    uint32_t *order = malloc(((size_t)p->ns + 1) * sizeof *order);
-    if (!order) { free(start); free(mate); return 0; }
-    for (uint32_t i = 0; i < p->ns; i++) order[i] = i;
-    sil_weights = p->s;
-    qsort(order, p->ns, sizeof *order, heavier);
+    memcpy(pos, start, ((size_t)p->nwords + 1) * sizeof *pos);
+    for (uint32_t s = 0; s < p->ns; s++)
+        for (uint32_t i = 0; i < p->s[s].count; i++) {
+            const rz_fill *f = &p->fill[p->s[s].first + i];
+            at[pos[f->f1]++] = (fill_at){ s, i, 0 };
+            at[pos[f->f2]++] = (fill_at){ s, i, 1 };
+        }
+    free(pos);
+    memcpy(m, p->m, (size_t)p->nm * sizeof *m);
+    qsort(m, p->nm, sizeof *m, stronger);
 
     uint32_t k = 0;
-    for (uint32_t o = 0; o < p->ns && k < cap; o++) {
-        uint32_t s = order[o];
-        const rz_fill *f = p->fill + p->s[s].first;
-        uint32_t nf = p->s[s].count, mine = k;
-        for (uint32_t i = 0; i < nf && k < cap; i++)
-            for (int side = 0; side < 2 && k < cap; side++) {
-                int32_t w = side ? f[i].f1 : f[i].f2;
-                for (uint32_t q = start[w]; q < start[w + 1] && k < cap; q++) {
-                    int32_t f1 = side ? mate[q] : f[i].f1, f2 = side ? f[i].f2 : mate[q];
-                    if (fill_said(f, nf, f1, f2)) continue;
-                    int dup = 0;
-                    for (uint32_t d = mine; d < k && !dup; d++) dup = out[d].f1 == f1 && out[d].f2 == f2;
-                    if (dup) continue;
-                    out[k].sil = s; out[k].f1 = f1; out[k].f2 = f2; out[k].from = w;
-                    k++;
-                }
+    for (uint32_t q = 0; q < p->nm && k < cap; q++)
+        for (int dir = 0; dir < 2 && k < cap; dir++) {
+            int32_t was = dir ? m[q].b : m[q].a, now = dir ? m[q].a : m[q].b;
+            for (uint32_t o = start[was]; o < start[was + 1] && k < cap; o++) {
+                const rz_silhouette *sl = &p->s[at[o].sil];
+                const rz_fill *f = p->fill + sl->first;
+                const rz_fill *here = &f[at[o].fill];
+                int32_t f1 = at[o].side ? here->f1 : now, f2 = at[o].side ? now : here->f2;
+                if (fill_said(f, sl->count, f1, f2)) continue;
+                uint64_t key = ((uint64_t)at[o].sil * 0x9E3779B97F4A7C15ull) ^
+                               ((uint64_t)(uint32_t)f1 << 32 | (uint32_t)f2);
+                if (!key) key = 1;
+                size_t h = (size_t)(key ^ (key >> 29)) & (hcap - 1);
+                while (made[h] && made[h] != key) h = (h + 1) & (hcap - 1);
+                if (made[h]) continue;
+                made[h] = key;
+                out[k].sil = at[o].sil; out[k].f1 = f1; out[k].f2 = f2;
+                out[k].from = was; out[k].forms = m[q].frames; out[k].hole = at[o].side;
+                k++;
             }
-    }
-    free(order);
-    free(start);
-    free(mate);
+        }
+    free(start); free(at); free(m); free(made);
     return k;
 }

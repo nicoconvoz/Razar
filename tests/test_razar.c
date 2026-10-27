@@ -4392,14 +4392,29 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
     CHECK(g_un > g_perro);
     CHECK(g_un > g_animal);
 
-    /* animal and mammal fill the same place beside the same dog: mates */
-    CHECK(mates_of(&p, animal, mamifero) >= 2);
+    /* animal and mammal fill the same place beside the same dog: mates. A form
+       counts once (the author: collect different forms, not the same one heard
+       more): their strength is the number of different silhouettes that make
+       them mates, however many partners or times each one did */
+    uint32_t forms = 0;
+    for (uint32_t i = 0; i < p.ns; i++) {
+        const rz_fill *f = p.fill + p.s[i].first;
+        int both = 0;
+        for (uint32_t a1 = 0; a1 < p.s[i].count && !both; a1++)
+            for (uint32_t b1 = 0; b1 < p.s[i].count && !both; b1++) {
+                if (f[a1].f1 == f[b1].f1 && f[a1].f2 == animal && f[b1].f2 == mamifero) both = 1;
+                if (f[a1].f2 == f[b1].f2 && f[a1].f1 == animal && f[b1].f1 == mamifero) both = 1;
+            }
+        forms += (uint32_t)both;
+    }
+    CHECK(forms >= 2);
+    CHECK_EQ_U((unsigned long long)mates_of(&p, animal, mamifero), forms);
     CHECK(mates_of(&p, perro, gato) >= 2);
     CHECK(mates_of(&p, perro, carne) == 0);
 
     /* put together again with other pieces: the horse is a mammal, and the
        mammal stands where the animal stands -- so "caballo es un animal",
-       never said, is put together. The heaviest silhouettes first. */
+       never said, is put together. */
     static rz_recomposed rc[8192];
     uint32_t nr = rz_paths_recompose(&p, rc, 8192);
     int horse = 0;
@@ -4412,10 +4427,18 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
             if (path[q] == caballo && path[q + 1] == es && path[q + 2] == un && path[q + 3] == animal) horse = 1;
     }
     CHECK(horse);
-    /* and the heaviest silhouette comes first */
+    /* and the mate that collected the most forms puts paths together first */
     int ordered = 1;
-    for (uint32_t i = 1; i < nr; i++) if (p.s[rc[i - 1].sil].fills < p.s[rc[i].sil].fills) ordered = 0;
+    for (uint32_t i = 1; i < nr; i++) if (rc[i - 1].forms < rc[i].forms) ordered = 0;
     CHECK(ordered);
+    CHECK(rc[0].forms > 0);
+    /* the mate went into the hole the replaced piece filled */
+    int holes_right = 1;
+    for (uint32_t i = 0; i < nr; i++) {
+        int32_t brought = rc[i].hole ? rc[i].f2 : rc[i].f1;
+        if (!mates_of(&p, brought, rc[i].from)) holes_right = 0;
+    }
+    CHECK(holes_right);
     (void)es;
     rz_paths_free(&p);
     rz_lexicon_free(&x);

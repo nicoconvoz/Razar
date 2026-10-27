@@ -48,16 +48,44 @@ Learning on the first half, judged on the second:
   of pairs; *el _ es un _* can never weigh like that.
 - **Glue and content by share** pick out rare words on the NT (*rechinar*,
   *hipocresía*): the share is noise where a piece is seen in few silhouettes.
-- **Putting together again loses to blind**: of 97,916 paths it built in words
-  the second half knows, the second half says 1.18 %; with the brought piece
-  swapped for another, 2.09 %. The paths it builds are glue (*"El , que"*).
+- **Putting together again** first measured 1.18 % against 2.09 % blind — but
+  **the bar lied**: the paths it built had to be new to the first half, and
+  the blind ones did not, so the blind were mostly common paths the second
+  half says again. Corrected below.
+
+## Collect different forms (D115, answered 2026-10-27)
+
+> It must not capture the same form because it hears it more times; it must
+> collect different forms. — the author
+
+What a silhouette weighs was the riddle: counted by the pairs that filled it,
+*_ , _* weighed thousands and *el _ es un _* could never weigh like that.
+The author's answer moves the weight off the silhouette entirely:
+
+- **A form counts once.** The strength of two mates is the number of
+  **different silhouettes** that make them mates — not how many partners or
+  times in one of them. Counted per partner, *animal*/*mamífero* had 947 in
+  the little world; as different forms, 524.
+- **The association that collected the most forms puts paths together
+  first**, wherever it stands.
+
+On the New Testament, with the bar made honest (the blind paths must be new
+to the first half too):
+
+| | Said in the second half |
+| --- | --- |
+| put together by mates | 2,790 of 143,001 — **1.95 %** |
+| blind, the brought piece swapped | 1,478 of 100,688 — **1.47 %** |
+
+1.33× over blind — the first reading of P51 on real text that beats chance.
+What it gets right is still glue: the strongest mates are *y* and *,*,
+because glue also collects many different forms (each fixed piece beside it
+makes a new one).
 
 ## Open
 
-- **D115** — what a silhouette weighs. Counting pairs crowns the emptiest
-  silhouette. The weight should count what the fixed pieces add: a
-  silhouette with more of the path fixed that is still put together with
-  many pairs says more (D50).
+- **D115** — answered: collect different forms (above). Open within it:
+  glue collects forms too, so the strongest mates are glue.
 - **D116** — glue as the share of fixed places is noise for rare pieces; it
   needs the same anecdote rule as everything else, or a measure of its own.
 - **D117** — closing marks taken from final letters in a small vocabulary
