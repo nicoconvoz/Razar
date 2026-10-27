@@ -646,6 +646,38 @@ void     rz_paths_free(rz_paths *p);
    hole = which hole the mate went into, forms = the forms the two mates collected */
 uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap);
 
+/* --- weaving meaning while reading (P52) ----------------------------------
+ *
+ * The author: the meaning of what is not structure is found by association
+ * across the parts of the document, WHILE reading it -- not one by one
+ * afterwards. As it meets a word it meets its context and its relations, and
+ * weaves its meaning; the search, and the heuristic a search needs, are saved.
+ * Searched afterwards, the order of the search crowned glue.
+ *
+ * One pass, left to right. A silhouette is born when it is put together with a
+ * second different pair (the anecdote rule). A word that fills a hole of a
+ * born one adds that place to its meaning. Two words that filled the same hole
+ * beside the same partner, in two different silhouettes, are associates.
+ *
+ * The bar is live: each time the word just read stands in a place it never
+ * stood in, were its associates there before it? Against a word picked blind
+ * from what was already read. Nothing in the bar is learned from it. */
+typedef struct {
+    int32_t  word, associate;        /* the word just read, the associate already there */
+    uint8_t  len;
+    int32_t  path[5];                /* the path it stands in, holes filled */
+} rz_foreseen;
+
+typedef struct {
+    uint32_t    structures, associates;  /* silhouettes born; pairs of associates */
+    uint64_t    events, foreseen;        /* new places for the word just read; foreseen */
+    uint64_t    blind_events, blind_foreseen;
+    rz_foreseen seen[64];                /* the last foreseen, to show (a ring) */
+    uint32_t    nseen;
+} rz_loom_report;
+
+int rz_loom_read(const rz_lexicon *x, rz_loom_report *out);
+
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 

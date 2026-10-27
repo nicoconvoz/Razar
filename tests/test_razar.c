@@ -4515,6 +4515,46 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
     rz_lexicon_free(&x);
 }
 
+/* --- weaving meaning while reading (P52) -------------------------------- */
+
+TEST(meaning_is_woven_while_reading)
+{
+    /* the little world of paths, and only at the end, said for the first
+       time: the horse is an animal. By then the horse has stood where the cat
+       stood, and the cat is an animal: the place was waiting for it */
+    static char t[220000];
+    size_t n = path_world(t, sizeof t, 3000);
+    for (int k = 0; k < 6; k++) {
+        int w = snprintf(t + n, sizeof t - n, "el caballo es un animal %s ", wb_join[k % 6]);
+        if (w > 0) n += (size_t)w;
+    }
+    rz_mind *m = world_mind(t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, (const unsigned char *)t, n);
+
+    rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(&x, &r), RZ_OK);
+    CHECK(r.structures > 0);
+    CHECK(r.events > 0 && r.blind_events > 0);
+    /* reading, the woven meaning foresees the new places better than a word
+       picked blind from what was read */
+    CHECK((double)r.foreseen / r.events > (double)r.blind_foreseen / r.blind_events);
+    /* reading "el caballo es un animal" for the first time, "animal" -- the
+       word just read -- was foreseen beside the horse: its associate
+       "mamífero" already stood there ("el caballo es un mamífero") */
+    int32_t caballo = lego_of(&x, "caballo"), animal = lego_of(&x, "animal");
+    int32_t mamifero = lego_of(&x, "mamífero");
+    int horse = 0;
+    for (uint32_t i = 0; i < r.nseen; i++) {
+        const rz_foreseen *e = &r.seen[i];
+        if (e->word != animal || e->associate != mamifero) continue;
+        for (int q = 0; q < e->len; q++) if (e->path[q] == caballo) horse = 1;
+    }
+    CHECK(horse);
+    rz_lexicon_free(&x);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4746,6 +4786,7 @@ int main(void)
     RUN(understanding_is_walking_what_was_said);
     RUN(the_child_asks_about_every_word);
     RUN(a_path_is_taken_apart_and_put_together_with_other_pieces);
+    RUN(meaning_is_woven_while_reading);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

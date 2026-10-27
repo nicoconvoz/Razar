@@ -3745,3 +3745,221 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
     free(start); free(at); free(m); free(made);
     return k;
 }
+
+/* ===================== weaving meaning while reading (P52) ================= */
+
+typedef struct { uint64_t key; int32_t f1, f2; uint8_t born; } loom_sil;
+typedef struct { uint64_t key; int32_t head; } loom_group;
+typedef struct { int32_t word, next; } loom_member;
+typedef struct { uint64_t key; uint64_t last; uint32_t count; } loom_pair;
+
+typedef struct {
+    loom_sil    *sil;    size_t sil_cap;
+    loom_group  *grp;    size_t grp_cap, grp_n;
+    loom_member *mem;    size_t mem_n, mem_cap;
+    loom_pair   *pair;   size_t pair_cap, pair_n;
+} loom;
+
+static uint64_t mix64(uint64_t v)
+{
+    v ^= v >> 33; v *= 0xff51afd7ed558ccdull; v ^= v >> 33; v *= 0xc4ceb9fe1a85ec53ull; v ^= v >> 33;
+    return v ? v : 1;
+}
+
+static loom_sil *loom_sil_at(loom *l, uint64_t key)
+{
+    size_t s = (size_t)key & (l->sil_cap - 1);
+    while (l->sil[s].key && l->sil[s].key != key) s = (s + 1) & (l->sil_cap - 1);
+    return &l->sil[s];
+}
+
+static int loom_grow_groups(loom *l)
+{
+    size_t cap = l->grp_cap * 2;
+    loom_group *g = calloc(cap, sizeof *g);
+    if (!g) return 0;
+    for (size_t i = 0; i < l->grp_cap; i++) {
+        if (!l->grp[i].key) continue;
+        size_t s = (size_t)l->grp[i].key & (cap - 1);
+        while (g[s].key) s = (s + 1) & (cap - 1);
+        g[s] = l->grp[i];
+    }
+    free(l->grp);
+    l->grp = g;
+    l->grp_cap = cap;
+    return 1;
+}
+
+static loom_group *loom_group_at(loom *l, uint64_t key)
+{
+    if ((l->grp_n + 1) * 2 > l->grp_cap && !loom_grow_groups(l)) return NULL;
+    size_t s = (size_t)key & (l->grp_cap - 1);
+    while (l->grp[s].key && l->grp[s].key != key) s = (s + 1) & (l->grp_cap - 1);
+    if (!l->grp[s].key) { l->grp[s].key = key; l->grp[s].head = -1; l->grp_n++; }
+    return &l->grp[s];
+}
+
+static int loom_grow_pairs(loom *l)
+{
+    size_t cap = l->pair_cap * 2;
+    loom_pair *p = calloc(cap, sizeof *p);
+    if (!p) return 0;
+    for (size_t i = 0; i < l->pair_cap; i++) {
+        if (!l->pair[i].key) continue;
+        size_t s = (size_t)l->pair[i].key & (cap - 1);
+        while (p[s].key) s = (s + 1) & (cap - 1);
+        p[s] = l->pair[i];
+    }
+    free(l->pair);
+    l->pair = p;
+    l->pair_cap = cap;
+    return 1;
+}
+
+static uint64_t pair_key(int32_t a, int32_t b)
+{
+    if (a > b) { int32_t c = a; a = b; b = c; }
+    return mix64(((uint64_t)(uint32_t)a << 32) | (uint32_t)b);
+}
+
+static uint32_t loom_shared(const loom *l, int32_t a, int32_t b)
+{
+    uint64_t key = pair_key(a, b);
+    size_t s = (size_t)key & (l->pair_cap - 1);
+    while (l->pair[s].key) {
+        if (l->pair[s].key == key) return l->pair[s].count;
+        s = (s + 1) & (l->pair_cap - 1);
+    }
+    return 0;
+}
+
+/* a and b filled the same place beside the same partner: once per silhouette,
+   however many partners or times (a form counts once) */
+static void loom_associate(loom *l, int32_t a, int32_t b, uint64_t sil)
+{
+    if (a == b) return;
+    if ((l->pair_n + 1) * 2 > l->pair_cap && !loom_grow_pairs(l)) return;
+    uint64_t key = pair_key(a, b);
+    size_t s = (size_t)key & (l->pair_cap - 1);
+    while (l->pair[s].key && l->pair[s].key != key) s = (s + 1) & (l->pair_cap - 1);
+    if (!l->pair[s].key) { l->pair[s].key = key; l->pair_n++; }
+    if (l->pair[s].last == sil) return;
+    l->pair[s].last = sil;
+    l->pair[s].count++;
+}
+
+static int loom_has(const loom *l, const loom_group *g, int32_t w)
+{
+    for (int32_t m = g->head; m >= 0; m = l->mem[m].next) if (l->mem[m].word == w) return 1;
+    return 0;
+}
+
+/* an associate of w already standing in this place: two silhouettes shared */
+static int32_t loom_foresees(const loom *l, const loom_group *g, int32_t w)
+{
+    for (int32_t m = g->head; m >= 0; m = l->mem[m].next)
+        if (l->mem[m].word != w && loom_shared(l, w, l->mem[m].word) >= 2) return l->mem[m].word;
+    return -1;
+}
+
+/* w takes its place in the group; returns 1 if the place was new to it */
+static int loom_join(loom *l, loom_group *g, int32_t w, uint64_t sil)
+{
+    if (loom_has(l, g, w)) return 0;
+    if (l->mem_n == l->mem_cap) {
+        size_t cap = l->mem_cap * 2;
+        loom_member *m = realloc(l->mem, cap * sizeof *m);
+        if (!m) return 0;
+        l->mem = m;
+        l->mem_cap = cap;
+    }
+    for (int32_t m = g->head; m >= 0; m = l->mem[m].next) loom_associate(l, w, l->mem[m].word, sil);
+    l->mem[l->mem_n].word = w;
+    l->mem[l->mem_n].next = g->head;
+    g->head = (int32_t)l->mem_n++;
+    return 1;
+}
+
+static uint64_t group_key(uint64_t sil, int side, int32_t partner)
+{
+    return mix64(sil ^ mix64(((uint64_t)(uint32_t)partner << 1) | (uint64_t)side));
+}
+
+int rz_loom_read(const rz_lexicon *x, rz_loom_report *out)
+{
+    memset(out, 0, sizeof *out);
+    loom l;
+    memset(&l, 0, sizeof l);
+    l.sil_cap = 1024;
+    while (l.sil_cap < (size_t)x->nseq * 40) l.sil_cap <<= 1;
+    l.grp_cap = 1024;
+    l.pair_cap = 1024;
+    l.mem_cap = 1024;
+    l.sil = calloc(l.sil_cap, sizeof *l.sil);
+    l.grp = calloc(l.grp_cap, sizeof *l.grp);
+    l.pair = calloc(l.pair_cap, sizeof *l.pair);
+    l.mem = malloc(l.mem_cap * sizeof *l.mem);
+    if (!l.sil || !l.grp || !l.pair || !l.mem) { free(l.sil); free(l.grp); free(l.pair); free(l.mem); return RZ_ERR_IO; }   /* out of memory: nothing was read */
+
+    uint64_t rng = 0x9E3779B97F4A7C15ull;
+    for (uint32_t i = 0; i < x->nseq; i++) {
+        /* every run that ends with the piece just read */
+        for (int len = RUN_MIN; len <= RUN_MAX && (uint32_t)len <= i + 1; len++) {
+            const int32_t *run = x->seq + i + 1 - len;
+            int broken = 0;
+            for (int q = 0; q < len; q++) if (run[q] < 0) broken = 1;
+            if (broken) break;
+            for (int h1 = 0; h1 < len; h1++)
+                for (int h2 = h1 + 1; h2 < len; h2++) {
+                    uint64_t key = mix64(path_key(run, len, h1, h2));
+                    int32_t f1 = run[h1], f2 = run[h2];
+                    loom_sil *sl = loom_sil_at(&l, key);
+                    if (!sl->key) { sl->key = key; sl->f1 = f1; sl->f2 = f2; continue; }
+                    if (!sl->born) {
+                        if (sl->f1 == f1 && sl->f2 == f2) continue;
+                        /* born: put together with a second different pair. Its
+                           first two pairs found it; no place existed before */
+                        sl->born = 1;
+                        out->structures++;
+                        loom_group *g;
+                        if ((g = loom_group_at(&l, group_key(key, 0, sl->f2)))) loom_join(&l, g, sl->f1, key);
+                        if ((g = loom_group_at(&l, group_key(key, 1, sl->f1)))) loom_join(&l, g, sl->f2, key);
+                        if ((g = loom_group_at(&l, group_key(key, 0, f2)))) loom_join(&l, g, f1, key);
+                        if ((g = loom_group_at(&l, group_key(key, 1, f1)))) loom_join(&l, g, f2, key);
+                        continue;
+                    }
+                    /* born: the word in the first hole joins beside its partner */
+                    loom_group *g1 = loom_group_at(&l, group_key(key, 0, f2));
+                    if (g1) loom_join(&l, g1, f1, key);
+                    loom_group *g2 = loom_group_at(&l, group_key(key, 1, f1));
+                    if (!g2) continue;
+                    /* the word just read, in the last hole: the live bar */
+                    if (h2 == len - 1 && !loom_has(&l, g2, f2)) {
+                        out->events++;
+                        int32_t a = loom_foresees(&l, g2, f2);
+                        if (a >= 0) {
+                            out->foreseen++;
+                            {
+                                /* the last ones: by then it has read the most */
+                                rz_foreseen *e = &out->seen[out->foreseen % 64];
+                                if (out->nseen < 64) out->nseen++;
+                                e->word = f2; e->associate = a; e->len = (uint8_t)len;
+                                for (int q = 0; q < 5; q++) e->path[q] = q < len ? run[q] : -1;
+                            }
+                        }
+                        /* blind: a word picked from what was already read */
+                        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+                        int32_t b = x->seq[rng % (i + 1)];
+                        if (b >= 0 && b != f2 && !loom_has(&l, g2, b)) {
+                            out->blind_events++;
+                            if (loom_foresees(&l, g2, b) >= 0) out->blind_foreseen++;
+                        }
+                    }
+                    loom_join(&l, g2, f2, key);
+                }
+        }
+    }
+    for (size_t s = 0; s < l.pair_cap; s++) if (l.pair[s].key && l.pair[s].count >= 2) out->associates++;
+    free(l.sil); free(l.grp); free(l.pair); free(l.mem);
+    return RZ_OK;
+}

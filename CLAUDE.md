@@ -132,6 +132,7 @@ The user owns this switch. Do not enable or disable it on their behalf.
 | Tunes of the path, and meanings nobody wrote | `./razar dominoes [path] [relation]` |
 | Ask every word; the kinds its answers make | `./razar asks [path]` |
 | Silhouettes of paths, taken apart and put together | `./razar paths [path]` |
+| Weave meaning while reading, and what it foresees | `./razar loom [path]` |
 | See it working | `python tools/live.py` then http://localhost:7331 |
 | See a snapshot | [docs/vitals.html](docs/vitals.html) — paste `razar dash` output into it |
 

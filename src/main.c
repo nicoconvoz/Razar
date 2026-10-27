@@ -2661,6 +2661,55 @@ static int cmd_paths(int argc, char **argv)
     return 0;
 }
 
+/* --- weaving meaning while reading (P52) ---------------------------------- */
+
+static int cmd_loom(int argc, char **argv)
+{
+    const char *path = (argc > 0) ? argv[0] : FEED_DIR "/nuevo-testamento.txt";
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "cannot read %s\n", path); return 1; }
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char *t = malloc(size > 0 ? (size_t)size : 1);
+    size_t n = t ? fread(t, 1, (size_t)size, f) : 0;
+    fclose(f);
+    n = continuous(t, n);
+    rz_mind *m = malloc(sizeof *m);
+    if (!m || !t) { free(m); free(t); return 1; }
+    rz_init(m);
+    for (int pass = 0; pass < 2; pass++) rz_ingest(m, t, n);
+    rz_lexicon x;
+    rz_lexicon_init(&x);
+    rz_lexicon_read_words(&x, m, t, n);
+
+    static rz_loom_report r;
+    if (rz_loom_read(&x, &r) != RZ_OK) { fprintf(stderr, "out of memory\n"); rz_lexicon_free(&x); rz_free(m); free(m); free(t); return 1; }
+    printf("read once, left to right: %u words; %u silhouettes born; %u pairs of associates\n\n",
+           x.nseq, r.structures, r.associates);
+    printf("the word just read, in a place it never stood in: %llu times\n", (unsigned long long)r.events);
+    printf("  its associates were already there (foreseen): %llu (%.2f%%)\n",
+           (unsigned long long)r.foreseen, r.events ? 100.0 * r.foreseen / r.events : 0.0);
+    printf("  blind, a word picked from what was read: %llu of %llu (%.2f%%)\n\n",
+           (unsigned long long)r.blind_foreseen, (unsigned long long)r.blind_events,
+           r.blind_events ? 100.0 * r.blind_foreseen / r.blind_events : 0.0);
+    printf("the last foreseen:\n");
+    char a1[80], a2[80], w[80];
+    for (uint32_t i = 0; i < r.nseen && i < 16; i++) {
+        const rz_foreseen *e = &r.seen[(r.foreseen - 1 - i) % 64];
+        printf("  \"");
+        for (int q = 0; q < e->len; q++) { say_lego(&x, e->path[q], w, sizeof w); printf("%s%.*s", q ? " " : "", (int)strlen(w) - 2, w + 1); }
+        say_lego(&x, e->word, a1, sizeof a1);
+        say_lego(&x, e->associate, a2, sizeof a2);
+        printf("\"   %s was expected: %s stood there\n", a1, a2);
+    }
+    rz_lexicon_free(&x);
+    rz_free(m);
+    free(m);
+    free(t);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2679,6 +2728,7 @@ int main(int argc, char **argv)
         printf("  razar legos [path] [kinds]            its legos, their kinds, and a game\n");
         printf("  razar asks [path]                     ask every word; the kinds its answers make\n");
         printf("  razar paths [path]                    silhouettes of paths, taken apart and put together\n");
+        printf("  razar loom [path]                     weave meaning while reading, and see what it foresees\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2705,6 +2755,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "dominoes"))     return cmd_dominoes(argc - 2, argv + 2);
     if (!strcmp(argv[1], "asks"))         return cmd_asks(argc - 2, argv + 2);
     if (!strcmp(argv[1], "paths"))        return cmd_paths(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "loom"))         return cmd_loom(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;
