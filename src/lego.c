@@ -3467,7 +3467,7 @@ static int variant_order(const void *pa, const void *pb)
 
 /* silhouettes of the same shape, alike but for one fixed piece, where the two
    pieces are mates: one sticker. Returns the joins made. */
-static uint32_t join_variants(rz_paths *p, uint32_t *par)
+static uint32_t join_variants(rz_paths *p, uint32_t *par, int32_t *keep)
 {
     uint32_t *start = calloc((size_t)p->nwords + 1, sizeof *start);
     uint32_t *pos = malloc(((size_t)p->nwords + 1) * sizeof *pos);
@@ -3512,7 +3512,23 @@ static uint32_t join_variants(rz_paths *p, uint32_t *par)
                 while (lo < hi) { size_t mid = (lo + hi) / 2; if (v[mid].piece < mate[q]) lo = mid + 1; else hi = mid; }
                 if (lo < e && v[lo].piece == mate[q]) {
                     uint32_t ra = uf_find(par, v[a].sil), rb = uf_find(par, v[lo].sil);
-                    if (ra != rb) { par[ra] = rb; joined++; }
+                    if (ra == rb) continue;
+                    /* the structure is what every variant keeps (the author:
+                       first the meaning of the structure, then what it
+                       carries). Two stickers join only if they still keep a
+                       piece in the same place; joined one swap at a time, a
+                       chain drifted from "_ , que _" to "_ de aceite _" and
+                       one sticker swallowed 10,004 silhouettes */
+                    int32_t both[5];
+                    int any = 0;
+                    for (int z = 0; z < 5; z++) {
+                        both[z] = keep[(size_t)ra * 5 + z] == keep[(size_t)rb * 5 + z] ? keep[(size_t)ra * 5 + z] : -1;
+                        any |= both[z] >= 0;
+                    }
+                    if (!any) continue;
+                    par[ra] = rb;
+                    memcpy(keep + (size_t)rb * 5, both, sizeof both);
+                    joined++;
                 }
             }
         }
@@ -3618,12 +3634,16 @@ uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
     uint32_t *par = malloc(((size_t)p->ns + 1) * sizeof *par);
     uint32_t *order = malloc(((size_t)p->ns + 1) * sizeof *order);
     uint32_t *id = malloc(((size_t)p->ns + 1) * sizeof *id);
-    if (t && tmp && par && order && id) {
-        for (uint32_t i = 0; i < p->ns; i++) { par[i] = i; order[i] = i; p->s[i].sticker = i; }
+    int32_t *keep = malloc(((size_t)p->ns + 1) * 5 * sizeof *keep);
+    if (t && tmp && par && order && id && keep) {
+        for (uint32_t i = 0; i < p->ns; i++) {
+            par[i] = i; order[i] = i; p->s[i].sticker = i;
+            memcpy(keep + (size_t)i * 5, p->s[i].word, 5 * sizeof *keep);
+        }
         p->nsticker = p->ns;
         count_mates(p, order, t, tmp);
         /* until a round joins nothing */
-        while (join_variants(p, par)) {
+        while (join_variants(p, par, keep)) {
             for (uint32_t i = 0; i < p->ns; i++) id[i] = UINT32_MAX;
             p->nsticker = 0;
             for (uint32_t i = 0; i < p->ns; i++) {
@@ -3637,7 +3657,7 @@ uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
             count_mates(p, order, t, tmp);
         }
     }
-    free(t); free(tmp); free(par); free(order); free(id);
+    free(t); free(tmp); free(par); free(order); free(id); free(keep);
     return p->ns;
 }
 

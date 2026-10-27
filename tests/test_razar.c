@@ -4424,8 +4424,28 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
     }
     CHECK(ani_sil >= 0 && mam_sil >= 0);
     if (ani_sil >= 0 && mam_sil >= 0) CHECK_EQ_U(p.s[ani_sil].sticker, p.s[mam_sil].sticker);
+    /* the structure is what every variant keeps (the author: first the
+       meaning of the structure, then what it carries): every sticker keeps at
+       least one fixed piece in the same place in all its variants -- a chain of
+       one-piece swaps cannot drift into another song */
+    int32_t *keep = malloc((size_t)p.nsticker * 5 * sizeof *keep);
+    uint8_t *len_of = calloc(p.nsticker, 1);
+    for (uint32_t i = 0; i < p.ns; i++) {
+        const rz_silhouette *q = &p.s[i];
+        int32_t *k5 = keep + (size_t)q->sticker * 5;
+        if (!len_of[q->sticker]) { len_of[q->sticker] = q->len; for (int z = 0; z < 5; z++) k5[z] = q->word[z]; continue; }
+        for (int z = 0; z < 5; z++) if (k5[z] != q->word[z]) k5[z] = -1;
+    }
+    int structured = 1;
+    for (uint32_t st = 0; st < p.nsticker; st++) {
+        int any = 0;
+        for (int z = 0; z < 5; z++) any |= keep[(size_t)st * 5 + z] >= 0;
+        if (!any) structured = 0;
+    }
+    CHECK(structured);
     /* the fixed point: no two silhouettes of different stickers differ in
-       one fixed piece by a pair of mates */
+       one fixed piece by a pair of mates, where joining them would still keep
+       a structure */
     int settled = 1;
     for (uint32_t i = 0; i < p.ns && settled; i++)
         for (uint32_t j = i + 1; j < p.ns && settled; j++) {
@@ -4436,9 +4456,14 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
                 if ((a->word[q] < 0) != (b->word[q] < 0)) { diff = 99; break; }
                 if (a->word[q] != b->word[q]) { diff++; if (!mates_of(&p, a->word[q], b->word[q])) by_mates = 0; }
             }
-            if (diff == 1 && by_mates) settled = 0;
+            int common = 0;
+            for (int z = 0; z < 5; z++)
+                common |= keep[(size_t)a->sticker * 5 + z] >= 0 &&
+                          keep[(size_t)a->sticker * 5 + z] == keep[(size_t)b->sticker * 5 + z];
+            if (diff == 1 && by_mates && common) settled = 0;
         }
     CHECK(settled);
+    free(keep); free(len_of);
     /* the strength of two mates: the different stickers that make them mates */
     uint32_t stickers = 0;
     uint8_t *had = calloc((size_t)p.nsticker + p.ns + 1, 1);

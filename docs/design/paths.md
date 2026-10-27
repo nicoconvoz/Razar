@@ -103,6 +103,36 @@ forms: one sticker sung in 3,519 keys.
   strongest pair (then *,*/*.* 293, *,*/*;* 202). The bar does not move
   (1.95 % against 1.47 %): the 200,000 paths it builds still all come from the
   strongest glue pairs.
+- **Chained variants melted the stickers into blobs**: the two largest held
+  10,236 and 10,004 silhouettes — *_ , que _* in the same sticker as
+  *_ de aceite _*. Each swap was a fine modulation; their sum was another song.
+
+### The structure is a meaning of its own (the author's answer)
+
+> We must tell connectors from meanings, structure from meanings. The
+> structure is a meaning in itself: it says something about what it carries
+> inside; the meanings outside it give sense to the meaning of the structure.
+> First recognise the meaning of the structure, then the meaning of what it
+> carries. It is the song played by different instruments: we cannot confuse
+> a drum with a piano. — the author
+
+Telling connectors by their share of fixed places fails on the NT: a frequent
+piece stands fixed in many silhouettes just for being frequent — *es* 0.44 and
+*hombre* 0.39 nearly tie, and the cut the text makes calls *Dios*, *casa* and
+*pan* connectors. So no piece is classified beforehand. **The structure of a
+sticker is what every one of its variants keeps in the same place**, and two
+stickers join only if, joined, they still keep a piece in common. A chain can
+no longer drift: to reach *_ de aceite _* from *_ , que _* nothing would be
+kept.
+
+- **New Testament**: 31,600 stickers; the largest holds 701 silhouettes, not
+  10,236. *_ , que _* now sits in a sticker of 113 variants, all *_ X que _*:
+  *necesario que*, *sabían que*, *impedir que*. A sticker kept by *eres*:
+  *eres _ Hijo _*, *eres _ Mesías _*, *eres _ de _* — "you are the Son, the
+  Messiah".
+- **The bar does not move** (1.95 % against 1.47 %): the strongest mates are
+  still glue — *,*/*y* now share 2,333 stickers, because glue really does stand
+  in many different structures.
 - **Not built yet: the sticker he cannot get.** Glue is everywhere, so it
   really is in many different stickers; what the collector wants is the one
   missing from his album. That is the next riddle.
