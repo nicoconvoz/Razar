@@ -4408,7 +4408,53 @@ TEST(a_path_is_taken_apart_and_put_together_with_other_pieces)
         forms += (uint32_t)both;
     }
     CHECK(forms >= 2);
-    CHECK_EQ_U((unsigned long long)mates_of(&p, animal, mamifero), forms);
+    /* and a form is a sticker, not a silhouette: two silhouettes that differ
+       only where their pieces are mates are variants of one sticker --
+       "_ es un animal _" and "_ es un mamífero _" -- modulations of the same song
+       (the author: the collector keeps one, and does not count its variants
+       as other stickers). Discovered, never declared: the variants come from
+       the mates, and the mates from the stickers, until nothing joins */
+    CHECK(p.nsticker > 0 && p.nsticker < p.ns);
+    int32_t mam_sil = -1, ani_sil = -1;
+    for (uint32_t i = 0; i < p.ns; i++) {
+        const rz_silhouette *q = &p.s[i];
+        if (q->len != 5 || q->word[0] >= 0 || q->word[1] != es || q->word[2] != un || q->word[4] >= 0) continue;
+        if (q->word[3] == animal) ani_sil = (int32_t)i;
+        if (q->word[3] == mamifero) mam_sil = (int32_t)i;
+    }
+    CHECK(ani_sil >= 0 && mam_sil >= 0);
+    if (ani_sil >= 0 && mam_sil >= 0) CHECK_EQ_U(p.s[ani_sil].sticker, p.s[mam_sil].sticker);
+    /* the fixed point: no two silhouettes of different stickers differ in
+       one fixed piece by a pair of mates */
+    int settled = 1;
+    for (uint32_t i = 0; i < p.ns && settled; i++)
+        for (uint32_t j = i + 1; j < p.ns && settled; j++) {
+            const rz_silhouette *a = &p.s[i], *b = &p.s[j];
+            if (a->sticker == b->sticker || a->len != b->len) continue;
+            int diff = 0, by_mates = 1;
+            for (int q = 0; q < a->len; q++) {
+                if ((a->word[q] < 0) != (b->word[q] < 0)) { diff = 99; break; }
+                if (a->word[q] != b->word[q]) { diff++; if (!mates_of(&p, a->word[q], b->word[q])) by_mates = 0; }
+            }
+            if (diff == 1 && by_mates) settled = 0;
+        }
+    CHECK(settled);
+    /* the strength of two mates: the different stickers that make them mates */
+    uint32_t stickers = 0;
+    uint8_t *had = calloc((size_t)p.nsticker + p.ns + 1, 1);
+    for (uint32_t i = 0; i < p.ns; i++) {
+        const rz_fill *f = p.fill + p.s[i].first;
+        int both = 0;
+        for (uint32_t a1 = 0; a1 < p.s[i].count && !both; a1++)
+            for (uint32_t b1 = 0; b1 < p.s[i].count && !both; b1++) {
+                if (f[a1].f1 == f[b1].f1 && f[a1].f2 == animal && f[b1].f2 == mamifero) both = 1;
+                if (f[a1].f2 == f[b1].f2 && f[a1].f1 == animal && f[b1].f1 == mamifero) both = 1;
+            }
+        if (both && !had[p.s[i].sticker]) { had[p.s[i].sticker] = 1; stickers++; }
+    }
+    free(had);
+    CHECK(stickers >= 2 && stickers < forms);
+    CHECK_EQ_U((unsigned long long)mates_of(&p, animal, mamifero), stickers);
     CHECK(mates_of(&p, perro, gato) >= 2);
     CHECK(mates_of(&p, perro, carne) == 0);
 

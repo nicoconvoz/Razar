@@ -3398,6 +3398,130 @@ static void mates_in(const rz_fill *f, uint32_t n, int side, mate_slot *t, uint3
     }
 }
 
+
+/* --- stickers: silhouettes joined by their variants ------------------------
+ *
+ * The author: a collector keeps one of each sticker -- a repeated one is no
+ * use -- and goes for the new ones; inside each sticker are its variants,
+ * modulations of the same song, not another song. Counted as silhouettes,
+ * "_ , que", "_ , por", "_ , no"... were 3,519 forms for the mates "y" and ",":
+ * one sticker sung in 3,519 keys.
+ *
+ * Nothing says what a variant is. Two silhouettes of the same shape that
+ * differ in one fixed piece are variants when those two pieces are mates --
+ * and mates are counted by stickers. So it turns: mates join silhouettes into
+ * stickers, stickers count the mates again, until a round joins nothing. Joins
+ * are never undone, so it ends. The only number is the anecdote rule (mates
+ * met in two stickers), the same as everywhere. */
+
+static uint32_t uf_find(uint32_t *par, uint32_t a)
+{
+    while (par[a] != a) { par[a] = par[par[a]]; a = par[a]; }
+    return a;
+}
+
+static const rz_silhouette *sticker_of;
+
+static int by_sticker(const void *pa, const void *pb)
+{
+    uint32_t a = *(const uint32_t *)pa, b = *(const uint32_t *)pb;
+    if (sticker_of[a].sticker != sticker_of[b].sticker) return sticker_of[a].sticker < sticker_of[b].sticker ? -1 : 1;
+    return (a > b) - (a < b);
+}
+
+/* the mates, counted once per sticker: silhouettes visited sticker by sticker */
+static void count_mates(rz_paths *p, const uint32_t *order, mate_slot *t, rz_fill *tmp)
+{
+    memset(t, 0, MATE_SLOTS * sizeof *t);
+    free(p->m);
+    p->m = NULL;
+    p->nm = 0;
+    uint32_t used = 0, stamp = 0, last = UINT32_MAX;
+    for (uint32_t o = 0; o < p->ns; o++) {
+        uint32_t i = order[o];
+        if (p->s[i].sticker != last) { stamp++; last = p->s[i].sticker; }
+        const rz_fill *f = p->fill + p->s[i].first;
+        mates_in(f, p->s[i].count, 0, t, &used, &stamp, tmp);
+        mates_in(f, p->s[i].count, 1, t, &used, &stamp, tmp);
+    }
+    uint32_t k = 0;
+    for (uint32_t q = 0; q < MATE_SLOTS; q++) if (t[q].frames >= 2) k++;
+    p->m = malloc((k + 1) * sizeof *p->m);
+    if (!p->m) return;
+    for (uint32_t q = 0; q < MATE_SLOTS; q++)
+        if (t[q].frames >= 2) {
+            p->m[p->nm].a = t[q].a; p->m[p->nm].b = t[q].b; p->m[p->nm].frames = t[q].frames;
+            p->nm++;
+        }
+}
+
+typedef struct { uint64_t key; int32_t piece; uint32_t sil; } variant_at;
+
+static int variant_order(const void *pa, const void *pb)
+{
+    const variant_at *a = pa, *b = pb;
+    if (a->key != b->key) return a->key < b->key ? -1 : 1;
+    if (a->piece != b->piece) return a->piece < b->piece ? -1 : 1;
+    return (a->sil > b->sil) - (a->sil < b->sil);
+}
+
+/* silhouettes of the same shape, alike but for one fixed piece, where the two
+   pieces are mates: one sticker. Returns the joins made. */
+static uint32_t join_variants(rz_paths *p, uint32_t *par)
+{
+    uint32_t *start = calloc((size_t)p->nwords + 1, sizeof *start);
+    uint32_t *pos = malloc(((size_t)p->nwords + 1) * sizeof *pos);
+    int32_t *mate = malloc(((size_t)p->nm * 2 + 1) * sizeof *mate);
+    size_t ne = 0;
+    for (uint32_t i = 0; i < p->ns; i++)
+        for (int q = 0; q < p->s[i].len; q++) ne += p->s[i].word[q] >= 0;
+    variant_at *v = malloc((ne + 1) * sizeof *v);
+    if (!start || !pos || !mate || !v) { free(start); free(pos); free(mate); free(v); return 0; }
+    for (uint32_t i = 0; i < p->nm; i++) { start[p->m[i].a + 1]++; start[p->m[i].b + 1]++; }
+    for (uint32_t w = 0; w < p->nwords; w++) start[w + 1] += start[w];
+    memcpy(pos, start, ((size_t)p->nwords + 1) * sizeof *pos);
+    for (uint32_t i = 0; i < p->nm; i++) { mate[pos[p->m[i].a]++] = p->m[i].b; mate[pos[p->m[i].b]++] = p->m[i].a; }
+    free(pos);
+
+    /* every silhouette, once per fixed piece, keyed by everything but that piece */
+    size_t k = 0;
+    for (uint32_t i = 0; i < p->ns; i++) {
+        const rz_silhouette *sl = &p->s[i];
+        for (int q = 0; q < sl->len; q++) {
+            if (sl->word[q] < 0) continue;
+            uint64_t h = 1469598103934665603ull ^ (uint64_t)(sl->len * 8 + q);
+            for (int z = 0; z < sl->len; z++) {
+                uint64_t w = z == q ? 0xFFFFFFFEull : sl->word[z] < 0 ? 0xFFFFFFFFull : (uint32_t)sl->word[z];
+                h ^= w; h *= 1099511628211ull; h ^= h >> 31;
+            }
+            v[k].key = h; v[k].piece = sl->word[q]; v[k].sil = i;
+            k++;
+        }
+    }
+    qsort(v, k, sizeof *v, variant_order);
+
+    uint32_t joined = 0;
+    for (size_t g = 0; g < k; ) {
+        size_t e = g;
+        while (e < k && v[e].key == v[g].key) e++;
+        for (size_t a = g; a < e; a++) {
+            int32_t w = v[a].piece;
+            for (uint32_t q = start[w]; q < start[w + 1]; q++) {
+                /* is the mate standing in this place, in a silhouette alike? */
+                size_t lo = g, hi = e;
+                while (lo < hi) { size_t mid = (lo + hi) / 2; if (v[mid].piece < mate[q]) lo = mid + 1; else hi = mid; }
+                if (lo < e && v[lo].piece == mate[q]) {
+                    uint32_t ra = uf_find(par, v[a].sil), rb = uf_find(par, v[lo].sil);
+                    if (ra != rb) { par[ra] = rb; joined++; }
+                }
+            }
+        }
+        g = e;
+    }
+    free(start); free(mate); free(v);
+    return joined;
+}
+
 uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
 {
     memset(p, 0, sizeof *p);
@@ -3487,33 +3611,33 @@ uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p)
     free(seen);
     free(held);
 
-    /* mates: pieces that filled the same hole beside the same piece */
+    /* mates: pieces that filled the same hole beside the same piece, counted
+       once per sticker; at first every silhouette is its own sticker */
     mate_slot *t = calloc(MATE_SLOTS, sizeof *t);
     rz_fill *tmp = malloc((p->nfill + 1) * sizeof *tmp);
-    if (t && tmp) {
-        uint32_t used = 0, stamp = 0;
-        for (uint32_t i = 0; i < p->ns; i++) {
-            const rz_fill *f = p->fill + p->s[i].first;
-            /* one stamp per silhouette: a form counts once, however many
-               partners or times made the two mates in it (the author:
-               collect different forms, not the same one heard more). Counted
-               per partner, el _ , _ gave glue thousands of frames */
-            stamp++;
-            mates_in(f, p->s[i].count, 0, t, &used, &stamp, tmp);
-            mates_in(f, p->s[i].count, 1, t, &used, &stamp, tmp);
+    uint32_t *par = malloc(((size_t)p->ns + 1) * sizeof *par);
+    uint32_t *order = malloc(((size_t)p->ns + 1) * sizeof *order);
+    uint32_t *id = malloc(((size_t)p->ns + 1) * sizeof *id);
+    if (t && tmp && par && order && id) {
+        for (uint32_t i = 0; i < p->ns; i++) { par[i] = i; order[i] = i; p->s[i].sticker = i; }
+        p->nsticker = p->ns;
+        count_mates(p, order, t, tmp);
+        /* until a round joins nothing */
+        while (join_variants(p, par)) {
+            for (uint32_t i = 0; i < p->ns; i++) id[i] = UINT32_MAX;
+            p->nsticker = 0;
+            for (uint32_t i = 0; i < p->ns; i++) {
+                uint32_t r = uf_find(par, i);
+                if (id[r] == UINT32_MAX) id[r] = p->nsticker++;
+                p->s[i].sticker = id[r];
+            }
+            for (uint32_t i = 0; i < p->ns; i++) order[i] = i;
+            sticker_of = p->s;
+            qsort(order, p->ns, sizeof *order, by_sticker);
+            count_mates(p, order, t, tmp);
         }
-        uint32_t k = 0;
-        for (uint32_t s = 0; s < MATE_SLOTS; s++) if (t[s].frames >= 2) k++;
-        p->m = malloc((k + 1) * sizeof *p->m);
-        if (p->m)
-            for (uint32_t s = 0; s < MATE_SLOTS; s++)
-                if (t[s].frames >= 2) {
-                    p->m[p->nm].a = t[s].a; p->m[p->nm].b = t[s].b; p->m[p->nm].frames = t[s].frames;
-                    p->nm++;
-                }
     }
-    free(t);
-    free(tmp);
+    free(t); free(tmp); free(par); free(order); free(id);
     return p->ns;
 }
 

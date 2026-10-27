@@ -2547,7 +2547,25 @@ static int cmd_paths(int argc, char **argv)
 
     rz_paths p;
     rz_paths_build(&one, &p);
-    printf("first half: %u silhouettes put together with two or more pairs; %u pairs of mates\n\n", p.ns, p.nm);
+    printf("first half: %u silhouettes put together with two or more pairs, %u stickers once their variants join; %u pairs of mates\n",
+           p.ns, p.nsticker, p.nm);
+    {
+        char ma[80], mb[80];
+        uint32_t best[5] = {0}, nb = 0;
+        for (uint32_t i = 0; i < p.nm; i++) {
+            uint32_t j = nb < 5 ? nb++ : 5;
+            if (j == 5) { if (p.m[i].frames <= p.m[best[4]].frames) continue; j = 4; }
+            while (j > 0 && p.m[best[j - 1]].frames < p.m[i].frames) { best[j] = best[j - 1]; j--; }
+            best[j] = i;
+        }
+        printf("the strongest mates (stickers they share):");
+        for (uint32_t i = 0; i < nb; i++) {
+            say_lego(&one, p.m[best[i]].a, ma, sizeof ma);
+            say_lego(&one, p.m[best[i]].b, mb, sizeof mb);
+            printf(" %s~%s %u", ma, mb, p.m[best[i]].frames);
+        }
+        printf("\n\n");
+    }
 
     /* the heaviest silhouettes */
     char a1[200];

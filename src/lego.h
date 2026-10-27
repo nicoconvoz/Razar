@@ -624,6 +624,7 @@ typedef struct {
     int32_t  word[5];                /* the fixed pieces; -1 at a hole */
     uint32_t fills, said;            /* distinct pairs in its holes; times heard */
     uint32_t first, count;           /* its pairs, in rz_paths.fill */
+    uint32_t sticker;                /* the sticker it is a variant of */
 } rz_silhouette;
 
 typedef struct { int32_t f1, f2; uint32_t said; } rz_fill;
@@ -636,6 +637,7 @@ typedef struct {
     rz_mates      *m;  uint32_t nm;  /* frames >= 2 */
     uint32_t      *fixed, *filled;   /* per lego: silhouettes it stands fixed in, fills */
     uint32_t       nwords;
+    uint32_t       nsticker;         /* stickers: silhouettes joined by their variants */
 } rz_paths;
 
 uint32_t rz_paths_build(const rz_lexicon *x, rz_paths *p);

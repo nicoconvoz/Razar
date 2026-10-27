@@ -82,6 +82,31 @@ What it gets right is still glue: the strongest mates are *y* and *,*,
 because glue also collects many different forms (each fixed piece beside it
 makes a new one).
 
+## Stickers: one of each, and its variants (2026-10-27)
+
+> A collector with a repeated sticker has no use for it; he keeps one, and
+> goes for the new forms, unexplored, for the sticker he cannot get. And
+> inside each sticker its variants -- as modulations of the same song, not as
+> another song. — the author
+
+Counted as silhouettes, *_ , que*, *_ , por*, *_ , no*… gave *y* and *,* 3,519
+forms: one sticker sung in 3,519 keys.
+
+- **A variant is discovered, not declared.** Two silhouettes of the same shape
+  that differ in one fixed piece are one sticker when those pieces are mates.
+  Mates are counted by stickers, so it turns until a round joins nothing;
+  joins are never undone, so it ends. The only number is the anecdote rule.
+- **Little world**: 2,648 silhouettes become 231 stickers; *animal*/*mamífero*
+  share 43 stickers, not 524 forms.
+- **New Testament**: 137,322 silhouettes become 10,441 stickers. The glue
+  shrinks — *,*/*y* from 3,519 forms to 419 stickers — and is still the
+  strongest pair (then *,*/*.* 293, *,*/*;* 202). The bar does not move
+  (1.95 % against 1.47 %): the 200,000 paths it builds still all come from the
+  strongest glue pairs.
+- **Not built yet: the sticker he cannot get.** Glue is everywhere, so it
+  really is in many different stickers; what the collector wants is the one
+  missing from his album. That is the next riddle.
+
 ## Open
 
 - **D115** — answered: collect different forms (above). Open within it:
