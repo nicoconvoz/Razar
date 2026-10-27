@@ -4672,3 +4672,54 @@ const char *rz_loom_book_name(const rz_loom *l, uint32_t book)
 {
     return book < l->nbook ? l->book[book] : "";
 }
+
+uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
+                         rz_composed **out)
+{
+    *out = NULL;
+    size_t len = strlen(word);
+    if (len > RZ_LEGO_SPAN || !nwith) return 0;
+    uint64_t w = spelling_key((const unsigned char *)word, len);
+    uint64_t *aw = malloc(nwith * sizeof *aw), *ab = calloc(nwith, sizeof *ab);
+    if (!aw || !ab) { free(aw); free(ab); return 0; }
+    for (uint32_t i = 0; i < nwith; i++) {
+        aw[i] = spelling_key((const unsigned char *)with[i], strlen(with[i]));
+        const loom_pair *p = loom_pair_find(l, w, aw[i]);
+        ab[i] = p ? p->books : 0;
+    }
+    /* counted first, so the room fits what comes out */
+    size_t n = 0;
+    for (size_t g = 0; g < l->grp_cap; g++) {
+        const loom_group *gr = &l->grp[g];
+        if (!gr->key || !loom_has(l, gr, w)) continue;
+        for (uint32_t i = 0; i < nwith; i++) n += !loom_has(l, gr, aw[i]);
+    }
+    rz_composed *c = calloc(n + 1, sizeof *c);
+    if (!c) { free(aw); free(ab); return 0; }
+    uint32_t k = 0;
+    for (size_t g = 0; g < l->grp_cap; g++) {
+        const loom_group *gr = &l->grp[g];
+        if (!gr->key) continue;
+        int32_t me = loom_member_of(l, gr, w);
+        if (me < 0) continue;
+        uint32_t plen = 0;
+        size_t sc;
+        if (l->shape_cap) {
+            LOOM_SLOT(l->shape, l->shape_cap, gr->sil, sc);
+            if (l->shape[sc].key) plen = l->shape[sc].len;
+        }
+        for (uint32_t i = 0; i < nwith; i++) {
+            if (loom_has(l, gr, aw[i])) continue;        /* it stood there: said, not made */
+            rz_composed *e = &c[k++];
+            say_idea(l, gr, aw[i], e->text, sizeof e->text);
+            snprintf(e->via, sizeof e->via, "%s", with[i]);
+            e->len = plen;
+            e->place_books = l->mem[me].books;
+            e->assoc_books = ab[i];
+        }
+    }
+    free(aw);
+    free(ab);
+    *out = c;
+    return k;
+}

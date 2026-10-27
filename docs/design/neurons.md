@@ -130,6 +130,23 @@ The Quiroga text cut leaves junk words with line breaks and a broken byte
 (*"noche. XXII Cuand"*, *"Mercedes�"*): its line breaks and encoding are not
 read as the NT's are (D123).
 
+## Sentences out of relations (2026-10-27)
+
+> Make sentences out of relations, even of different things; I want to see
+> what comes out. — the author
+
+`rz_loom_compose`; `razar speak <word> [all]`. Every place the word stands in,
+with one of its associates most its own in its hole (the side where their
+values part) — a path no book said. Each says which book the place came from
+and which made the associate: when they differ, it joined different things.
+
+*agua*: 157,005 sentences no book said, 50,684 joining the two books. Some
+read: *"El Paráclito que yo le"*, *"El aliento que yo le"*, *"Jesús salió del
+cielo"*, *"al soplo con sus propias"*, *"al maná con sus propias"*. Most do
+not: *"Jesús salió del yogurt"*, *"El camarero que yo le"*. It has no way to
+tell one from the other: nothing in it is true or false yet (the author's
+next step, the switch of yes and no).
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open

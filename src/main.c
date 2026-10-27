@@ -2902,6 +2902,94 @@ static int cmd_meaning(int argc, char **argv)
     return 0;
 }
 
+/* --- sentences out of relations (P53) ------------------------------------- */
+
+static int longer_first(const void *pa, const void *pb)
+{
+    const rz_composed *a = pa, *b = pb;
+    if (a->len != b->len) return a->len > b->len ? -1 : 1;
+    return strcmp(a->text, b->text);
+}
+
+static int cmd_speak(int argc, char **argv)
+{
+    if (argc < 1) { fprintf(stderr, "usage: razar speak <word> [all]\n"); return 1; }
+    int all = argc > 1 && !strcmp(argv[1], "all");
+    rz_loom *l = rz_loom_new();
+    if (!l || rz_loom_load(l, LOOM) != RZ_OK) {
+        fprintf(stderr, "nothing in the nest: run razar loom [path] first\n");
+        rz_loom_free(l);
+        return 1;
+    }
+    static rz_meaning m;
+    if (rz_loom_meaning(l, argv[0], &m) != RZ_OK) { printf("it never met [%s]\n", argv[0]); rz_loom_free(l); return 0; }
+
+    /* the associates most its own: the side of forms-against-others that
+       parts from the rest, where the word's own values part */
+    double *v = malloc((m.nassoc + 1) * sizeof *v);
+    rz_meaning_assoc *own = malloc((m.nassoc + 1) * sizeof *own);
+    if (!v || !own) { free(v); free(own); rz_meaning_free(&m); rz_loom_free(l); return 1; }
+    memcpy(own, m.assoc, m.nassoc * sizeof *own);
+    qsort(own, m.nassoc, sizeof *own, by_own);
+    for (uint32_t i = 0; i < m.nassoc; i++) v[i] = own_of(&m.assoc[i]);
+    double cut = parting(v, m.nassoc);
+    free(v);
+    uint32_t nw = 0;
+    while (nw < m.nassoc && own_of(&own[nw]) > cut) nw++;
+    const char **with = malloc((nw + 1) * sizeof *with);
+    if (!with) { free(own); rz_meaning_free(&m); rz_loom_free(l); return 1; }
+    for (uint32_t i = 0; i < nw; i++) with[i] = own[i].word;
+
+    rz_composed *c = NULL;
+    uint32_t n = rz_loom_compose(l, argv[0], with, nw, &c);
+    /* two silhouettes can read the same sentence: one of each */
+    qsort(c, n, sizeof *c, longer_first);
+    uint32_t kept = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        int seen = 0;
+        for (uint32_t j = kept; j-- > 0 && c[j].len == c[i].len && !seen;) seen = !strcmp(c[j].text, c[i].text);
+        if (!seen) c[kept++] = c[i];
+    }
+    n = kept;
+    uint32_t mixed = 0;
+    for (uint32_t i = 0; i < n; i++) mixed += (c[i].place_books & c[i].assoc_books) != c[i].assoc_books;
+
+    char fname[160];
+    FILE *o = stdout;
+    if (all) {
+        snprintf(fname, sizeof fname, NEST "/speak-%s.txt", argv[0]);
+        o = fopen(fname, "wb");
+        if (!o) o = stdout;
+    }
+    fprintf(o, "[%s]: its places, with one of its %u associates most its own in its hole\n", argv[0], nw);
+    fprintf(o, "%u sentences no book said; %u join different things (the associate from a book the place is not from)\n\n",
+           n, mixed);
+    char pb[256], ab[256];
+    for (uint32_t i = 0; i < n; i++) {
+        int joins = (c[i].place_books & c[i].assoc_books) != c[i].assoc_books;
+        /* on screen, the sentences that join different things -- one for each
+           associate, the longest path it was put in, so every associate shows */
+        if (!all) {
+            if (!joins) continue;
+            int earlier = 0;
+            for (uint32_t j = 0; j < i && !earlier; j++)
+                earlier = !strcmp(c[j].via, c[i].via) && (c[j].place_books & c[j].assoc_books) != c[j].assoc_books;
+            if (earlier) continue;
+        }
+        say_books(l, c[i].place_books, pb, sizeof pb);
+        say_books(l, c[i].assoc_books, ab, sizeof ab);
+        fprintf(o, "  \"%s\"   ([%s] where [%s] stood; the place from %s, %s from %s)\n",
+                c[i].text, c[i].via, argv[0], pb, c[i].via, ab);
+    }
+    if (o != stdout) { fclose(o); printf("every sentence about [%s] written to %s\n", argv[0], fname); }
+    free(c);
+    free(with);
+    free(own);
+    rz_meaning_free(&m);
+    rz_loom_free(l);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -2923,6 +3011,7 @@ int main(int argc, char **argv)
         printf("  razar loom [path]                     weave meaning while reading, and see what it foresees\n");
         printf("  razar neuron [word]                   think one depth further (a word starts a new train)\n");
         printf("  razar meaning <word> [all]            open a word: its places and associates, and which book brought them\n");
+        printf("  razar speak <word> [all]              sentences out of its relations, even of different things\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);
@@ -2952,6 +3041,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "loom"))         return cmd_loom(argc - 2, argv + 2);
     if (!strcmp(argv[1], "neuron"))       return cmd_neuron(argc - 2, argv + 2);
     if (!strcmp(argv[1], "meaning"))      return cmd_meaning(argc - 2, argv + 2);
+    if (!strcmp(argv[1], "speak"))        return cmd_speak(argc - 2, argv + 2);
 
     fprintf(stderr, "unknown command: %s\n", argv[1]);
     return 1;

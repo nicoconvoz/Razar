@@ -4872,6 +4872,31 @@ TEST(each_association_remembers_the_book_that_brought_it)
     rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
+TEST(it_makes_sentences_out_of_its_relations)
+{
+    /* The author: make sentences out of relations, even of different things.
+       The horse's places, with an associate in its hole: what no book said */
+    static char a[220000];
+    size_t na = path_world(a, sizeof a, 3000);
+    rz_lexicon *xa = lexicon_of(a, na);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    const char *with[] = { "gato" };
+    rz_composed *c = NULL;
+    uint32_t n = rz_loom_compose(l, "caballo", with, 1, &c);
+    int grass = 0, said = 0;
+    for (uint32_t i = 0; i < n; i++) {
+        grass |= strstr(c[i].text, "el gato come pasto") != NULL;
+        said |= strstr(c[i].text, "el gato come carne") != NULL;   /* the book said it: not made */
+    }
+    CHECK(grass);
+    CHECK(!said);
+    free(c);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); free(xa);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -5110,6 +5135,7 @@ int main(void)
     RUN(a_new_book_enriches_the_meanings_it_already_holds);
     RUN(a_word_can_be_opened_to_see_what_it_understood);
     RUN(each_association_remembers_the_book_that_brought_it);
+    RUN(it_makes_sentences_out_of_its_relations);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

@@ -782,6 +782,24 @@ typedef struct {
 int  rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out);
 void rz_meaning_free(rz_meaning *m);
 
+/* --- sentences out of relations (P53) -------------------------------------
+ *
+ * The author: make sentences out of relations, even of different things, and
+ * see what comes out. Every place the word stands in, with one of the given
+ * associates in its hole -- a path no book said (a path the associate already
+ * stood in is not made). Each sentence says which books the place came from
+ * and which books made the two associates: when they differ, it joined
+ * different things. Every sentence, as many as there are (the caller frees). */
+typedef struct {
+    char     text[6 * (RZ_LEGO_SPAN + 1)];
+    char     via[RZ_LEGO_SPAN + 1];      /* the associate put in the word's hole */
+    uint32_t len;                        /* pieces in the path */
+    uint64_t place_books, assoc_books;
+} rz_composed;
+
+uint32_t rz_loom_compose(const rz_loom *l, const char *word, const char *const *with, uint32_t nwith,
+                         rz_composed **out);
+
 /* The book about to be read, by name: what it brings is marked with it. Up to
    64 books; returns its number (a name read before keeps its number). */
 uint32_t    rz_loom_book(rz_loom *l, const char *name);
