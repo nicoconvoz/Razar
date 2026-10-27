@@ -4822,9 +4822,54 @@ TEST(a_word_can_be_opened_to_see_what_it_understood)
     for (uint32_t i = 0; i < m.nplace; i++) mammal |= strstr(m.place[i].text, "caballo") != NULL;
     CHECK(gato);
     CHECK(mammal);
+    rz_meaning_free(&m);
     CHECK_EQ_U(rz_loom_meaning(l, "nunca-leída", &m), RZ_ERR_MISSING);
     rz_loom_free(l);
     rz_lexicon_free(xa); free(xa);
+}
+
+TEST(each_association_remembers_the_book_that_brought_it)
+{
+    /* The author: feed it both books, and let it tell every path and every
+       association of the word -- and so which book brought what */
+    static char a[220000], b[300000];
+    size_t na = path_world(a, sizeof a, 3000), nb = said_world(b, sizeof b, 6000);
+    rz_lexicon *xa = lexicon_of(a, na), *xb = lexicon_of(b, nb);
+    rz_loom *l = rz_loom_new();
+    static rz_loom_report r;
+    CHECK_EQ_U(rz_loom_book(l, "uno"), 0u);
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    CHECK_EQ_U(rz_loom_book(l, "dos"), 1u);
+    CHECK_EQ_U(rz_loom_read(l, xb, &r), RZ_OK);
+    static rz_meaning m;
+    CHECK_EQ_U(rz_loom_meaning(l, "gato", &m), RZ_OK);
+    int first = 0, second = 0;
+    for (uint32_t i = 0; i < m.nassoc; i++) {
+        first |= m.assoc[i].books & 1u;
+        second |= (m.assoc[i].books & 2u) != 0;
+    }
+    CHECK(first && second);
+    int place_first = 0, place_second = 0;
+    for (uint32_t i = 0; i < m.nplace; i++) {
+        place_first |= m.place[i].books & 1u;
+        place_second |= (m.place[i].books & 2u) != 0;
+    }
+    CHECK(place_first && place_second);
+    CHECK(!strcmp(rz_loom_book_name(l, 1), "dos"));
+    /* and the books survive the disk */
+    CHECK_EQ_U(rz_loom_save(l, "test_books.tmp"), RZ_OK);
+    rz_loom *back = rz_loom_new();
+    CHECK_EQ_U(rz_loom_load(back, "test_books.tmp"), RZ_OK);
+    CHECK(!strcmp(rz_loom_book_name(back, 0), "uno"));
+    static rz_meaning m2;
+    CHECK_EQ_U(rz_loom_meaning(back, "gato", &m2), RZ_OK);
+    CHECK_EQ_U(m2.assoc[0].books, m.assoc[0].books);
+    rz_meaning_free(&m);
+    rz_meaning_free(&m2);
+    remove("test_books.tmp");
+    rz_loom_free(back);
+    rz_loom_free(l);
+    rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
 /* --- the melody of the path (P48) ---------------------------------------- */
@@ -5064,6 +5109,7 @@ int main(void)
     RUN(what_reality_confirms_becomes_a_travelled_path);
     RUN(a_new_book_enriches_the_meanings_it_already_holds);
     RUN(a_word_can_be_opened_to_see_what_it_understood);
+    RUN(each_association_remembers_the_book_that_brought_it);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

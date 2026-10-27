@@ -104,10 +104,40 @@ own: *candelero*, *césped*, *maná*, *alma*, *cielo*, *altar*, *mar*, *patio*,
 *Jordán*. *amor*: *Reino*, *Espíritu*, *reflejo*, *conocimiento*, *don*,
 *Hijo*, *corazón*, *alma*, *misterio*.
 
+### Which book brought what (2026-10-27)
+
+> Make it feed on both books and tell you every path and association of that
+> word. — the author. And: let it adjust itself, nothing rigid; anything fixed
+> is by eye.
+
+Every place a word stands in and every pair of associates remembers the books
+that made it (`rz_loom_book`, a bit per book; memory v5). `razar meaning
+<word> all` writes everything to `nido/meaning-<word>.txt` — in the nest, not
+the repository, because it quotes the books. The answer is sized to the word
+(counted, then allocated: no cap); on screen each list is cut where its own
+values part in two (the same exact split the word cut uses), not at a count.
+
+*agua*, NT then Quiroga: 650 places (as they read) and 4,263 associates. The
+NT brought 634 places and 3,856 associates, Quiroga 28 and 609, 12 and 202
+came from both. What Quiroga added: *trago de agua*, *agua fresca*, *no bebas
+agua sola*, *temblando del agua*, *agua irisada*; places both books share:
+*agua cambiada en vino*, *un río de agua*, *movía el agua*. Its associates
+from Quiroga are the novel's world — *piano*, *portón*, *césped*, *jardín*,
+*tren*, *andén*, *salón* — and some landed on what the NT had taught
+(*brazo*, *cuello*, *asiento*).
+
+The Quiroga text cut leaves junk words with line breaks and a broken byte
+(*"noche. XXII Cuand"*, *"Mercedes�"*): its line breaks and encoding are not
+read as the NT's are (D123).
+
 ## Open
 
 - **D121** — answered by the author: no rules; travelled paths (above). Open
   within it: a test with books that share their subject, enough to measure.
 - **D122** — the use and variant branches (where and with whom; *perro*/*perra*,
   P44) are not built.
-- **D120** — the memory's weight, now 462 MB.
+- **D120** — the memory's weight: 416 MB regenerated from zero, without ideas.
+- **D123** — words glued across Quiroga's line breaks, and a broken byte.
+- Fixed numbers still in the loom, by eye until measured: the mates' table
+  size, the 200,000 paths `razar paths` builds, 64 books, the ring of 64
+  foreseen, runs of 3 to 5 pieces.

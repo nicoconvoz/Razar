@@ -3753,8 +3753,8 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
    all of them. */
 typedef struct { uint64_t key, f1, f2; uint8_t born; } loom_sil;
 typedef struct { uint64_t key, sil, partner; int32_t head; uint32_t size; uint8_t side; } loom_group;
-typedef struct { uint64_t word; int32_t next; } loom_member;
-typedef struct { uint64_t key, last, a, b; uint32_t count, traveled; uint8_t landed; } loom_pair;
+typedef struct { uint64_t word, books; int32_t next; } loom_member;
+typedef struct { uint64_t key, last, a, b, books; uint32_t count, traveled; uint8_t landed; } loom_pair;
 typedef struct { uint64_t key; uint8_t len; unsigned char s[RZ_LEGO_SPAN]; } loom_word;
 /* the shape of a born silhouette, to say its paths: the fixed pieces, holes 0 */
 typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_shape;
@@ -3785,6 +3785,9 @@ struct rz_loom {
     loom_step   *trail; size_t trail_n, trail_cap, front;   /* front: where the last depth begins */
     uint64_t     rng;
     loom_reading *reading;               /* while a book is read */
+    char         book[64][64];           /* the books read, by name */
+    uint32_t     nbook;
+    uint64_t     reading_book;           /* the bit of the book being read; 0: unnamed */
 };
 
 static void loom_enrich(rz_loom *l, uint64_t a, uint64_t b, loom_pair *p);
@@ -3923,16 +3926,22 @@ static void loom_associate(rz_loom *l, uint64_t a, uint64_t b, uint64_t sil)
     LOOM_AT(l, l->pair, l->pair_cap, l->pair_n, loom_pair_key(a, b), p, fresh);
     if (!p) return;
     if (fresh) { p->a = a < b ? a : b; p->b = a < b ? b : a; }
+    p->books |= l->reading_book;
     if (p->last == sil) return;
     p->last = sil;
     p->count++;
     if (p->count == 2 && l->reading) loom_enrich(l, a, b, p);
 }
 
+static int32_t loom_member_of(const rz_loom *l, const loom_group *g, uint64_t w)
+{
+    for (int32_t m = g->head; m >= 0; m = l->mem[m].next) if (l->mem[m].word == w) return m;
+    return -1;
+}
+
 static int loom_has(const rz_loom *l, const loom_group *g, uint64_t w)
 {
-    for (int32_t m = g->head; m >= 0; m = l->mem[m].next) if (l->mem[m].word == w) return 1;
-    return 0;
+    return loom_member_of(l, g, w) >= 0;
 }
 
 /* an associate of w already standing in this place: two silhouettes shared */
@@ -3943,7 +3952,7 @@ static uint64_t loom_foresees(const rz_loom *l, const loom_group *g, uint64_t w)
     return 0;
 }
 
-static void loom_add_member(rz_loom *l, loom_group *g, uint64_t w)
+static void loom_add_member(rz_loom *l, loom_group *g, uint64_t w, uint64_t books)
 {
     if (l->mem_n == l->mem_cap) {
         size_t cap = l->mem_cap ? l->mem_cap * 2 : 1024;
@@ -3953,6 +3962,7 @@ static void loom_add_member(rz_loom *l, loom_group *g, uint64_t w)
         l->mem_cap = cap;
     }
     l->mem[l->mem_n].word = w;
+    l->mem[l->mem_n].books = books;
     l->mem[l->mem_n].next = g->head;
     g->head = (int32_t)l->mem_n++;
     g->size++;
@@ -3967,9 +3977,10 @@ static uint64_t loom_idea_key(uint64_t group, uint64_t word, int blind)
    place someone thought of for it (P53) is confirmed by the reading. */
 static void loom_join(rz_loom *l, loom_group *g, uint64_t w, uint64_t sil, rz_loom_report *out)
 {
-    if (loom_has(l, g, w)) return;
+    int32_t was = loom_member_of(l, g, w);
+    if (was >= 0) { l->mem[was].books |= l->reading_book; return; }   /* there again, in this book too */
     for (int32_t m = g->head; m >= 0; m = l->mem[m].next) loom_associate(l, w, l->mem[m].word, sil);
-    loom_add_member(l, g, w);
+    loom_add_member(l, g, w, l->reading_book);
     if (!l->idea_cap || !out) return;
     for (int blind = 0; blind < 2; blind++) {
         size_t s;
@@ -4372,9 +4383,10 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   4u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+#define LOOM_VER   5u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
                                             3: travelled branches, and the branch each idea came by.
-                                            4: associations that landed on a meaning held before */
+                                            4: associations that landed on a meaning held before.
+                                            5: the books, and which book brought each place and pair */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4386,7 +4398,8 @@ int rz_loom_save(const rz_loom *l, const char *path)
     int ok = put64(f, ((uint64_t)LOOM_VER << 32) | LOOM_MAGIC);
     ok = ok && put64(f, l->sil_n) && put64(f, l->grp_n) && put64(f, l->pair_n) && put64(f, l->word_n)
             && put64(f, l->shape_n) && put64(f, l->idea_n) && put64(f, l->trail_n) && put64(f, l->front)
-            && put64(f, l->rng);
+            && put64(f, l->rng) && put64(f, l->nbook)
+            && fwrite(l->book, sizeof l->book, 1, f) == 1;
     for (size_t i = 0; ok && i < l->sil_cap; i++)
         if (l->sil[i].key)
             ok = put64(f, l->sil[i].key) && put64(f, l->sil[i].f1) && put64(f, l->sil[i].f2) && put64(f, l->sil[i].born);
@@ -4397,16 +4410,19 @@ int rz_loom_save(const rz_loom *l, const char *path)
         /* members oldest first, so loading rebuilds the same order */
         uint64_t *ms = malloc(((size_t)g->size + 1) * sizeof *ms);
         if (!ms) { ok = 0; break; }
+        uint64_t *mb = malloc(((size_t)g->size + 1) * sizeof *mb);
+        if (!mb) { free(ms); ok = 0; break; }
         uint32_t k = g->size;
-        for (int32_t m = g->head; m >= 0 && k; m = l->mem[m].next) ms[--k] = l->mem[m].word;
-        for (uint32_t q = 0; ok && q < g->size; q++) ok = put64(f, ms[q]);
+        for (int32_t m = g->head; m >= 0 && k; m = l->mem[m].next) { --k; ms[k] = l->mem[m].word; mb[k] = l->mem[m].books; }
+        for (uint32_t q = 0; ok && q < g->size; q++) ok = put64(f, ms[q]) && put64(f, mb[q]);
         free(ms);
+        free(mb);
     }
     for (size_t i = 0; ok && i < l->pair_cap; i++)
         if (l->pair[i].key)
             ok = put64(f, l->pair[i].key) && put64(f, l->pair[i].last) && put64(f, l->pair[i].a)
                  && put64(f, l->pair[i].b) && put64(f, l->pair[i].count) && put64(f, l->pair[i].traveled)
-                 && put64(f, l->pair[i].landed);
+                 && put64(f, l->pair[i].landed) && put64(f, l->pair[i].books);
     for (size_t i = 0; ok && i < l->word_cap; i++)
         if (l->word[i].key)
             ok = put64(f, l->word[i].key) && fwrite(&l->word[i].len, 1, 1, f) == 1 &&
@@ -4434,11 +4450,12 @@ int rz_loom_load(rz_loom *l, const char *path)
 {
     FILE *f = fopen(path, "rb");
     if (!f) return RZ_ERR_MISSING;
-    uint64_t head = 0, ns = 0, ng = 0, np = 0, nw = 0, nsh = 0, ni = 0, nt = 0, front = 0, rng = 0;
+    uint64_t head = 0, ns = 0, ng = 0, np = 0, nw = 0, nsh = 0, ni = 0, nt = 0, front = 0, rng = 0, nbook = 0;
     if (!get64(f, &head) || (uint32_t)head != LOOM_MAGIC || (head >> 32) != LOOM_VER) { fclose(f); return RZ_ERR_VERSION; }
     int ok = get64(f, &ns) && get64(f, &ng) && get64(f, &np) && get64(f, &nw)
-             && get64(f, &nsh) && get64(f, &ni) && get64(f, &nt) && get64(f, &front) && get64(f, &rng);
-    if (ok) l->rng = rng;
+             && get64(f, &nsh) && get64(f, &ni) && get64(f, &nt) && get64(f, &front) && get64(f, &rng)
+             && get64(f, &nbook) && fread(l->book, sizeof l->book, 1, f) == 1;
+    if (ok) { l->rng = rng; l->nbook = (uint32_t)nbook; }
     for (uint64_t i = 0; ok && i < ns; i++) {
         uint64_t k, f1, f2, born;
         ok = get64(f, &k) && get64(f, &f1) && get64(f, &f2) && get64(f, &born);
@@ -4454,19 +4471,21 @@ int rz_loom_load(rz_loom *l, const char *path)
         for (uint64_t q = 0; ok && q < size; q++) {
             uint64_t w;
             ok = get64(f, &w);
-            if (ok && !loom_has(l, g, w)) loom_add_member(l, g, w);
+            uint64_t books = 0;
+            ok = ok && get64(f, &books);
+            if (ok && !loom_has(l, g, w)) loom_add_member(l, g, w, books);
         }
     }
     for (uint64_t i = 0; ok && i < np; i++) {
-        uint64_t k, last, a, b, count, traveled, landed;
+        uint64_t k, last, a, b, count, traveled, landed, books;
         ok = get64(f, &k) && get64(f, &last) && get64(f, &a) && get64(f, &b) && get64(f, &count) && get64(f, &traveled)
-             && get64(f, &landed);
+             && get64(f, &landed) && get64(f, &books);
         if (!ok) break;
         loom_pair *p; int fresh;
         LOOM_AT(l, l->pair, l->pair_cap, l->pair_n, k, p, fresh);
         (void)fresh;
         if (!p) { ok = 0; break; }
-        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count; p->traveled = (uint32_t)traveled; p->landed = (uint8_t)landed;
+        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count; p->traveled = (uint32_t)traveled; p->landed = (uint8_t)landed; p->books = books;
     }
     for (uint64_t i = 0; ok && i < nw; i++) {
         uint64_t k;
@@ -4524,6 +4543,32 @@ static int by_word64(const void *pa, const void *pb)
     return (a > b) - (a < b);
 }
 
+static int by_forms(const void *pa, const void *pb)
+{
+    const rz_meaning_assoc *a = pa, *b = pb;
+    if (a->forms != b->forms) return a->forms > b->forms ? -1 : 1;
+    return strcmp(a->word, b->word);
+}
+
+static int by_text(const void *pa, const void *pb)
+{
+    return strcmp(((const rz_meaning_place *)pa)->text, ((const rz_meaning_place *)pb)->text);
+}
+
+static int by_company(const void *pa, const void *pb)
+{
+    const rz_meaning_place *a = pa, *b = pb;
+    if (a->company != b->company) return a->company > b->company ? -1 : 1;
+    return strcmp(a->text, b->text);
+}
+
+void rz_meaning_free(rz_meaning *m)
+{
+    free(m->assoc);
+    free(m->place);
+    memset(m, 0, sizeof *m);
+}
+
 int rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out)
 {
     memset(out, 0, sizeof *out);
@@ -4532,77 +4577,98 @@ int rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out)
     uint64_t w = spelling_key((const unsigned char *)word, len);
     if (!loom_spelled(l, w)) return RZ_ERR_MISSING;
 
-    /* its associates, every one; the most shared kept to show */
+    /* its associates, every one: counted first, so the room fits the word */
     size_t na = 0;
     for (size_t i = 0; i < l->pair_cap; i++)
         if (l->pair[i].key && l->pair[i].count >= 2 && (l->pair[i].a == w || l->pair[i].b == w)) na++;
+    out->assoc = calloc(na + 1, sizeof *out->assoc);
     uint64_t *who = malloc((na + 1) * sizeof *who);
     uint32_t *deg = calloc(na + 1, sizeof *deg);
-    if (!who || !deg) { free(who); free(deg); return RZ_ERR_IO; }
-    size_t k = 0;
+    if (!out->assoc || !who || !deg) { free(who); free(deg); rz_meaning_free(out); return RZ_ERR_IO; }
     for (size_t i = 0; i < l->pair_cap; i++) {
         const loom_pair *p = &l->pair[i];
         if (!p->key || p->count < 2 || (p->a != w && p->b != w)) continue;
-        who[k++] = p->a == w ? p->b : p->a;
-        rz_meaning_assoc e;
-        memset(&e, 0, sizeof e);
-        spell_into(l, p->a == w ? p->b : p->a, e.word, sizeof e.word);
-        e.forms = p->count; e.traveled = p->traveled; e.landed = p->landed;
-        uint32_t j = out->nassoc < 256 ? out->nassoc++ : 256;
-        if (j == 256) { if (e.forms <= out->assoc[255].forms) continue; j = 255; }
-        while (j > 0 && out->assoc[j - 1].forms < e.forms) { out->assoc[j] = out->assoc[j - 1]; j--; }
-        out->assoc[j] = e;
+        uint64_t other = p->a == w ? p->b : p->a;
+        who[out->nassoc] = other;
+        rz_meaning_assoc *e = &out->assoc[out->nassoc++];
+        spell_into(l, other, e->word, sizeof e->word);
+        e->forms = p->count; e->traveled = p->traveled; e->landed = p->landed; e->books = p->books;
     }
-    out->assoc_all = (uint32_t)k;
+    out->assoc_all = out->nassoc;
     /* how many associates each associate has: a word joined to everything
        says less about this one than a word joined to few */
-    qsort(who, k, sizeof *who, by_word64);
-    for (size_t i = 0; i < l->pair_cap; i++) {
-        const loom_pair *p = &l->pair[i];
-        if (!p->key || p->count < 2) continue;
-        for (int side = 0; side < 2; side++) {
-            uint64_t x = side ? p->b : p->a;
-            size_t lo = 0, hi = k;
-            while (lo < hi) { size_t mid = (lo + hi) / 2; if (who[mid] < x) lo = mid + 1; else hi = mid; }
-            if (lo < k && who[lo] == x) deg[lo]++;
+    uint64_t *sorted = malloc((na + 1) * sizeof *sorted);
+    if (sorted) {
+        memcpy(sorted, who, na * sizeof *who);
+        qsort(sorted, na, sizeof *sorted, by_word64);
+        for (size_t i = 0; i < l->pair_cap; i++) {
+            const loom_pair *p = &l->pair[i];
+            if (!p->key || p->count < 2) continue;
+            for (int side = 0; side < 2; side++) {
+                uint64_t x = side ? p->b : p->a;
+                size_t lo = 0, hi = na;
+                while (lo < hi) { size_t mid = (lo + hi) / 2; if (sorted[mid] < x) lo = mid + 1; else hi = mid; }
+                if (lo < na && sorted[lo] == x) deg[lo]++;
+            }
         }
-    }
-    for (uint32_t i = 0; i < out->nassoc; i++) {
-        uint64_t x = spelling_key((const unsigned char *)out->assoc[i].word, strlen(out->assoc[i].word));
-        size_t lo = 0, hi = k;
-        while (lo < hi) { size_t mid = (lo + hi) / 2; if (who[mid] < x) lo = mid + 1; else hi = mid; }
-        if (lo < k && who[lo] == x) out->assoc[i].others = deg[lo];
+        for (uint32_t i = 0; i < out->nassoc; i++) {
+            size_t lo = 0, hi = na;
+            while (lo < hi) { size_t mid = (lo + hi) / 2; if (sorted[mid] < who[i]) lo = mid + 1; else hi = mid; }
+            if (lo < na && sorted[lo] == who[i]) out->assoc[i].others = deg[lo];
+        }
+        free(sorted);
     }
     free(who);
     free(deg);
+    qsort(out->assoc, out->nassoc, sizeof *out->assoc, by_forms);
 
-    /* the places it stands in, every one; the most shared kept to show */
+    /* the places it stands in, every one */
+    size_t np = 0;
+    for (size_t i = 0; i < l->grp_cap; i++) if (l->grp[i].key && loom_has(l, &l->grp[i], w)) np++;
+    out->place = calloc(np + 1, sizeof *out->place);
+    if (!out->place) { rz_meaning_free(out); return RZ_ERR_IO; }
     for (size_t i = 0; i < l->grp_cap; i++) {
         const loom_group *g = &l->grp[i];
-        if (!g->key || !loom_has(l, g, w)) continue;
-        out->place_all++;
-        rz_meaning_place e;
-        memset(&e, 0, sizeof e);
-        e.company = g->size;
-        say_idea(l, g, w, e.text, sizeof e.text);
-        /* two silhouettes can read the same: "agua , y" with the comma fixed
-           or the comma in a hole. One place, the larger company */
-        int dup = 0;
-        for (uint32_t q = 0; q < out->nplace && !dup; q++) {
-            if (strcmp(out->place[q].text, e.text)) continue;
-            dup = 1;
-            if (out->place[q].company < e.company) {
-                out->place[q].company = e.company;
-                for (uint32_t z = q; z > 0 && out->place[z - 1].company < out->place[z].company; z--) {
-                    rz_meaning_place t0 = out->place[z - 1]; out->place[z - 1] = out->place[z]; out->place[z] = t0;
-                }
-            }
-        }
-        if (dup) continue;
-        uint32_t j = out->nplace < 256 ? out->nplace++ : 256;
-        if (j == 256) { if (e.company <= out->place[255].company) continue; j = 255; }
-        while (j > 0 && out->place[j - 1].company < e.company) { out->place[j] = out->place[j - 1]; j--; }
-        out->place[j] = e;
+        if (!g->key) continue;
+        int32_t me = loom_member_of(l, g, w);
+        if (me < 0) continue;
+        rz_meaning_place *e = &out->place[out->nplace++];
+        e->company = g->size;
+        e->books = l->mem[me].books;
+        say_idea(l, g, w, e->text, sizeof e->text);
     }
+    out->place_all = out->nplace;
+    /* two silhouettes can read the same -- "agua , y" with the comma fixed
+       or the comma in a hole: one place, the larger company, both books */
+    qsort(out->place, out->nplace, sizeof *out->place, by_text);
+    uint32_t k = 0;
+    for (uint32_t i = 0; i < out->nplace; i++) {
+        if (k && !strcmp(out->place[k - 1].text, out->place[i].text)) {
+            out->place[k - 1].books |= out->place[i].books;
+            if (out->place[i].company > out->place[k - 1].company) out->place[k - 1].company = out->place[i].company;
+            continue;
+        }
+        out->place[k++] = out->place[i];
+    }
+    out->nplace = k;
+    qsort(out->place, out->nplace, sizeof *out->place, by_company);
     return RZ_OK;
+}
+
+uint32_t rz_loom_book(rz_loom *l, const char *name)
+{
+    uint32_t b = 0;
+    while (b < l->nbook && strcmp(l->book[b], name)) b++;
+    if (b == l->nbook) {
+        if (l->nbook == 64) { l->reading_book = 0; return 64; }   /* no room: read unmarked */
+        snprintf(l->book[b], sizeof l->book[b], "%s", name);
+        l->nbook++;
+    }
+    l->reading_book = 1ull << b;
+    return b;
+}
+
+const char *rz_loom_book_name(const rz_loom *l, uint32_t book)
+{
+    return book < l->nbook ? l->book[book] : "";
 }

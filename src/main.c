@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <sys/stat.h>
 
 #ifdef _WIN32
@@ -2687,6 +2688,12 @@ static int cmd_loom(int argc, char **argv)
     /* the loom lives in the nest: what earlier books wove is there */
     rz_loom *l = rz_loom_new();
     int had = l && rz_loom_load(l, LOOM) == RZ_OK;
+    /* the book is known by its file name: what it brings is marked with it */
+    if (l) {
+        const char *base = path;
+        for (const char *c = path; *c; c++) if (*c == '/' || *c == '\\') base = c + 1;
+        rz_loom_book(l, base);
+    }
     static rz_loom_report r;
     if (!l || rz_loom_read(l, &x, &r) != RZ_OK) {
         fprintf(stderr, "out of memory\n");
@@ -2766,9 +2773,58 @@ static int cmd_neuron(int argc, char **argv)
 
 /* --- what a word understood (P53) ----------------------------------------- */
 
+static void say_books(const rz_loom *l, uint64_t books, char *out, size_t cap)
+{
+    size_t k = 0;
+    out[0] = 0;
+    for (uint32_t b = 0; b < 64 && k + 2 < cap; b++) {
+        if (!(books >> b & 1)) continue;
+        int w = snprintf(out + k, cap - k, "%s%s", k ? " + " : "", rz_loom_book_name(l, b));
+        if (w < 0 || (size_t)w >= cap - k) break;
+        k += (size_t)w;
+    }
+}
+
+/* Where a list of values parts in two, as the text has them: the split that
+   best separates the high from the low (the same exact optimum the word cut
+   uses). What is shown on screen is the high side -- no count chosen. */
+static int cmp_double(const void *pa, const void *pb)
+{
+    double a = *(const double *)pa, b = *(const double *)pb;
+    return (a > b) - (a < b);
+}
+
+static double parting(const double *v0, uint32_t n)
+{
+    if (n < 2) return -HUGE_VAL;
+    double *v = malloc(n * sizeof *v);
+    if (!v) return -HUGE_VAL;
+    memcpy(v, v0, n * sizeof *v);
+    qsort(v, n, sizeof *v, cmp_double);
+    double S = 0, s0 = 0, best = 0, mid = -HUGE_VAL;
+    for (uint32_t i = 0; i < n; i++) S += v[i];
+    for (uint32_t i = 0; i + 1 < n; i++) {
+        s0 += v[i];
+        if (v[i + 1] <= v[i]) continue;
+        double w0 = i + 1, w1 = n - w0, d = s0 / w0 - (S - s0) / w1, bt = w0 * w1 * d * d;
+        if (bt > best) { best = bt; mid = (v[i] + v[i + 1]) / 2; }
+    }
+    free(v);
+    return mid;
+}
+
+static double own_of(const rz_meaning_assoc *a) { return (double)a->forms / (a->others + 1); }
+
+static int by_own(const void *pa, const void *pb)
+{
+    double a = own_of(pa), b = own_of(pb);
+    return (a < b) - (a > b);
+}
+
 static int cmd_meaning(int argc, char **argv)
 {
-    if (argc < 1) { fprintf(stderr, "usage: razar meaning <word>\n"); return 1; }
+    if (argc < 1) { fprintf(stderr, "usage: razar meaning <word> [all]\n"); return 1; }
+    int all = argc > 1 && !strcmp(argv[1], "all");
     rz_loom *l = rz_loom_new();
     if (!l || rz_loom_load(l, LOOM) != RZ_OK) {
         fprintf(stderr, "nothing in the nest: run razar loom [path] first\n");
@@ -2777,28 +2833,71 @@ static int cmd_meaning(int argc, char **argv)
     }
     static rz_meaning m;
     if (rz_loom_meaning(l, argv[0], &m) != RZ_OK) { printf("it never met [%s]\n", argv[0]); rz_loom_free(l); return 0; }
-    printf("[%s] -- what it understood\n\n", argv[0]);
-    printf("it stands in %u places; the most shared:\n", m.place_all);
-    for (uint32_t i = 0; i < m.nplace && i < 15; i++)
-        printf("  \"%s\"   (%u stood there)\n", m.place[i].text, m.place[i].company);
-    printf("\nits associates: %u; the most shared (forms shared / how many associates that one has):\n", m.assoc_all);
-    for (uint32_t i = 0; i < m.nassoc && i < 25; i++)
-        printf("  %-16s %5u / %-6u%s%s\n", m.assoc[i].word, m.assoc[i].forms, m.assoc[i].others,
-               m.assoc[i].landed ? "  landed on what it knew" : "",
-               m.assoc[i].traveled ? "  travelled" : "");
-    /* the associates that say most of it: shared most, joined to fewest */
-    printf("\nthe associates most its own (forms shared, against how many associates each has):\n");
-    uint32_t pick[15], np = 0;
-    for (uint32_t i = 0; i < m.nassoc; i++) {
-        double v = (double)m.assoc[i].forms / (m.assoc[i].others + 1);
-        uint32_t j = np < 15 ? np++ : 15;
-        if (j == 15) { if (v <= (double)m.assoc[pick[14]].forms / (m.assoc[pick[14]].others + 1)) continue; j = 14; }
-        while (j > 0 && (double)m.assoc[pick[j - 1]].forms / (m.assoc[pick[j - 1]].others + 1) < v) { pick[j] = pick[j - 1]; j--; }
-        pick[j] = i;
+
+    /* everything goes to a file in the nest when asked for all: it quotes the
+       books, and the nest is not in the repository */
+    char fname[160];
+    FILE *o = stdout;
+    if (all) {
+        snprintf(fname, sizeof fname, NEST "/meaning-%s.txt", argv[0]);
+        o = fopen(fname, "wb");
+        if (!o) { fprintf(stderr, "cannot write %s\n", fname); rz_meaning_free(&m); rz_loom_free(l); return 1; }
     }
-    for (uint32_t i = 0; i < np; i++)
-        printf("  %-16s %5u / %-6u%s\n", m.assoc[pick[i]].word, m.assoc[pick[i]].forms, m.assoc[pick[i]].others,
-               m.assoc[pick[i]].landed ? "  landed on what it knew" : "");
+    /* on screen, the high side of each list, where its values part */
+    uint32_t n = m.nplace > m.nassoc ? m.nplace : m.nassoc;
+    double *v = malloc((n + 1) * sizeof *v);
+    double cut_p = -HUGE_VAL, cut_a = -HUGE_VAL, cut_o = -HUGE_VAL;
+    rz_meaning_assoc *own = malloc((m.nassoc + 1) * sizeof *own);
+    if (!v || !own) { free(v); free(own); rz_meaning_free(&m); rz_loom_free(l); return 1; }
+    memcpy(own, m.assoc, m.nassoc * sizeof *own);
+    qsort(own, m.nassoc, sizeof *own, by_own);
+    if (!all) {
+        for (uint32_t i = 0; i < m.nplace; i++) v[i] = m.place[i].company;
+        cut_p = parting(v, m.nplace);
+        for (uint32_t i = 0; i < m.nassoc; i++) v[i] = m.assoc[i].forms;
+        cut_a = parting(v, m.nassoc);
+        for (uint32_t i = 0; i < m.nassoc; i++) v[i] = own_of(&m.assoc[i]);
+        cut_o = parting(v, m.nassoc);
+    }
+    free(v);
+
+    char bk[256];
+    fprintf(o, "[%s] -- what it understood, and from which book\n\n", argv[0]);
+    uint32_t pb[64] = {0}, ab[64] = {0}, pboth = 0, aboth = 0;
+    for (uint32_t i = 0; i < m.nplace; i++) {
+        for (int b = 0; b < 64; b++) pb[b] += (uint32_t)(m.place[i].books >> b & 1);
+        pboth += (m.place[i].books & (m.place[i].books - 1)) != 0;
+    }
+    for (uint32_t i = 0; i < m.nassoc; i++) {
+        for (int b = 0; b < 64; b++) ab[b] += (uint32_t)(m.assoc[i].books >> b & 1);
+        aboth += (m.assoc[i].books & (m.assoc[i].books - 1)) != 0;
+    }
+    fprintf(o, "of its %u places (as they read) and %u associates:\n", m.nplace, m.nassoc);
+    for (uint32_t b = 0; b < 64; b++)
+        if (pb[b] || ab[b]) fprintf(o, "  %-44s %5u places  %5u associates\n", rz_loom_book_name(l, b), pb[b], ab[b]);
+    fprintf(o, "  %-44s %5u places  %5u associates\n\n", "in more than one book", pboth, aboth);
+
+    fprintf(o, "the places it stands in%s:\n", all ? "" : ", the side most shared");
+    for (uint32_t i = 0; i < m.nplace && (all || m.place[i].company > cut_p); i++) {
+        say_books(l, m.place[i].books, bk, sizeof bk);
+        fprintf(o, "  \"%s\"   (%u stood there)   [%s]\n", m.place[i].text, m.place[i].company, bk);
+    }
+    fprintf(o, "\nits associates%s (forms shared / how many associates that one has):\n", all ? "" : ", the side most shared");
+    for (uint32_t i = 0; i < m.nassoc && (all || m.assoc[i].forms > cut_a); i++) {
+        say_books(l, m.assoc[i].books, bk, sizeof bk);
+        fprintf(o, "  %-16s %5u / %-6u [%s]%s%s\n", m.assoc[i].word, m.assoc[i].forms, m.assoc[i].others, bk,
+                m.assoc[i].landed ? "  landed on what it knew" : "", m.assoc[i].traveled ? "  travelled" : "");
+    }
+    fprintf(o, "\nthe associates most its own%s (forms shared, against how many associates each has):\n",
+            all ? "" : ", the side that parts from the rest");
+    for (uint32_t i = 0; i < m.nassoc && (all || own_of(&own[i]) > cut_o); i++) {
+        say_books(l, own[i].books, bk, sizeof bk);
+        fprintf(o, "  %-16s %5u / %-6u [%s]%s\n", own[i].word, own[i].forms, own[i].others, bk,
+                own[i].landed ? "  landed on what it knew" : "");
+    }
+    free(own);
+    if (all) { fclose(o); printf("everything about [%s] written to %s\n", argv[0], fname); }
+    rz_meaning_free(&m);
     rz_loom_free(l);
     return 0;
 }
@@ -2823,7 +2922,7 @@ int main(int argc, char **argv)
         printf("  razar paths [path]                    silhouettes of paths, taken apart and put together\n");
         printf("  razar loom [path]                     weave meaning while reading, and see what it foresees\n");
         printf("  razar neuron [word]                   think one depth further (a word starts a new train)\n");
-        printf("  razar meaning <word>                  open a word: the places and associates it understood\n");
+        printf("  razar meaning <word> [all]            open a word: its places and associates, and which book brought them\n");
         return 0;
     }
     if (!strcmp(argv[1], "feed"))         return cmd_feed(argc - 2, argv + 2);

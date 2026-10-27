@@ -762,19 +762,30 @@ typedef struct {
     uint32_t forms, traveled;        /* silhouettes shared; steps of travel */
     uint32_t others;                 /* how many associates the associate has */
     uint8_t  landed;
+    uint64_t books;                  /* the books that made them associates (bit per book) */
 } rz_meaning_assoc;
 
 typedef struct {
     char     text[6 * (RZ_LEGO_SPAN + 1)];   /* the structure, with the word inside */
     uint32_t company;                        /* how many stood in that place */
+    uint64_t books;                          /* the books that put the word there */
 } rz_meaning_place;
 
+/* Every place and every associate, as many as the word has: the room is
+   taken to the word's size, never fixed (the author: it adjusts itself,
+   nothing rigid). Places that read the same are one. */
 typedef struct {
-    rz_meaning_assoc assoc[256];  uint32_t nassoc, assoc_all;
-    rz_meaning_place place[256];  uint32_t nplace, place_all;
+    rz_meaning_assoc *assoc;  uint32_t nassoc, assoc_all;
+    rz_meaning_place *place;  uint32_t nplace, place_all;
 } rz_meaning;
 
-int rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out);
+int  rz_loom_meaning(const rz_loom *l, const char *word, rz_meaning *out);
+void rz_meaning_free(rz_meaning *m);
+
+/* The book about to be read, by name: what it brings is marked with it. Up to
+   64 books; returns its number (a name read before keeps its number). */
+uint32_t    rz_loom_book(rz_loom *l, const char *name);
+const char *rz_loom_book_name(const rz_loom *l, uint32_t book);
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 
