@@ -2702,6 +2702,14 @@ static int cmd_loom(int argc, char **argv)
     printf("  blind, a word picked from what was read: %llu of %llu (%.2f%%)\n\n",
            (unsigned long long)r.blind_foreseen, (unsigned long long)r.blind_events,
            r.blind_events ? 100.0 * r.blind_foreseen / r.blind_events : 0.0);
+    if (r.known_new)
+        printf("enrichment: of %llu new associations between words that already meant something, %llu (%.2f%%) "
+               "landed on a meaning held before; blind partners %llu of %llu (%.2f%%)
+
+",
+               (unsigned long long)r.known_new, (unsigned long long)r.landed, 100.0 * r.landed / r.known_new,
+               (unsigned long long)r.blind_landed, (unsigned long long)r.blind_new,
+               r.blind_new ? 100.0 * r.blind_landed / r.blind_new : 0.0);
     if (r.thoughts_confirmed || r.blind_confirmed)
         printf("ideas thought before, said by this book: %llu; blind ideas said: %llu\n\n",
                (unsigned long long)r.thoughts_confirmed, (unsigned long long)r.blind_confirmed);

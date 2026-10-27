@@ -4748,6 +4748,63 @@ TEST(what_reality_confirms_becomes_a_travelled_path)
     rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
 }
 
+/* meat and grass never stand in the same place -- the cat eats red meat,
+   the horse green grass -- but both stand where the fish stands */
+static size_t meal_world(char *out, size_t cap, int clauses)
+{
+    size_t n = said_world(out, cap, clauses);
+    static const char *said[] = {
+        "el gato come carne roja", "el gato come pescado roja",
+        "el caballo come pasto verde", "el caballo come pescado verde",
+    };
+    uint64_t r = 5;
+    for (int k = 0; k < clauses / 4; k++) {
+        r = r * 6364136223846793005ull + 1442695040888963407ull;
+        int w = snprintf(out + n, cap - n, "%s %s ", said[(r >> 33) % 4], wb_join[(r >> 20) % 6]);
+        if (w < 0 || (size_t)w >= cap - n) break;
+        n += (size_t)w;
+    }
+    return n;
+}
+
+TEST(a_new_book_enriches_the_meanings_it_already_holds)
+{
+    /* The author: what matters is the different associations. In a new book
+       a word comes in other structures, but associated somehow with a meaning
+       it already holds, and it branches into the meanings kept: it is
+       enriched. The second book puts meat and grass together for the first
+       time, in structures the first never had: what the dog prefers */
+    static char a[400000], b[300000];
+    size_t na = meal_world(a, sizeof a, 6000);
+    size_t nb = said_world(b, sizeof b, 3000);
+    static const char *again[] = { "el perro prefiere carne", "el perro prefiere pasto" };
+    for (int k = 0; k < 24; k++) {
+        int w = snprintf(b + nb, sizeof b - nb, "%s %s ", again[k % 2], wb_join[k % 6]);
+        if (w > 0) nb += (size_t)w;
+    }
+    rz_lexicon *xa = lexicon_of(a, na), *xb = lexicon_of(b, nb);
+    static rz_loom_report r;
+
+    /* read alone there is no meaning to land on */
+    rz_loom *fresh = rz_loom_new();
+    CHECK_EQ_U(rz_loom_read(fresh, xb, &r), RZ_OK);
+    CHECK_EQ_U(r.landed, 0u);
+    rz_loom_free(fresh);
+
+    /* read after the first, meat and grass were not associates, and now they
+       are -- landing on a meaning held: both stood where the fish stood */
+    rz_loom *l = rz_loom_new();
+    CHECK_EQ_U(rz_loom_read(l, xa, &r), RZ_OK);
+    CHECK(!rz_loom_landed(l, "carne", "pasto"));
+    CHECK_EQ_U(rz_loom_read(l, xb, &r), RZ_OK);
+    CHECK(rz_loom_landed(l, "carne", "pasto"));
+    CHECK(r.known_new > 0 && r.landed > 0);
+    /* against blind it is measured on real books, not here: in this world 5 of
+       33 landed, and 10 of 33 blind -- a world this small has few meanings */
+    rz_loom_free(l);
+    rz_lexicon_free(xa); rz_lexicon_free(xb); free(xa); free(xb);
+}
+
 /* --- the melody of the path (P48) ---------------------------------------- */
 
 /* rex is a dog, dogs are animals, animals are beings -- and the text also says
@@ -4983,6 +5040,7 @@ int main(void)
     RUN(what_was_woven_stays_in_the_memory);
     RUN(it_thinks_one_depth_at_a_time);
     RUN(what_reality_confirms_becomes_a_travelled_path);
+    RUN(a_new_book_enriches_the_meanings_it_already_holds);
     RUN(meanings_fall_like_dominoes);
     RUN(the_lexicon_survives_a_round_trip);
     RUN(the_conversation_is_what_makes_it_correct_itself);

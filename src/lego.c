@@ -3754,7 +3754,7 @@ uint32_t rz_paths_recompose(const rz_paths *p, rz_recomposed *out, uint32_t cap)
 typedef struct { uint64_t key, f1, f2; uint8_t born; } loom_sil;
 typedef struct { uint64_t key, sil, partner; int32_t head; uint32_t size; uint8_t side; } loom_group;
 typedef struct { uint64_t word; int32_t next; } loom_member;
-typedef struct { uint64_t key, last, a, b; uint32_t count, traveled; } loom_pair;
+typedef struct { uint64_t key, last, a, b; uint32_t count, traveled; uint8_t landed; } loom_pair;
 typedef struct { uint64_t key; uint8_t len; unsigned char s[RZ_LEGO_SPAN]; } loom_word;
 /* the shape of a born silhouette, to say its paths: the fixed pieces, holes 0 */
 typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_shape;
@@ -3762,6 +3762,17 @@ typedef struct { uint64_t key; uint64_t path[5]; uint8_t len, h1, h2; } loom_sha
 typedef struct { uint64_t key, word, group, via; uint32_t traveled; uint8_t level, blind, confirmed; } loom_idea;
 /* the cache of each path walked (P53): a word, and who reached it */
 typedef struct { uint64_t word; int32_t parent; uint8_t level; } loom_step;
+/* an associate of a word, gathered to walk or to compare */
+typedef struct { uint64_t word; uint64_t other; } loom_edge;
+/* what a read needs to judge enrichment: the meanings held before the book */
+typedef struct {
+    loom_edge        *held;  size_t nheld;
+    const uint64_t   *h;
+    const rz_lexicon *x;
+    uint32_t          at;
+    uint64_t          rng;
+    rz_loom_report   *out;
+} loom_reading;
 
 struct rz_loom {
     loom_sil    *sil;   size_t sil_cap, sil_n;
@@ -3773,7 +3784,11 @@ struct rz_loom {
     loom_idea   *idea;  size_t idea_cap, idea_n;
     loom_step   *trail; size_t trail_n, trail_cap, front;   /* front: where the last depth begins */
     uint64_t     rng;
+    loom_reading *reading;               /* while a book is read */
 };
+
+static void loom_enrich(rz_loom *l, uint64_t a, uint64_t b, loom_pair *p);
+static int edge_order(const void *pa, const void *pb);
 
 static uint64_t mix64(uint64_t v)
 {
@@ -3911,6 +3926,7 @@ static void loom_associate(rz_loom *l, uint64_t a, uint64_t b, uint64_t sil)
     if (p->last == sil) return;
     p->last = sil;
     p->count++;
+    if (p->count == 2 && l->reading) loom_enrich(l, a, b, p);
 }
 
 static int loom_has(const rz_loom *l, const loom_group *g, uint64_t w)
@@ -4023,9 +4039,27 @@ int rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out)
         else out->open_untraveled++;
     }
 
+    /* the meanings held before this book: every associate of every word */
+    loom_reading rd;
+    memset(&rd, 0, sizeof rd);
+    rd.h = h; rd.x = x; rd.out = out; rd.rng = 0xD1B54A32D192ED03ull;
+    size_t nheld = 0;
+    for (size_t p = 0; p < l->pair_cap; p++) if (l->pair[p].key && l->pair[p].count >= 2) nheld += 2;
+    rd.held = malloc((nheld + 1) * sizeof *rd.held);
+    if (rd.held) {
+        for (size_t p = 0; p < l->pair_cap; p++) {
+            if (!l->pair[p].key || l->pair[p].count < 2) continue;
+            rd.held[rd.nheld].word = l->pair[p].a; rd.held[rd.nheld].other = l->pair[p].b; rd.nheld++;
+            rd.held[rd.nheld].word = l->pair[p].b; rd.held[rd.nheld].other = l->pair[p].a; rd.nheld++;
+        }
+        qsort(rd.held, rd.nheld, sizeof *rd.held, edge_order);
+        l->reading = &rd;
+    }
+
     uint64_t rng = 0x9E3779B97F4A7C15ull;
     uint64_t run[RUN_MAX];
     for (uint32_t i = 0; i < x->nseq; i++) {
+        rd.at = i;
         /* every run that ends with the piece just read */
         for (int len = RUN_MIN; len <= RUN_MAX && (uint32_t)len <= i + 1; len++) {
             const int32_t *ids = x->seq + i + 1 - len;
@@ -4093,13 +4127,13 @@ int rz_loom_read(rz_loom *l, const rz_lexicon *x, rz_loom_report *out)
         }
     }
     for (size_t s = 0; s < l->pair_cap; s++) if (l->pair[s].key && l->pair[s].count >= 2) out->associates++;
+    l->reading = NULL;
+    free(rd.held);
     free(h);
     return RZ_OK;
 }
 
 /* ===================== the neuron that thinks (P53) ======================== */
-
-typedef struct { uint64_t word; uint64_t other; } loom_edge;
 
 static int edge_order(const void *pa, const void *pb)
 {
@@ -4113,6 +4147,53 @@ static size_t edges_from(const loom_edge *e, size_t n, uint64_t w)
     size_t lo = 0, hi = n;
     while (lo < hi) { size_t mid = (lo + hi) / 2; if (e[mid].word < w) lo = mid + 1; else hi = mid; }
     return lo;
+}
+
+/* two words shared an associate in the meanings held before this book */
+static int held_common(const loom_reading *rd, uint64_t a, uint64_t b)
+{
+    size_t i = edges_from(rd->held, rd->nheld, a), j = edges_from(rd->held, rd->nheld, b);
+    while (i < rd->nheld && j < rd->nheld && rd->held[i].word == a && rd->held[j].word == b) {
+        if (rd->held[i].other == rd->held[j].other) return 1;
+        if (rd->held[i].other < rd->held[j].other) i++; else j++;
+    }
+    return 0;
+}
+
+static int held_meaning(const loom_reading *rd, uint64_t w)
+{
+    size_t i = edges_from(rd->held, rd->nheld, w);
+    return i < rd->nheld && rd->held[i].word == w;
+}
+
+static int held_associates(const loom_reading *rd, uint64_t a, uint64_t b)
+{
+    for (size_t i = edges_from(rd->held, rd->nheld, a); i < rd->nheld && rd->held[i].word == a; i++)
+        if (rd->held[i].other == b) return 1;
+    return 0;
+}
+
+/* A new association, made by this book: did it land on a meaning held before?
+   (the author: the word comes in other structures, but associated with a
+   meaning it holds, and branches into the meanings kept.) Blind: the same word
+   with a partner picked from what this book has read so far, that also had a
+   meaning and was not already its associate -- the frequencies of the book. */
+static void loom_enrich(rz_loom *l, uint64_t a, uint64_t b, loom_pair *p)
+{
+    loom_reading *rd = l->reading;
+    if (!held_meaning(rd, a) || !held_meaning(rd, b)) return;
+    rd->out->known_new++;
+    if (held_common(rd, a, b)) { rd->out->landed++; p->landed = 1; }
+    for (int tries = 0; tries < 16; tries++) {
+        rd->rng ^= rd->rng << 13; rd->rng ^= rd->rng >> 7; rd->rng ^= rd->rng << 17;
+        int32_t id = rd->x->seq[rd->rng % (rd->at + 1)];
+        if (id < 0) continue;
+        uint64_t c = rd->h[id];
+        if (c == a || c == b || !held_meaning(rd, c) || held_associates(rd, a, c)) continue;
+        rd->out->blind_new++;
+        rd->out->blind_landed += (uint64_t)held_common(rd, a, c);
+        break;
+    }
 }
 
 static void spell_into(const rz_loom *l, uint64_t w, char *out, size_t cap)
@@ -4291,8 +4372,9 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made)
  * side effect of saving. */
 
 #define LOOM_MAGIC 0x4D4F4F4Cu           /* "LOOM" */
-#define LOOM_VER   3u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
-                                            3: travelled branches, and the branch each idea came by */
+#define LOOM_VER   4u                    /* 2: places and pairs say whose they are; shapes, ideas, the cache.
+                                            3: travelled branches, and the branch each idea came by.
+                                            4: associations that landed on a meaning held before */
 
 static int put64(FILE *f, uint64_t v) { return fwrite(&v, sizeof v, 1, f) == 1; }
 static int get64(FILE *f, uint64_t *v) { return fread(v, sizeof *v, 1, f) == 1; }
@@ -4323,7 +4405,8 @@ int rz_loom_save(const rz_loom *l, const char *path)
     for (size_t i = 0; ok && i < l->pair_cap; i++)
         if (l->pair[i].key)
             ok = put64(f, l->pair[i].key) && put64(f, l->pair[i].last) && put64(f, l->pair[i].a)
-                 && put64(f, l->pair[i].b) && put64(f, l->pair[i].count) && put64(f, l->pair[i].traveled);
+                 && put64(f, l->pair[i].b) && put64(f, l->pair[i].count) && put64(f, l->pair[i].traveled)
+                 && put64(f, l->pair[i].landed);
     for (size_t i = 0; ok && i < l->word_cap; i++)
         if (l->word[i].key)
             ok = put64(f, l->word[i].key) && fwrite(&l->word[i].len, 1, 1, f) == 1 &&
@@ -4375,14 +4458,15 @@ int rz_loom_load(rz_loom *l, const char *path)
         }
     }
     for (uint64_t i = 0; ok && i < np; i++) {
-        uint64_t k, last, a, b, count, traveled;
-        ok = get64(f, &k) && get64(f, &last) && get64(f, &a) && get64(f, &b) && get64(f, &count) && get64(f, &traveled);
+        uint64_t k, last, a, b, count, traveled, landed;
+        ok = get64(f, &k) && get64(f, &last) && get64(f, &a) && get64(f, &b) && get64(f, &count) && get64(f, &traveled)
+             && get64(f, &landed);
         if (!ok) break;
         loom_pair *p; int fresh;
         LOOM_AT(l, l->pair, l->pair_cap, l->pair_n, k, p, fresh);
         (void)fresh;
         if (!p) { ok = 0; break; }
-        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count; p->traveled = (uint32_t)traveled;
+        p->last = last; p->a = a; p->b = b; p->count = (uint32_t)count; p->traveled = (uint32_t)traveled; p->landed = (uint8_t)landed;
     }
     for (uint64_t i = 0; ok && i < nw; i++) {
         uint64_t k;
@@ -4425,4 +4509,11 @@ uint32_t rz_loom_traveled(const rz_loom *l, const char *word, const char *associ
     const loom_pair *p = loom_pair_find(l, spelling_key((const unsigned char *)word, lw),
                                         spelling_key((const unsigned char *)associate, la));
     return p ? p->traveled : 0;
+}
+
+int rz_loom_landed(const rz_loom *l, const char *a, const char *b)
+{
+    const loom_pair *p = loom_pair_find(l, spelling_key((const unsigned char *)a, strlen(a)),
+                                        spelling_key((const unsigned char *)b, strlen(b)));
+    return p && p->count >= 2 && p->landed;
 }

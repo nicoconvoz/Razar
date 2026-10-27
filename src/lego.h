@@ -683,6 +683,13 @@ typedef struct {
        of each the book said */
     uint64_t    open_traveled, open_untraveled, open_blind;
     uint64_t    said_traveled, said_untraveled;
+    /* enrichment (the author: the different associations; a new book's words
+       come in other structures, but land on the meanings already held). Of
+       the associations this book makes between words that already had a
+       meaning, how many join two words that already shared an associate --
+       against the same word with a blind partner from this book */
+    uint64_t    known_new, landed;
+    uint64_t    blind_new, blind_landed;
 } rz_loom_report;
 
 /* The loom lives in the AMMC (the author: the conceptual design of meaning is
@@ -737,6 +744,9 @@ uint32_t rz_loom_step(rz_loom *l, rz_idea *out, uint32_t cap, uint32_t *made);
    more travelled path. Each idea a book says gives one step of travel to the
    branch that thought it (the word and the associate it came by). */
 uint32_t rz_loom_traveled(const rz_loom *l, const char *word, const char *associate);
+/* the two are associates now, and their association landed on a meaning held
+   before the book that made it (they shared an associate) */
+int      rz_loom_landed(const rz_loom *l, const char *a, const char *b);
 /* how many times lego a stood just before lego b (0: never) */
 uint32_t rz_lexicon_pair_count(const rz_lexicon *x, int32_t a, int32_t b);
 
