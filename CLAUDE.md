@@ -5,8 +5,9 @@
 ## Project Status
 
 **A working organism, in C11.** Stack chosen 2026-08-03 (D9): C11, gcc, no
-dependencies beyond libm. ~9,000 lines across `src/razar.c`, `src/razar.h`,
-`src/main.c`; 887 checks in `tests/test_razar.c`.
+dependencies beyond libm. 13,252 lines across `src/` (`razar.{h,c}`,
+`lego.{h,c}`, `main.c`); 1,270 checks in `tests/test_razar.c`, counted by
+running `make test` rather than copied.
 
 It eats raw bytes, composes the pieces that recur into fragments, forgets
 without deleting, recalls, predicts before it reads, reports its interest,
