@@ -1,5 +1,8 @@
 # Razar
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23874174.svg)](https://doi.org/10.5281/zenodo.23874174)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 **Razar** = *Razonamiento Artificial*.
 
 An organism in C11. It eats raw bytes, composes the pieces that recur into
@@ -159,6 +162,10 @@ license.
 ```
 Jesús Nicolás Astorga and RESOURCES OPEN DOORS S.A.S,
 "Razar — Razonamiento Artificial", 2026.
-https://github.com/nicoconvoz/Razar
+https://doi.org/10.5281/zenodo.23874174
 Code under AGPL-3.0; documentation under CC BY 4.0.
 ```
+
+That DOI is the **concept** DOI: it always resolves to the latest version.
+To cite this exact release, use `10.5281/zenodo.23874175`.
+[CITATION.cff](CITATION.cff) carries the same, machine-readable.

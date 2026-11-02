@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this laboratory, cite it like this."
+title: "Razar — Razonamiento Artificial"
+abstract: >-
+  An organism in C11 with no dependency beyond libm: it eats raw bytes,
+  composes the pieces that recur, forgets without deleting, recalls, predicts
+  before it reads, grows its own senses, learns rules, and holds a running
+  conversation with itself about whether it was right. It is built on one rule
+  — never declare what the organism should discover; build the structure under
+  which a behaviour can emerge, never the behaviour — and on its companion,
+  that every measurement carries its baseline. Its clearest result so far: told
+  nothing but five structural properties of negation, measurable against the
+  text itself, it read the New Testament with its own pieces and found exactly
+  one switch, "no", then kept every place said denied as a closed door and
+  asked why this time it went the other way. NO claim is made here about
+  understanding, meaning or awareness; what failed is published beside what
+  worked.
+type: software
+authors:
+  - family-names: Astorga
+    given-names: "Jesús Nicolás"
+    email: mza.nicolas.astorga@gmail.com
+  - name: "RESOURCES OPEN DOORS S.A.S"
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/nicoconvoz/Razar"
+doi: "10.5281/zenodo.23874174"
+version: "v0.1.0"
+keywords:
+  - artificial-intelligence
+  - cognitive-architecture
+  - unsupervised-learning
+  - emergent-behaviour
+  - computational-linguistics
+  - negation
+  - reproducible-research
+  - c
