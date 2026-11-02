@@ -1,0 +1,77 @@
+Razar — Razonamiento Artificial
+===============================
+
+Copyright (C) 2026  Jesús Nicolás Astorga
+Copyright (C) 2026  RESOURCES OPEN DOORS S.A.S
+
+
+THE CODE
+--------
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+The full text is in the file LICENSE.
+
+
+ARTICLE 13, AND WHERE IT WOULD BITE
+-----------------------------------
+
+Razar ships as a command-line binary. It serves nothing over a network, so
+section 13 of the AGPL does not come into play as the project stands.
+
+It would come into play for anyone who puts the organism behind a network
+interface — a web front end, an API, an internal service reachable by others.
+In that case the AGPL requires that whoever interacts with it over the network
+can obtain the corresponding source of the whole service, not only of Razar.
+That is the specific difference between the AGPL and the GPL, and it is the
+reason this license was chosen: an organism is exactly the kind of thing
+somebody would serve rather than distribute.
+
+
+COMMERCIAL LICENSE
+------------------
+
+If those terms do not work for you — a closed product, a service you will not
+open — there is a commercial license that exempts you from the AGPL by
+agreement. See COMMERCIAL-LICENSE.md.
+
+
+THE CONTENT
+-----------
+
+The documentation (docs/, including the design notes and the autopsies) is a
+work, not software, and is published under Creative Commons Attribution 4.0
+International (CC BY 4.0). Use it, copy it, change it, even commercially — but
+say where it came from. The full text is in LICENSE-CONTENT.txt.
+
+
+WHAT IS NOT COVERED
+-------------------
+
+feed/ is intake: material dropped in for the organism to read. Its contents are
+NOT part of this repository (they are gitignored) and some of it carries
+third-party copyright. Nothing in these licenses grants any right over it.
+
+nido/ is the living organism produced by a run — regenerable, gitignored, and
+not distributed.
+
+
+HOW TO CITE
+-----------
+
+    Jesús Nicolás Astorga and RESOURCES OPEN DOORS S.A.S, "Razar —
+    Razonamiento Artificial", 2026.
+    https://github.com/nicoconvoz/Razar
+    Code under AGPL-3.0; documentation under CC BY 4.0.
+
+A DOI will be added here once the first release is archived.
