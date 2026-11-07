@@ -4,6 +4,8 @@
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 **Razar** = *Razonamiento Artificial*.
+📖 **[Carta del autor](CARTA-DEL-AUTOR.md)** — la otra mitad: el diario espiritual, en audio y con licencia libre.
+
 
 An organism in C11. It eats raw bytes, composes the pieces that recur into
 fragments, forgets without deleting, recalls, predicts before it reads, reports
